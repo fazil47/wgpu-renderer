@@ -1,0 +1,8 @@
+[package]
+name = "wgpu-renderer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wgpu = "22.1.0"
+winit = "0.29.15"
