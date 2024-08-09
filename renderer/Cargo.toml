@@ -5,6 +5,8 @@ edition = "2021"
 default-run = "wgpu-renderer"
 
 [dependencies]
+egui = { git = "https://github.com/emilk/egui.git" }
+egui-wgpu = { git = "https://github.com/emilk/egui.git" }
 wgpu = "22.1.0"
 winit = "0.29.15"
 

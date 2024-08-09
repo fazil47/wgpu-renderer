@@ -1,3 +1,4 @@
+use egui::{FontId, RichText};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -77,6 +78,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .unwrap();
     surface.configure(&device, &config);
 
+    let mut egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
+    let egui_ctx = egui::Context::default();
+
     let window = &window;
     event_loop
         .run(move |event, target| {
@@ -110,6 +114,41 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                                 label: None,
                             });
+
+                        let egui_raw_input = egui::RawInput::default();
+                        let egui_full_output =
+                            egui_ctx.run(egui_raw_input, |egui_ctx: &egui::Context| {
+                                egui::CentralPanel::default()
+                                    .frame(
+                                        egui::Frame::none().inner_margin(egui::Margin::same(10.0)),
+                                    )
+                                    .show(egui_ctx, |ui| {
+                                        ui.label(
+                                            RichText::new("Hello, world!")
+                                                .font(FontId::proportional(20.0))
+                                                .strong(),
+                                        );
+                                    });
+                            });
+                        let egui_primitives = egui_ctx
+                            .tessellate(egui_full_output.shapes, egui_full_output.pixels_per_point);
+                        let egui_screen_descriptor = egui_wgpu::ScreenDescriptor {
+                            size_in_pixels: [config.width, config.height],
+                            pixels_per_point: 1.0,
+                        };
+
+                        for (id, image_delta) in egui_full_output.textures_delta.set {
+                            egui_renderer.update_texture(&device, &queue, id, &image_delta);
+                        }
+
+                        egui_renderer.update_buffers(
+                            &device,
+                            &queue,
+                            &mut encoder,
+                            &egui_primitives,
+                            &egui_screen_descriptor,
+                        );
+
                         {
                             let mut rpass =
                                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -118,7 +157,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                         view: &view,
                                         resolve_target: None,
                                         ops: wgpu::Operations {
-                                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                                             store: wgpu::StoreOp::Store,
                                         },
                                     })],
@@ -128,10 +167,20 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                 });
                             rpass.set_pipeline(&render_pipeline);
                             rpass.draw(0..3, 0..1);
+
+                            egui_renderer.render(
+                                &mut rpass,
+                                &egui_primitives,
+                                &egui_screen_descriptor,
+                            );
                         }
 
                         queue.submit(Some(encoder.finish()));
                         frame.present();
+
+                        for id in egui_full_output.textures_delta.free {
+                            egui_renderer.free_texture(&id);
+                        }
                     }
                     WindowEvent::CloseRequested => target.exit(),
                     _ => {}
