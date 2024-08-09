@@ -56,7 +56,7 @@ pub(crate) fn run_wasm(shell: Shell, mut args: Arguments) -> anyhow::Result<()> 
     .context("Failed to run wasm-bindgen")?;
 
     let static_files = shell
-        .read_dir("renderer/static")
+        .read_dir("static")
         .context("Failed to enumerate static files")?;
 
     for file in static_files {
