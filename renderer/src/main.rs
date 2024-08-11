@@ -32,7 +32,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: wgpu::Limits::downlevel_webgl2_defaults()
                     .using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
             },
             None,
         )
@@ -70,7 +69,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
-        cache: None,
     });
 
     let mut config = surface
@@ -78,10 +76,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .unwrap();
     surface.configure(&device, &config);
 
-    let mut egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1, false);
+    let mut egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1);
     let egui_ctx = egui::Context::default();
 
     let window = &window;
+    let mut count = 0;
+
     event_loop
         .run(move |event, target| {
             // Have the closure take ownership of the resources.
@@ -124,10 +124,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                     )
                                     .show(egui_ctx, |ui| {
                                         ui.label(
-                                            RichText::new("Hello, world!")
+                                            RichText::new(format!("Button clicked {count} times"))
                                                 .font(FontId::proportional(20.0))
                                                 .strong(),
                                         );
+
+                                        if ui.button("Click me!").clicked() {
+                                            count += 1;
+                                        }
                                     });
                             });
                         let egui_primitives = egui_ctx
