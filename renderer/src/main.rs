@@ -1,9 +1,34 @@
-use egui::{FontId, RichText};
+use encase::{ShaderType, UniformBuffer};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::Window,
 };
+
+#[derive(ShaderType)]
+struct RGB {
+    r: f32,
+    g: f32,
+    b: f32,
+    _padding: f32,
+}
+
+impl RGB {
+    fn new(rgb: [f32; 3]) -> Self {
+        Self {
+            r: rgb[0],
+            g: rgb[1],
+            b: rgb[2],
+            _padding: 0.0,
+        }
+    }
+}
+
+fn update_color_buffer(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, color: &RGB) {
+    let mut encase_buffer = UniformBuffer::new(Vec::new());
+    encase_buffer.write(color).unwrap();
+    queue.write_buffer(&wgpu_buffer, 0, encase_buffer.as_ref());
+}
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut size = window.inner_size();
@@ -41,9 +66,46 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     // Load the shaders from disk
     let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/shader.wgsl"));
 
+    let mut color_uniform = [1.0, 0.0, 0.0];
+    let color_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Color Uniform Buffer"),
+        size: std::mem::size_of::<RGB>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    update_color_buffer(&queue, &color_uniform_buffer, &RGB::new(color_uniform));
+
+    let color_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Color Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+    let color_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Color Bind Group"),
+        layout: &color_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &color_uniform_buffer,
+                offset: 0,
+                size: None,
+            }),
+        }],
+    });
+
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[],
+        bind_group_layouts: &[&color_bind_group_layout],
         push_constant_ranges: &[],
     });
 
@@ -71,18 +133,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         multiview: None,
     });
 
-    let mut config = surface
+    let mut surface_config = surface
         .get_default_config(&adapter, size.width, size.height)
         .unwrap();
-    surface.configure(&device, &config);
+    surface.configure(&device, &surface_config);
 
-    let mut egui_renderer = egui_wgpu::Renderer::new(&device, config.format, None, 1);
+    let mut egui_renderer = egui_wgpu::Renderer::new(&device, surface_config.format, None, 1);
     let egui_ctx = egui::Context::default();
 
     let window = &window;
-    let mut count = 0;
     let egui_viewport_id = egui_ctx.viewport_id();
-    let mut egui_state = egui_winit::State::new(egui_ctx, egui_viewport_id, window, None, None);
+    let pixels_per_point = window.scale_factor() as f32;
+    let mut egui_state = egui_winit::State::new(
+        egui_ctx,
+        egui_viewport_id,
+        window,
+        Some(pixels_per_point),
+        None,
+    );
 
     event_loop
         .run(move |event, target| {
@@ -109,9 +177,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 match window_event {
                     WindowEvent::Resized(new_size) => {
                         // Reconfigure the surface with the new size
-                        config.width = new_size.width.max(1);
-                        config.height = new_size.height.max(1);
-                        surface.configure(&device, &config);
+                        surface_config.width = new_size.width.max(1);
+                        surface_config.height = new_size.height.max(1);
+                        surface.configure(&device, &surface_config);
                         // On macos the window needs to be redrawn manually after resizing
                         window.request_redraw();
                     }
@@ -136,14 +204,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                         egui::Frame::none().inner_margin(egui::Margin::same(10.0)),
                                     )
                                     .show(egui_ctx, |ui| {
-                                        ui.label(
-                                            RichText::new(format!("Button clicked {count} times"))
-                                                .font(FontId::proportional(20.0))
-                                                .strong(),
-                                        );
-
-                                        if ui.button("Click me!").clicked() {
-                                            count += 1;
+                                        if ui.color_edit_button_rgb(&mut color_uniform).changed() {
+                                            update_color_buffer(
+                                                &queue,
+                                                &color_uniform_buffer,
+                                                &RGB::new(color_uniform),
+                                            );
                                         }
                                     });
                             },
@@ -152,8 +218,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             .egui_ctx()
                             .tessellate(egui_full_output.shapes, egui_full_output.pixels_per_point);
                         let egui_screen_descriptor = egui_wgpu::ScreenDescriptor {
-                            size_in_pixels: [config.width, config.height],
-                            pixels_per_point: 1.0,
+                            size_in_pixels: [surface_config.width, surface_config.height],
+                            pixels_per_point: pixels_per_point,
                         };
 
                         for (id, image_delta) in egui_full_output.textures_delta.set {
@@ -185,6 +251,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                     occlusion_query_set: None,
                                 });
                             rpass.set_pipeline(&render_pipeline);
+
+                            rpass.set_bind_group(0, &color_bind_group, &[]);
+
                             rpass.draw(0..3, 0..1);
 
                             egui_renderer.render(
