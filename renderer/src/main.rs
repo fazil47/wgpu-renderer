@@ -81,6 +81,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
     let window = &window;
     let mut count = 0;
+    let egui_viewport_id = egui_ctx.viewport_id();
+    let mut egui_state = egui_winit::State::new(egui_ctx, egui_viewport_id, window, None, None);
 
     event_loop
         .run(move |event, target| {
@@ -91,10 +93,20 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
             if let Event::WindowEvent {
                 window_id: _,
-                event,
+                event: window_event,
             } = event
             {
-                match event {
+                let egui_event_response = egui_state.on_window_event(window, &window_event);
+
+                if egui_event_response.repaint {
+                    window.request_redraw();
+                }
+
+                if egui_event_response.consumed {
+                    return;
+                }
+
+                match window_event {
                     WindowEvent::Resized(new_size) => {
                         // Reconfigure the surface with the new size
                         config.width = new_size.width.max(1);
@@ -115,9 +127,10 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                 label: None,
                             });
 
-                        let egui_raw_input = egui::RawInput::default();
-                        let egui_full_output =
-                            egui_ctx.run(egui_raw_input, |egui_ctx: &egui::Context| {
+                        let egui_raw_input = egui_state.take_egui_input(window);
+                        let egui_full_output = egui_state.egui_ctx().run(
+                            egui_raw_input,
+                            |egui_ctx: &egui::Context| {
                                 egui::CentralPanel::default()
                                     .frame(
                                         egui::Frame::none().inner_margin(egui::Margin::same(10.0)),
@@ -133,8 +146,10 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                             count += 1;
                                         }
                                     });
-                            });
-                        let egui_primitives = egui_ctx
+                            },
+                        );
+                        let egui_primitives = egui_state
+                            .egui_ctx()
                             .tessellate(egui_full_output.shapes, egui_full_output.pixels_per_point);
                         let egui_screen_descriptor = egui_wgpu::ScreenDescriptor {
                             size_in_pixels: [config.width, config.height],

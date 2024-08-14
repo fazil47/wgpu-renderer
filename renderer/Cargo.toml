@@ -11,12 +11,14 @@ wgpu = "0.20"
 winit = "0.29.15"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-pollster = "0.3.0"
+egui-winit = "0.28"
 env_logger = "0.11.5"
+pollster = "0.3.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
+egui-winit = { version = "0.28", default-features = false }
 fern = "0.6.2"
 wgpu = { version = "0.20", features = ["webgpu"] }
 wasm-bindgen = "0.2.92"
