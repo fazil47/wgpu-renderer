@@ -30,14 +30,19 @@ fn update_color_buffer(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, color: &
     queue.write_buffer(&wgpu_buffer, 0, encase_buffer.as_ref());
 }
 
-async fn run(event_loop: EventLoop<()>, window: Window) {
-    let mut size = window.inner_size();
-    size.width = size.width.max(1);
-    size.height = size.height.max(1);
-
+async fn initialize_wgpu<'window>(
+    window: &'window Window,
+    window_size: &winit::dpi::PhysicalSize<u32>,
+) -> (
+    wgpu::Instance,
+    wgpu::Surface<'window>,
+    wgpu::Adapter,
+    wgpu::Device,
+    wgpu::Queue,
+    wgpu::SurfaceConfiguration,
+) {
     let instance = wgpu::Instance::default();
-
-    let surface = instance.create_surface(&window).unwrap();
+    let surface = instance.create_surface(window).unwrap();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
@@ -63,17 +68,39 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .await
         .expect("Failed to create device");
 
+    let surface_config = surface
+        .get_default_config(&adapter, window_size.width, window_size.height)
+        .expect("Failed to get default surface configuration");
+    surface.configure(&device, &surface_config);
+
+    (instance, surface, adapter, device, queue, surface_config)
+}
+
+fn initialize_shader(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    surface: &wgpu::Surface,
+    adapter: &wgpu::Adapter,
+) -> (
+    wgpu::ShaderModule,
+    [f32; 4],
+    wgpu::Buffer,
+    wgpu::BindGroup,
+    wgpu::PipelineLayout,
+    wgpu::RenderPipeline,
+) {
     // Load the shaders from disk
     let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/shader.wgsl"));
 
-    let mut color_uniform = [1.0, 0.0, 0.0, 1.0];
+    let color_uniform = [1.0, 0.0, 0.0, 1.0];
     let color_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Color Uniform Buffer"),
         size: std::mem::size_of::<RGBA>() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    update_color_buffer(&queue, &color_uniform_buffer, &RGBA::new(color_uniform));
+    // Update the color buffer with the initial color
+    update_color_buffer(queue, &color_uniform_buffer, &RGBA::new(color_uniform));
 
     let color_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -137,24 +164,59 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         multiview: None,
     });
 
-    let mut surface_config = surface
-        .get_default_config(&adapter, size.width, size.height)
-        .unwrap();
-    surface.configure(&device, &surface_config);
+    (
+        shader,
+        color_uniform,
+        color_uniform_buffer,
+        color_bind_group,
+        pipeline_layout,
+        render_pipeline,
+    )
+}
 
-    let mut egui_renderer = egui_wgpu::Renderer::new(&device, surface_config.format, None, 1);
+fn initialize_egui(
+    window: &Window,
+    device: &wgpu::Device,
+    surface_config: &wgpu::SurfaceConfiguration,
+    pixels_per_point: f32,
+) -> (egui_wgpu::Renderer, egui_winit::State) {
+    let egui_renderer = egui_wgpu::Renderer::new(&device, surface_config.format, None, 1);
     let egui_ctx = egui::Context::default();
 
-    let window = &window;
     let egui_viewport_id = egui_ctx.viewport_id();
-    let pixels_per_point = window.scale_factor() as f32;
-    let mut egui_state = egui_winit::State::new(
+    let egui_state = egui_winit::State::new(
         egui_ctx,
         egui_viewport_id,
         window,
         Some(pixels_per_point),
         None,
     );
+
+    (egui_renderer, egui_state)
+}
+
+async fn run(event_loop: EventLoop<()>, window: Window) {
+    let mut window_size = window.inner_size();
+    window_size.width = window_size.width.max(1);
+    window_size.height = window_size.height.max(1);
+    let pixels_per_point = window.scale_factor() as f32;
+
+    let (instance, surface, adapter, device, queue, mut surface_config) =
+        initialize_wgpu(&window, &window_size).await;
+
+    let (
+        shader,
+        mut color_uniform,
+        color_uniform_buffer,
+        color_bind_group,
+        pipeline_layout,
+        render_pipeline,
+    ) = initialize_shader(&device, &queue, &surface, &adapter);
+
+    let (mut egui_renderer, mut egui_state) =
+        initialize_egui(&window, &device, &surface_config, pixels_per_point);
+
+    let window = &window;
 
     event_loop
         .run(move |event, target| {
@@ -187,6 +249,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         // On macos the window needs to be redrawn manually after resizing
                         window.request_redraw();
                     }
+
                     WindowEvent::RedrawRequested => {
                         let frame = surface
                             .get_current_texture()
@@ -277,7 +340,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             egui_renderer.free_texture(&id);
                         }
                     }
+
                     WindowEvent::CloseRequested => target.exit(),
+
                     _ => {}
                 };
             }
