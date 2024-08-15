@@ -6,25 +6,25 @@ use winit::{
 };
 
 #[derive(ShaderType)]
-struct RGB {
+struct RGBA {
     r: f32,
     g: f32,
     b: f32,
-    _padding: f32,
+    a: f32,
 }
 
-impl RGB {
-    fn new(rgb: [f32; 3]) -> Self {
+impl RGBA {
+    fn new(rgba: [f32; 4]) -> Self {
         Self {
-            r: rgb[0],
-            g: rgb[1],
-            b: rgb[2],
-            _padding: 0.0,
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+            a: rgba[3],
         }
     }
 }
 
-fn update_color_buffer(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, color: &RGB) {
+fn update_color_buffer(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, color: &RGBA) {
     let mut encase_buffer = UniformBuffer::new(Vec::new());
     encase_buffer.write(color).unwrap();
     queue.write_buffer(&wgpu_buffer, 0, encase_buffer.as_ref());
@@ -66,14 +66,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     // Load the shaders from disk
     let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/shader.wgsl"));
 
-    let mut color_uniform = [1.0, 0.0, 0.0];
+    let mut color_uniform = [1.0, 0.0, 0.0, 1.0];
     let color_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Color Uniform Buffer"),
-        size: std::mem::size_of::<RGB>() as u64,
+        size: std::mem::size_of::<RGBA>() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    update_color_buffer(&queue, &color_uniform_buffer, &RGB::new(color_uniform));
+    update_color_buffer(&queue, &color_uniform_buffer, &RGBA::new(color_uniform));
 
     let color_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -125,7 +125,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             module: &shader,
             entry_point: "fs_main",
             compilation_options: Default::default(),
-            targets: &[Some(swapchain_format.into())],
+            targets: &[Some(wgpu::ColorTargetState {
+                format: swapchain_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
         }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
@@ -204,11 +208,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                         egui::Frame::none().inner_margin(egui::Margin::same(10.0)),
                                     )
                                     .show(egui_ctx, |ui| {
-                                        if ui.color_edit_button_rgb(&mut color_uniform).changed() {
+                                        if ui
+                                            .color_edit_button_rgba_unmultiplied(&mut color_uniform)
+                                            .changed()
+                                        {
                                             update_color_buffer(
                                                 &queue,
                                                 &color_uniform_buffer,
-                                                &RGB::new(color_uniform),
+                                                &RGBA::new(color_uniform),
                                             );
                                         }
                                     });
