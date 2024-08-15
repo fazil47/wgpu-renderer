@@ -52,7 +52,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let (device, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
-                label: None,
+                label: Some("Device"),
                 required_features: wgpu::Features::empty(),
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: wgpu::Limits::downlevel_webgl2_defaults()
@@ -104,7 +104,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
+        label: Some("Pipeline Layout"),
         bind_group_layouts: &[&color_bind_group_layout],
         push_constant_ranges: &[],
     });
@@ -113,7 +113,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let swapchain_format = swapchain_capabilities.formats[0];
 
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: None,
+        label: Some("Render Pipeline"),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
@@ -192,7 +192,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             .create_view(&wgpu::TextureViewDescriptor::default());
                         let mut encoder =
                             device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                label: None,
+                                label: Some("Command Encoder"),
                             });
 
                         let egui_raw_input = egui_state.take_egui_input(window);
@@ -237,7 +237,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         {
                             let mut rpass =
                                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                    label: None,
+                                    label: Some("Render Pass"),
                                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                         view: &view,
                                         resolve_target: None,
