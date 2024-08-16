@@ -1,8 +1,8 @@
 [package]
-name = "wgpu-renderer"
+name = "app"
 version = "0.1.0"
 edition = "2021"
-default-run = "wgpu-renderer"
+default-run = "app"
 
 [dependencies]
 egui = "0.28"

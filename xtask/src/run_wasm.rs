@@ -38,7 +38,7 @@ pub(crate) fn run_wasm(shell: Shell, mut args: Arguments) -> anyhow::Result<()> 
 
     xshell::cmd!(
         shell,
-        "cargo build --target wasm32-unknown-unknown --bin wgpu-renderer {release_flag...}"
+        "cargo build --target wasm32-unknown-unknown --bin app {release_flag...}"
     )
     .args(&cargo_args)
     .quiet()
@@ -49,7 +49,7 @@ pub(crate) fn run_wasm(shell: Shell, mut args: Arguments) -> anyhow::Result<()> 
 
     xshell::cmd!(
         shell,
-        "wasm-bindgen target/wasm32-unknown-unknown/{output_dir}/wgpu-renderer.wasm --target web --no-typescript --out-dir target/generated --out-name wgpu-renderer"
+        "wasm-bindgen target/wasm32-unknown-unknown/{output_dir}/app.wasm --target web --no-typescript --out-dir target/generated --out-name app"
     )
     .quiet()
     .run()
