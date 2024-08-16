@@ -251,9 +251,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     }
 
                     WindowEvent::RedrawRequested => {
-                        let frame = surface
-                            .get_current_texture()
-                            .expect("Failed to acquire next swap chain texture");
+                        let frame = surface.get_current_texture();
+
+                        if frame.is_err() {
+                            return;
+                        }
+
+                        let frame = frame.unwrap();
                         let view = frame
                             .texture
                             .create_view(&wgpu::TextureViewDescriptor::default());
