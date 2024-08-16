@@ -370,7 +370,6 @@ fn load_icon(path: &std::path::Path) -> winit::window::Icon {
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
-    #[allow(unused_mut)]
     let mut builder = winit::window::WindowBuilder::new();
 
     #[cfg(target_arch = "wasm32")]
