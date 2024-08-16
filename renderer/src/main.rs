@@ -350,10 +350,25 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .unwrap();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn load_icon(path: &std::path::Path) -> winit::window::Icon {
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::open(path)
+            .expect("Failed to open icon path")
+            .into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+
+    winit::window::Icon::from_rgba(icon_rgba, icon_width, icon_height).expect("Failed to open icon")
+}
+
 fn main() {
     let event_loop = EventLoop::new().unwrap();
     #[allow(unused_mut)]
     let mut builder = winit::window::WindowBuilder::new();
+
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen::JsCast;
@@ -368,6 +383,12 @@ fn main() {
             .unwrap();
         builder = builder.with_canvas(Some(canvas));
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let icon = load_icon(std::path::Path::new("assets/icon.png"));
+        builder = builder.with_window_icon(Some(icon));
+    }
+
     let window = builder.build(&event_loop).unwrap();
 
     #[cfg(not(target_arch = "wasm32"))]
