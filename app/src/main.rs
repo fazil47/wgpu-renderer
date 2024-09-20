@@ -1,7 +1,10 @@
 use app::{
     egui::initialize_egui,
     utils::load_icon,
-    wgpu::{initialize_shader, initialize_wgpu, update_color_buffer, RGBA},
+    wgpu::{
+        initialize_rasterizer_shader, initialize_raytracer_shader, initialize_wgpu,
+        update_color_buffer, RGBA,
+    },
 };
 use winit::{
     event::{Event, WindowEvent},
@@ -18,14 +21,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let (instance, surface, adapter, device, queue, mut surface_config) =
         initialize_wgpu(&window, &window_size).await;
 
+    let mut color_uniform = [1.0, 0.0, 0.0, 1.0];
+    let mut is_raytracer_enabled = false;
+
     let (
-        shader,
-        mut color_uniform,
-        color_uniform_buffer,
-        color_bind_group,
-        pipeline_layout,
-        render_pipeline,
-    ) = initialize_shader(&device, &queue, &surface, &adapter);
+        rasterizer_shader,
+        rasterizer_color_uniform_buffer,
+        rasterizer_color_bind_group,
+        rasterizer_pipeline_layout,
+        rasterizer_render_pipeline,
+    ) = initialize_rasterizer_shader(color_uniform, &device, &queue, &surface, &adapter);
+
+    let (
+        raytracer_shader,
+        raytracer_color_uniform_buffer,
+        raytracer_color_bind_group,
+        raytracer_pipeline_layout,
+        raytracer_render_pipeline,
+    ) = initialize_raytracer_shader(color_uniform, &device, &queue, &surface, &adapter);
 
     let (mut egui_renderer, mut egui_state) =
         initialize_egui(&window, &device, &surface_config, pixels_per_point);
@@ -37,7 +50,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             // Have the closure take ownership of the resources.
             // `event_loop.run` never returns, therefore we must do this to ensure
             // the resources are properly cleaned up.
-            let _ = (&instance, &adapter, &shader, &pipeline_layout);
+            let _ = (
+                &instance,
+                &adapter,
+                &rasterizer_shader,
+                &rasterizer_pipeline_layout,
+                &raytracer_shader,
+                &raytracer_pipeline_layout,
+            );
 
             if let Event::WindowEvent {
                 window_id: _,
@@ -95,10 +115,18 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                         {
                                             update_color_buffer(
                                                 &queue,
-                                                &color_uniform_buffer,
+                                                &rasterizer_color_uniform_buffer,
                                                 &RGBA::new(color_uniform),
                                             );
+
+                                            update_color_buffer(
+                                                &queue,
+                                                &raytracer_color_uniform_buffer,
+                                                &RGBA::new(color_uniform),
+                                            )
                                         }
+
+                                        ui.checkbox(&mut is_raytracer_enabled, "Raytracing");
                                     });
                             },
                         );
@@ -122,8 +150,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             &egui_screen_descriptor,
                         );
 
-                        {
-                            let mut rpass =
+                        if is_raytracer_enabled {
+                            let mut raytracer_rpass =
                                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                                     label: Some("Render Pass"),
                                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -138,14 +166,41 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                     timestamp_writes: None,
                                     occlusion_query_set: None,
                                 });
-                            rpass.set_pipeline(&render_pipeline);
+                            raytracer_rpass.set_pipeline(&raytracer_render_pipeline);
 
-                            rpass.set_bind_group(0, &color_bind_group, &[]);
+                            raytracer_rpass.set_bind_group(0, &raytracer_color_bind_group, &[]);
 
-                            rpass.draw(0..3, 0..1);
+                            raytracer_rpass.draw(0..3, 0..1);
 
                             egui_renderer.render(
-                                &mut rpass,
+                                &mut raytracer_rpass,
+                                &egui_primitives,
+                                &egui_screen_descriptor,
+                            );
+                        } else {
+                            let mut rasterizer_rpass =
+                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                    label: Some("Render Pass"),
+                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                        view: &view,
+                                        resolve_target: None,
+                                        ops: wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                            store: wgpu::StoreOp::Store,
+                                        },
+                                    })],
+                                    depth_stencil_attachment: None,
+                                    timestamp_writes: None,
+                                    occlusion_query_set: None,
+                                });
+                            rasterizer_rpass.set_pipeline(&rasterizer_render_pipeline);
+
+                            rasterizer_rpass.set_bind_group(0, &rasterizer_color_bind_group, &[]);
+
+                            rasterizer_rpass.draw(0..3, 0..1);
+
+                            egui_renderer.render(
+                                &mut rasterizer_rpass,
                                 &egui_primitives,
                                 &egui_screen_descriptor,
                             );
