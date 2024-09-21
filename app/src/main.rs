@@ -2,8 +2,8 @@ use app::{
     egui::initialize_egui,
     utils::load_icon,
     wgpu::{
-        initialize_rasterizer_shader, initialize_raytracer_shader, initialize_wgpu,
-        update_color_buffer, RGBA,
+        initialize_rasterizer_shader, initialize_raytracer_shader, initialize_wgpu, update_buffer,
+        RGBA,
     },
 };
 use winit::{
@@ -36,6 +36,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         raytracer_shader,
         raytracer_color_uniform_buffer,
         raytracer_color_bind_group,
+        raytracer_resolution_uniform_buffer,
+        raytracer_resolution_bind_group,
         raytracer_pipeline_layout,
         raytracer_render_pipeline,
     ) = initialize_raytracer_shader(color_uniform, &device, &queue, &surface, &adapter);
@@ -80,6 +82,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         surface_config.width = new_size.width.max(1);
                         surface_config.height = new_size.height.max(1);
                         surface.configure(&device, &surface_config);
+
+                        // update_buffer(
+                        //     &queue,
+                        //     &raytracer_resolution_uniform_buffer,
+                        //     &Resolution::new(surface_config.width, surface_config.height),
+                        // );
+
                         // On macos the window needs to be redrawn manually after resizing
                         window.request_redraw();
                     }
@@ -113,13 +122,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                                             .color_edit_button_rgba_unmultiplied(&mut color_uniform)
                                             .changed()
                                         {
-                                            update_color_buffer(
+                                            update_buffer(
                                                 &queue,
                                                 &rasterizer_color_uniform_buffer,
                                                 &RGBA::new(color_uniform),
                                             );
 
-                                            update_color_buffer(
+                                            update_buffer(
                                                 &queue,
                                                 &raytracer_color_uniform_buffer,
                                                 &RGBA::new(color_uniform),
@@ -169,8 +178,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             raytracer_rpass.set_pipeline(&raytracer_render_pipeline);
 
                             raytracer_rpass.set_bind_group(0, &raytracer_color_bind_group, &[]);
+                            raytracer_rpass.set_bind_group(
+                                1,
+                                &raytracer_resolution_bind_group,
+                                &[],
+                            );
 
-                            raytracer_rpass.draw(0..3, 0..1);
+                            raytracer_rpass.draw(0..6, 0..1);
 
                             egui_renderer.render(
                                 &mut raytracer_rpass,

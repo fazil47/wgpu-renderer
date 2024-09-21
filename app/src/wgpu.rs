@@ -1,4 +1,4 @@
-use encase::{ShaderType, UniformBuffer};
+use encase::{internal::WriteInto, ShaderType, UniformBuffer};
 use winit::window::Window;
 
 #[derive(ShaderType)]
@@ -20,9 +20,30 @@ impl RGBA {
     }
 }
 
-pub fn update_color_buffer(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, color: &RGBA) {
+#[derive(ShaderType)]
+pub struct Resolution {
+    width: u32,
+    height: u32,
+    _padding: [u32; 2],
+}
+
+impl Resolution {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            _padding: [0, 0],
+        }
+    }
+}
+
+pub fn update_buffer<T: ShaderType + WriteInto>(
+    queue: &wgpu::Queue,
+    wgpu_buffer: &wgpu::Buffer,
+    value: &T,
+) {
     let mut encase_buffer = UniformBuffer::new(Vec::new());
-    encase_buffer.write(color).unwrap();
+    encase_buffer.write(value).unwrap();
     queue.write_buffer(&wgpu_buffer, 0, encase_buffer.as_ref());
 }
 
@@ -96,7 +117,7 @@ pub fn initialize_rasterizer_shader(
         mapped_at_creation: false,
     });
     // Update the color buffer with the initial color
-    update_color_buffer(queue, &color_uniform_buffer, &RGBA::new(color_uniform));
+    update_buffer(queue, &color_uniform_buffer, &RGBA::new(color_uniform));
 
     let color_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -180,6 +201,8 @@ pub fn initialize_raytracer_shader(
     wgpu::ShaderModule,
     wgpu::Buffer,
     wgpu::BindGroup,
+    wgpu::Buffer,
+    wgpu::BindGroup,
     wgpu::PipelineLayout,
     wgpu::RenderPipeline,
 ) {
@@ -194,13 +217,35 @@ pub fn initialize_raytracer_shader(
         mapped_at_creation: false,
     });
     // Update the color buffer with the initial color
-    update_color_buffer(queue, &color_uniform_buffer, &RGBA::new(color_uniform));
+    update_buffer(queue, &color_uniform_buffer, &RGBA::new(color_uniform));
+
+    let resolution_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Resolution Uniform Buffer"),
+        size: std::mem::size_of::<Resolution>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
 
     let color_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Color Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+    let resolution_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Resolution Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
@@ -224,9 +269,22 @@ pub fn initialize_raytracer_shader(
         }],
     });
 
+    let resolution_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Resolution Bind Group"),
+        layout: &resolution_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &resolution_uniform_buffer,
+                offset: 0,
+                size: None,
+            }),
+        }],
+    });
+
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Pipeline Layout"),
-        bind_group_layouts: &[&color_bind_group_layout],
+        bind_group_layouts: &[&color_bind_group_layout, &resolution_bind_group_layout],
         push_constant_ranges: &[],
     });
 
@@ -263,6 +321,8 @@ pub fn initialize_raytracer_shader(
         raytracer_shader,
         color_uniform_buffer,
         color_bind_group,
+        resolution_uniform_buffer,
+        resolution_bind_group,
         pipeline_layout,
         raytracer_render_pipeline,
     )

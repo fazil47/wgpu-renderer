@@ -5,6 +5,7 @@ edition = "2021"
 default-run = "app"
 
 [dependencies]
+bytemuck = { version = "1.18.0", features = ["derive"] }
 egui = "0.28"
 egui-wgpu = "0.28"
 encase = "0.9.0"
