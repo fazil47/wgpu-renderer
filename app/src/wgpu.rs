@@ -275,7 +275,7 @@ impl<'window> Renderer<'window> {
 
             raytracer_rpass.set_bind_group(0, &self.raytracer_bind_group, &[]);
 
-            raytracer_rpass.draw(0..6, 0..1);
+            raytracer_rpass.draw(0..3, 0..1);
 
             self.egui_renderer.render(
                 &mut raytracer_rpass,
