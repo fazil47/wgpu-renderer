@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use bytemuck::NoUninit;
+use wgpu::util::DeviceExt;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -45,6 +46,53 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
             }
         })
         .unwrap();
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+struct Triangle<'tri> {
+    vertices: &'tri [Vertex],
+    indices: &'tri [u16],
+}
+
+impl<'tri> Triangle<'tri> {
+    fn new() -> Self {
+        Self {
+            vertices: &[
+                Vertex {
+                    position: [0.0, 1.0, 0.0],
+                    color: [1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [-1.0, -1.0, 0.0],
+                    color: [0.0, 1.0, 0.0],
+                },
+                Vertex {
+                    position: [1.0, -1.0, 0.0],
+                    color: [0.0, 0.0, 1.0],
+                },
+            ],
+            indices: &[0, 1, 2],
+        }
+    }
 }
 
 #[repr(C)]
@@ -101,6 +149,9 @@ struct Renderer<'window> {
     egui_renderer: egui_wgpu::Renderer,
     egui_state: egui_winit::State,
     is_raytracer_enabled: bool,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
     color_uniform: [f32; 4],
     _rasterizer_shader: wgpu::ShaderModule,
     rasterizer_color_uniform_buffer: wgpu::Buffer,
@@ -133,6 +184,20 @@ impl<'window> Renderer<'window> {
             window.scale_factor() as f32,
         );
 
+        // Initialize vertex and index buffers
+        let triangle = Triangle::new();
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(triangle.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(triangle.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let num_indices = triangle.indices.len() as u32;
+
         let color_uniform = [1.0, 0.0, 0.0, 1.0];
 
         let (
@@ -163,6 +228,9 @@ impl<'window> Renderer<'window> {
             egui_renderer,
             egui_state,
             is_raytracer_enabled: false,
+            vertex_buffer,
+            index_buffer,
+            num_indices,
             color_uniform,
             _rasterizer_shader,
             rasterizer_color_uniform_buffer,
@@ -271,11 +339,13 @@ impl<'window> Renderer<'window> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+
             raytracer_rpass.set_pipeline(&self.raytracer_render_pipeline);
-
+            raytracer_rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            raytracer_rpass
+                .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             raytracer_rpass.set_bind_group(0, &self.raytracer_bind_group, &[]);
-
-            raytracer_rpass.draw(0..3, 0..1);
+            raytracer_rpass.draw_indexed(0..self.num_indices, 0, 0..1);
 
             self.egui_renderer.render(
                 &mut raytracer_rpass,
@@ -297,11 +367,13 @@ impl<'window> Renderer<'window> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+
             rasterizer_rpass.set_pipeline(&self.rasterizer_render_pipeline);
-
+            rasterizer_rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            rasterizer_rpass
+                .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             rasterizer_rpass.set_bind_group(0, &self.rasterizer_bind_group, &[]);
-
-            rasterizer_rpass.draw(0..3, 0..1);
+            rasterizer_rpass.draw_indexed(0..self.num_indices, 0, 0..1);
 
             self.egui_renderer.render(
                 &mut rasterizer_rpass,
@@ -441,7 +513,7 @@ pub fn initialize_rasterizer_shader(
             vertex: wgpu::VertexState {
                 module: &rasterizer_shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -562,7 +634,7 @@ pub fn initialize_raytracer_shader(
             vertex: wgpu::VertexState {
                 module: &raytracer_shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
