@@ -8,7 +8,7 @@ use winit::{
     window::Window,
 };
 
-use crate::egui::initialize_egui;
+use crate::{egui::initialize_egui, shapes::Pentagon};
 
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
     let window = Rc::new(window);
@@ -50,9 +50,9 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
+pub struct Vertex {
+    pub position: [f32; 3],
+    pub color: [f32; 3],
 }
 
 impl Vertex {
@@ -64,33 +64,6 @@ impl Vertex {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-struct Triangle<'tri> {
-    vertices: &'tri [Vertex],
-    indices: &'tri [u16],
-}
-
-impl<'tri> Triangle<'tri> {
-    fn new() -> Self {
-        Self {
-            vertices: &[
-                Vertex {
-                    position: [0.0, 1.0, 0.0],
-                    color: [1.0, 0.0, 0.0],
-                },
-                Vertex {
-                    position: [-1.0, -1.0, 0.0],
-                    color: [0.0, 1.0, 0.0],
-                },
-                Vertex {
-                    position: [1.0, -1.0, 0.0],
-                    color: [0.0, 0.0, 1.0],
-                },
-            ],
-            indices: &[0, 1, 2],
         }
     }
 }
@@ -185,18 +158,18 @@ impl<'window> Renderer<'window> {
         );
 
         // Initialize vertex and index buffers
-        let triangle = Triangle::new();
+        let shape = Pentagon::new();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(triangle.vertices),
+            contents: bytemuck::cast_slice(shape.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(triangle.indices),
+            contents: bytemuck::cast_slice(shape.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = triangle.indices.len() as u32;
+        let num_indices = shape.indices.len() as u32;
 
         let color_uniform = [1.0, 0.0, 0.0, 1.0];
 
