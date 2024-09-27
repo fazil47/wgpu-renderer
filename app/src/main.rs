@@ -1,8 +1,9 @@
+use winit::event_loop::EventLoop;
+
 #[cfg(not(target_arch = "wasm32"))]
 use app::utils::load_icon;
 
-use app::wgpu::run;
-use winit::event_loop::EventLoop;
+use app::renderer::run;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
