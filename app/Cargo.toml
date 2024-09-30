@@ -8,6 +8,7 @@ default-run = "app"
 bytemuck = { version = "1.18.0", features = ["derive"] }
 egui = "0.28"
 egui-wgpu = "0.28"
+glam = "0.29.0"
 wgpu = "0.20"
 winit = "0.29.15"
 

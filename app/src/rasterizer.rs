@@ -1,18 +1,12 @@
 use crate::wgpu::{update_buffer, Vertex, RGBA};
 
-pub fn initialize_rasterizer_shader(
+pub fn initialize_rasterizer(
     color_uniform: [f32; 4],
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     surface: &wgpu::Surface,
     adapter: &wgpu::Adapter,
-) -> (
-    wgpu::ShaderModule,
-    wgpu::Buffer,
-    wgpu::BindGroup,
-    wgpu::PipelineLayout,
-    wgpu::RenderPipeline,
-) {
+) -> (wgpu::Buffer, wgpu::BindGroup, wgpu::RenderPipeline) {
     // Load the shaders from disk
     let rasterizer_shader =
         device.create_shader_module(wgpu::include_wgsl!("shaders/rasterizer/main.wgsl"));
@@ -90,10 +84,8 @@ pub fn initialize_rasterizer_shader(
         });
 
     (
-        rasterizer_shader,
         color_uniform_buffer,
         color_bind_group,
-        pipeline_layout,
         rasterizer_render_pipeline,
     )
 }

@@ -1,3 +1,4 @@
+pub mod camera;
 pub mod egui;
 pub mod rasterizer;
 pub mod raytracer;

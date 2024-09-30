@@ -8,11 +8,14 @@ use winit::{
 };
 
 use crate::{
+    camera::Camera,
     egui::initialize_egui,
-    rasterizer::initialize_rasterizer_shader,
-    raytracer::initialize_raytracer_shader,
+    rasterizer::initialize_rasterizer,
+    raytracer::{
+        create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
+    },
     shapes::Pentagon,
-    wgpu::{initialize_wgpu, update_buffer, Resolution, RGBA},
+    wgpu::{initialize_wgpu, update_buffer, RGBA},
 };
 
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
@@ -54,6 +57,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 }
 
 struct Renderer<'window> {
+    camera: Camera,
     _instance: wgpu::Instance,
     surface: wgpu::Surface<'window>,
     _adapter: wgpu::Adapter,
@@ -64,6 +68,7 @@ struct Renderer<'window> {
     // it gets dropped after it as the surface contains
     // unsafe references to the window's resources.
     window: Rc<&'window Window>,
+    window_size: winit::dpi::PhysicalSize<u32>,
     egui_renderer: egui_wgpu::Renderer,
     egui_state: egui_winit::State,
     is_raytracer_enabled: bool,
@@ -71,17 +76,19 @@ struct Renderer<'window> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     color_uniform: [f32; 4],
-    _rasterizer_shader: wgpu::ShaderModule,
     rasterizer_color_uniform_buffer: wgpu::Buffer,
     rasterizer_bind_group: wgpu::BindGroup,
-    _rasterizer_render_pipeline_layout: wgpu::PipelineLayout,
     rasterizer_render_pipeline: wgpu::RenderPipeline,
-    _raytracer_shader: wgpu::ShaderModule,
-    raytracer_color_uniform_buffer: wgpu::Buffer,
-    raytracer_resolution_uniform_buffer: wgpu::Buffer,
-    raytracer_bind_group: wgpu::BindGroup,
-    _raytracer_render_pipeline_layout: wgpu::PipelineLayout,
+    raytracer_result_texture: wgpu::Texture,
+    raytracer_result_texture_view: wgpu::TextureView,
+    raytracer_render_bind_group_layout: wgpu::BindGroupLayout,
+    raytracer_render_bind_group: wgpu::BindGroup,
     raytracer_render_pipeline: wgpu::RenderPipeline,
+    raytracer_camera_to_world_uniform_buffer: wgpu::Buffer,
+    raytracer_camera_inverse_projection_uniform_buffer: wgpu::Buffer,
+    raytracer_compute_bind_group_layout: wgpu::BindGroupLayout,
+    raytracer_compute_bind_group: wgpu::BindGroup,
+    raytracer_compute_pipeline: wgpu::ComputePipeline,
 }
 
 impl<'window> Renderer<'window> {
@@ -92,7 +99,21 @@ impl<'window> Renderer<'window> {
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
 
-        let (_instance, surface, _adapter, device, queue, surface_config) =
+        let camera = Camera::new(
+            // position the camera 1 unit up and 2 units back
+            // +z is out of the screen
+            (0.0, 1.0, 2.0).into(),
+            // have it look at the origin
+            (0.0, 0.0, 0.0).into(),
+            // which way is "up"
+            glam::Vec3::Y,
+            window_size.width as f32 / window_size.height as f32,
+            45.0,
+            0.1,
+            100.0,
+        );
+
+        let (_instance, surface, adapter, device, queue, surface_config) =
             initialize_wgpu(&window, &window_size).await;
 
         let (egui_renderer, egui_state) = initialize_egui(
@@ -102,6 +123,7 @@ impl<'window> Renderer<'window> {
             window.scale_factor() as f32,
         );
 
+        // TODO: Use storage buffer instead of vertex buffer
         // Initialize vertex and index buffers
         let shape = Pentagon::new();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -118,31 +140,41 @@ impl<'window> Renderer<'window> {
 
         let color_uniform = [1.0, 0.0, 0.0, 1.0];
 
-        let (
-            _rasterizer_shader,
-            rasterizer_color_uniform_buffer,
-            rasterizer_bind_group,
-            _rasterizer_render_pipeline_layout,
-            rasterizer_render_pipeline,
-        ) = initialize_rasterizer_shader(color_uniform, &device, &queue, &surface, &_adapter);
+        let (rasterizer_color_uniform_buffer, rasterizer_bind_group, rasterizer_render_pipeline) =
+            initialize_rasterizer(color_uniform, &device, &queue, &surface, &adapter);
 
+        let (raytracer_result_texture, raytracer_result_texture_view) =
+            create_raytracer_result_texture(&device, window_size.width, window_size.height);
+
+        // TODO: Use same camera matrix buffers for the rasterizer and raytracer?
         let (
-            _raytracer_shader,
-            raytracer_color_uniform_buffer,
-            raytracer_resolution_uniform_buffer,
-            raytracer_bind_group,
-            _raytracer_render_pipeline_layout,
+            raytracer_render_bind_group_layout,
+            raytracer_render_bind_group,
             raytracer_render_pipeline,
-        ) = initialize_raytracer_shader(color_uniform, &device, &queue, &surface, &_adapter);
+            raytracer_camera_to_world_uniform_buffer,
+            raytracer_camera_inverse_projection_uniform_buffer,
+            raytracer_compute_bind_group_layout,
+            raytracer_compute_bind_group,
+            raytracer_compute_pipeline,
+        ) = initialize_raytracer(
+            &camera,
+            &raytracer_result_texture_view,
+            &device,
+            &queue,
+            &surface,
+            &adapter,
+        );
 
         Self {
+            camera,
             _instance,
             surface,
-            _adapter,
+            _adapter: adapter,
             device,
             queue,
             surface_config,
             window,
+            window_size,
             egui_renderer,
             egui_state,
             is_raytracer_enabled: false,
@@ -150,34 +182,58 @@ impl<'window> Renderer<'window> {
             index_buffer,
             num_indices,
             color_uniform,
-            _rasterizer_shader,
             rasterizer_color_uniform_buffer,
             rasterizer_bind_group,
-            _rasterizer_render_pipeline_layout,
             rasterizer_render_pipeline,
-            _raytracer_shader,
-            raytracer_color_uniform_buffer,
-            raytracer_bind_group,
-            raytracer_resolution_uniform_buffer,
-            _raytracer_render_pipeline_layout,
+            raytracer_result_texture,
+            raytracer_result_texture_view,
+            raytracer_render_bind_group_layout,
+            raytracer_render_bind_group,
             raytracer_render_pipeline,
+            raytracer_camera_to_world_uniform_buffer,
+            raytracer_camera_inverse_projection_uniform_buffer,
+            raytracer_compute_bind_group_layout,
+            raytracer_compute_bind_group,
+            raytracer_compute_pipeline,
         }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.window_size = new_size;
+
+        // Update camera
+        self.camera
+            .set_aspect(new_size.width as f32 / new_size.height as f32);
+
+        // Recreate the raytracer result texture with the new size
+        let (raytracer_result_texture, raytracer_result_texture_view) =
+            create_raytracer_result_texture(&self.device, new_size.width, new_size.height);
+        self.raytracer_result_texture = raytracer_result_texture;
+        self.raytracer_result_texture_view = raytracer_result_texture_view;
+
         // Reconfigure the surface with the new size
         self.surface_config.width = new_size.width.max(1);
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
 
-        update_buffer(
-            &self.queue,
-            &self.raytracer_resolution_uniform_buffer,
-            Resolution::new(self.surface_config.width, self.surface_config.height),
-        );
+        // Recreate the raytracer bind groups with the new texture view
+        let (raytracer_render_bind_group, raytracer_compute_bind_group) =
+            create_raytracer_bind_groups(
+                &self.raytracer_result_texture_view,
+                &self.device,
+                &self.raytracer_render_bind_group_layout,
+                &self.raytracer_compute_bind_group_layout,
+                &self.raytracer_camera_to_world_uniform_buffer,
+                &self.raytracer_camera_inverse_projection_uniform_buffer,
+            );
+        self.raytracer_render_bind_group = raytracer_render_bind_group;
+        self.raytracer_compute_bind_group = raytracer_compute_bind_group;
 
-        // On macos the window needs to be redrawn manually after resizing
-        self.window.request_redraw();
+        // On macOS the window needs to be redrawn manually after resizing
+        #[cfg(target_os = "macos")]
+        {
+            self.window.request_redraw();
+        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -186,11 +242,16 @@ impl<'window> Renderer<'window> {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Command Encoder"),
-            });
+        let mut render_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Command Encoder"),
+                });
+        let mut compute_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Compute Command Encoder"),
+                });
 
         let egui_raw_input = self.egui_state.take_egui_input(&self.window);
         let egui_full_output =
@@ -209,12 +270,6 @@ impl<'window> Renderer<'window> {
                                     &self.rasterizer_color_uniform_buffer,
                                     RGBA::new(self.color_uniform),
                                 );
-
-                                update_buffer(
-                                    &self.queue,
-                                    &self.raytracer_color_uniform_buffer,
-                                    RGBA::new(self.color_uniform),
-                                )
                             }
 
                             ui.checkbox(&mut self.is_raytracer_enabled, "Raytracing");
@@ -237,33 +292,44 @@ impl<'window> Renderer<'window> {
         self.egui_renderer.update_buffers(
             &self.device,
             &self.queue,
-            &mut encoder,
+            &mut render_encoder,
             &egui_primitives,
             &egui_screen_descriptor,
         );
 
         if self.is_raytracer_enabled {
-            let mut raytracer_rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut raytracer_cpass =
+                compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Raytracer Compute Pass"),
+                    timestamp_writes: None,
+                });
+            raytracer_cpass.set_bind_group(0, &self.raytracer_compute_bind_group, &[]);
+            raytracer_cpass.set_pipeline(&self.raytracer_compute_pipeline);
+            raytracer_cpass.dispatch_workgroups(
+                self.window_size.width / 8,
+                self.window_size.height / 8,
+                1,
+            );
 
+            let mut raytracer_rpass =
+                render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Raytracer Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+            raytracer_rpass.set_bind_group(0, &self.raytracer_render_bind_group, &[]);
             raytracer_rpass.set_pipeline(&self.raytracer_render_pipeline);
-            raytracer_rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            raytracer_rpass
-                .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            raytracer_rpass.set_bind_group(0, &self.raytracer_bind_group, &[]);
-            raytracer_rpass.draw_indexed(0..self.num_indices, 0, 0..1);
+            raytracer_rpass.draw(0..3, 0..1);
 
             self.egui_renderer.render(
                 &mut raytracer_rpass,
@@ -271,26 +337,27 @@ impl<'window> Renderer<'window> {
                 &egui_screen_descriptor,
             );
         } else {
-            let mut rasterizer_rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut rasterizer_rpass =
+                render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Rasterizer Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
 
-            rasterizer_rpass.set_pipeline(&self.rasterizer_render_pipeline);
             rasterizer_rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rasterizer_rpass
                 .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             rasterizer_rpass.set_bind_group(0, &self.rasterizer_bind_group, &[]);
+            rasterizer_rpass.set_pipeline(&self.rasterizer_render_pipeline);
             rasterizer_rpass.draw_indexed(0..self.num_indices, 0, 0..1);
 
             self.egui_renderer.render(
@@ -300,7 +367,8 @@ impl<'window> Renderer<'window> {
             );
         }
 
-        self.queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(compute_encoder.finish()));
+        self.queue.submit(Some(render_encoder.finish()));
         frame.present();
 
         for id in egui_full_output.textures_delta.free {

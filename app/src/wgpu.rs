@@ -1,6 +1,8 @@
 use bytemuck::NoUninit;
 use winit::window::Window;
 
+pub type ColsArray = [f32; 16];
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -93,10 +95,9 @@ pub async fn initialize_wgpu<'window>(
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("Device"),
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // This can be removed when wgpu is upgraded to the next version.
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
+                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
             },
             None,
         )

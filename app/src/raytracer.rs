@@ -1,46 +1,103 @@
-use crate::wgpu::{update_buffer, Resolution, Vertex, RGBA};
+use crate::{
+    camera,
+    wgpu::{update_buffer, ColsArray},
+};
 
-pub fn initialize_raytracer_shader(
-    color_uniform: [f32; 4],
+pub fn create_raytracer_result_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    // Create storage texture for the raytracer to write to
+    let result_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::STORAGE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let result_texture_view = result_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    (result_texture, result_texture_view)
+}
+
+pub fn initialize_raytracer(
+    camera: &camera::Camera,
+    result_texture_view: &wgpu::TextureView,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     surface: &wgpu::Surface,
     adapter: &wgpu::Adapter,
 ) -> (
-    wgpu::ShaderModule,
-    wgpu::Buffer,
-    wgpu::Buffer,
+    wgpu::BindGroupLayout,
     wgpu::BindGroup,
-    wgpu::PipelineLayout,
     wgpu::RenderPipeline,
+    wgpu::Buffer,
+    wgpu::Buffer,
+    wgpu::BindGroupLayout,
+    wgpu::BindGroup,
+    wgpu::ComputePipeline,
 ) {
     // Load the shaders from disk
-    let raytracer_shader =
-        device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/main.wgsl"));
+    let raytracer_render_shader =
+        device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/render.wgsl"));
+    let raytracer_compute_shader =
+        device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/compute.wgsl"));
 
-    let color_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Color Uniform Buffer"),
-        size: std::mem::size_of::<RGBA>() as u64,
+    let camera_to_world_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Camera to World Uniform Buffer"),
+        size: std::mem::size_of::<ColsArray>() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    // Update the color buffer with the initial color
-    update_buffer(queue, &color_uniform_buffer, RGBA::new(color_uniform));
+    update_buffer(
+        &queue,
+        &camera_to_world_uniform_buffer,
+        camera.camera_to_world().to_cols_array(),
+    );
 
-    let resolution_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Resolution Uniform Buffer"),
-        size: std::mem::size_of::<Resolution>() as u64,
+    let camera_inverse_projection_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Camera Inverse Projection Uniform Buffer"),
+        size: std::mem::size_of::<ColsArray>() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
+    update_buffer(
+        &queue,
+        &camera_inverse_projection_uniform_buffer,
+        camera.camera_inverse_projection().to_cols_array(),
+    );
 
-    let color_bind_group_layout =
+    let raytracer_render_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Raytracer Bind Group Layout"),
+            label: Some("Raytracer Render Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::StorageTexture {
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    access: wgpu::StorageTextureAccess::ReadOnly,
+                },
+                count: None,
+            }],
+        });
+    let raytracer_compute_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Raytracer Compute Bind Group Layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -50,7 +107,7 @@ pub fn initialize_raytracer_shader(
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -58,28 +115,38 @@ pub fn initialize_raytracer_shader(
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                    },
+                    count: None,
+                },
             ],
         });
 
-    let raytracer_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Raytracer Bind Group"),
-        layout: &color_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: color_uniform_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: resolution_uniform_buffer.as_entire_binding(),
-            },
-        ],
-    });
+    let (raytracer_render_bind_group, raytracer_compute_bind_group) = create_raytracer_bind_groups(
+        result_texture_view,
+        device,
+        &raytracer_render_bind_group_layout,
+        &raytracer_compute_bind_group_layout,
+        &camera_to_world_uniform_buffer,
+        &camera_inverse_projection_uniform_buffer,
+    );
 
     let raytracer_render_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: &[&color_bind_group_layout],
+            label: Some("Raytracer Render Pipeline Layout"),
+            bind_group_layouts: &[&raytracer_render_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+    let raytracer_compute_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Raytracer Compute Pipeline Layout"),
+            bind_group_layouts: &[&raytracer_compute_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -91,13 +158,13 @@ pub fn initialize_raytracer_shader(
             label: Some("Raytracer Render Pipeline"),
             layout: Some(&raytracer_render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &raytracer_shader,
+                module: &raytracer_render_shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
+                buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &raytracer_shader,
+                module: &raytracer_render_shader,
                 entry_point: "fs_main",
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -111,13 +178,69 @@ pub fn initialize_raytracer_shader(
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
+    let raytracer_compute_pipeline =
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Raytracer Compute Pipeline"),
+            layout: Some(&raytracer_compute_pipeline_layout),
+            module: &raytracer_compute_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
 
     (
-        raytracer_shader,
-        color_uniform_buffer,
-        resolution_uniform_buffer,
-        raytracer_bind_group,
-        raytracer_render_pipeline_layout,
+        raytracer_render_bind_group_layout,
+        raytracer_render_bind_group,
         raytracer_render_pipeline,
+        camera_to_world_uniform_buffer,
+        camera_inverse_projection_uniform_buffer,
+        raytracer_compute_bind_group_layout,
+        raytracer_compute_bind_group,
+        raytracer_compute_pipeline,
     )
+}
+
+pub fn create_raytracer_bind_groups(
+    result_texture_view: &wgpu::TextureView,
+    device: &wgpu::Device,
+    raytracer_render_bind_group_layout: &wgpu::BindGroupLayout,
+    raytracer_compute_bind_group_layout: &wgpu::BindGroupLayout,
+    camera_to_world_uniform_buffer: &wgpu::Buffer,
+    camera_inverse_projection_uniform_buffer: &wgpu::Buffer,
+) -> (wgpu::BindGroup, wgpu::BindGroup) {
+    let raytracer_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Raytracer Render Bind Group"),
+        layout: &raytracer_render_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&result_texture_view),
+        }],
+    });
+    let raytracer_compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Raytracer Compute Bind Group"),
+        layout: &raytracer_compute_bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &camera_to_world_uniform_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &camera_inverse_projection_uniform_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&result_texture_view),
+            },
+        ],
+    });
+
+    (raytracer_render_bind_group, raytracer_compute_bind_group)
 }
