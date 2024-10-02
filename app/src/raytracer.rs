@@ -1,6 +1,9 @@
 use wgpu::util::DeviceExt;
 
-use crate::camera;
+use crate::{
+    camera,
+    wgpu::{VERTEX_COLOR_OFFSET, VERTEX_STRIDE},
+};
 
 pub fn create_raytracer_result_texture(
     device: &wgpu::Device,
@@ -43,6 +46,8 @@ pub fn initialize_raytracer(
     wgpu::RenderPipeline,
     wgpu::Buffer,
     wgpu::Buffer,
+    wgpu::Buffer,
+    wgpu::Buffer,
     wgpu::BindGroupLayout,
     wgpu::BindGroup,
     wgpu::ComputePipeline,
@@ -52,6 +57,20 @@ pub fn initialize_raytracer(
         device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/render.wgsl"));
     let raytracer_compute_shader =
         device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/compute.wgsl"));
+
+    let vertex_stride_uniform_buffer =
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Stride Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[VERTEX_STRIDE]),
+        });
+
+    let vertex_color_offset_uniform_buffer =
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Color Offset Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[VERTEX_COLOR_OFFSET]),
+        });
 
     let camera_to_world_uniform_buffer =
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -130,6 +149,26 @@ pub fn initialize_raytracer(
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         view_dimension: wgpu::TextureViewDimension::D2,
                         format: wgpu::TextureFormat::Rgba8Unorm,
@@ -147,6 +186,8 @@ pub fn initialize_raytracer(
         &raytracer_compute_bind_group_layout,
         &vertex_buffer,
         &index_buffer,
+        &vertex_stride_uniform_buffer,
+        &vertex_color_offset_uniform_buffer,
         &camera_to_world_uniform_buffer,
         &camera_inverse_projection_uniform_buffer,
     );
@@ -205,6 +246,8 @@ pub fn initialize_raytracer(
         raytracer_render_bind_group_layout,
         raytracer_render_bind_group,
         raytracer_render_pipeline,
+        vertex_stride_uniform_buffer,
+        vertex_color_offset_uniform_buffer,
         camera_to_world_uniform_buffer,
         camera_inverse_projection_uniform_buffer,
         raytracer_compute_bind_group_layout,
@@ -220,6 +263,8 @@ pub fn create_raytracer_bind_groups(
     raytracer_compute_bind_group_layout: &wgpu::BindGroupLayout,
     vertex_buffer: &wgpu::Buffer,
     index_buffer: &wgpu::Buffer,
+    vertex_stride_uniform_buffer: &wgpu::Buffer,
+    vertex_color_offset_uniform_buffer: &wgpu::Buffer,
     camera_to_world_uniform_buffer: &wgpu::Buffer,
     camera_inverse_projection_uniform_buffer: &wgpu::Buffer,
 ) -> (wgpu::BindGroup, wgpu::BindGroup) {
@@ -245,14 +290,22 @@ pub fn create_raytracer_bind_groups(
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: camera_to_world_uniform_buffer.as_entire_binding(),
+                resource: vertex_stride_uniform_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: camera_inverse_projection_uniform_buffer.as_entire_binding(),
+                resource: vertex_color_offset_uniform_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 4,
+                resource: camera_to_world_uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: camera_inverse_projection_uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
                 resource: wgpu::BindingResource::TextureView(&result_texture_view),
             },
         ],

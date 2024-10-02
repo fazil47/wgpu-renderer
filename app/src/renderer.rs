@@ -85,6 +85,8 @@ struct Renderer<'window> {
     raytracer_render_bind_group_layout: wgpu::BindGroupLayout,
     raytracer_render_bind_group: wgpu::BindGroup,
     raytracer_render_pipeline: wgpu::RenderPipeline,
+    raytracer_vertex_stride_uniform_buffer: wgpu::Buffer,
+    raytracer_vertex_color_offset_uniform_buffer: wgpu::Buffer,
     raytracer_camera_to_world_uniform_buffer: wgpu::Buffer,
     raytracer_camera_inverse_projection_uniform_buffer: wgpu::Buffer,
     raytracer_compute_bind_group_layout: wgpu::BindGroupLayout,
@@ -158,6 +160,8 @@ impl<'window> Renderer<'window> {
             raytracer_render_bind_group_layout,
             raytracer_render_bind_group,
             raytracer_render_pipeline,
+            raytracer_vertex_stride_uniform_buffer,
+            raytracer_vertex_color_offset_uniform_buffer,
             raytracer_camera_to_world_uniform_buffer,
             raytracer_camera_inverse_projection_uniform_buffer,
             raytracer_compute_bind_group_layout,
@@ -199,6 +203,8 @@ impl<'window> Renderer<'window> {
             raytracer_render_bind_group_layout,
             raytracer_render_bind_group,
             raytracer_render_pipeline,
+            raytracer_vertex_stride_uniform_buffer,
+            raytracer_vertex_color_offset_uniform_buffer,
             raytracer_camera_to_world_uniform_buffer,
             raytracer_camera_inverse_projection_uniform_buffer,
             raytracer_compute_bind_group_layout,
@@ -249,6 +255,8 @@ impl<'window> Renderer<'window> {
                 &self.raytracer_compute_bind_group_layout,
                 &self.vertex_buffer,
                 &self.index_buffer,
+                &self.raytracer_vertex_stride_uniform_buffer,
+                &self.raytracer_vertex_color_offset_uniform_buffer,
                 &self.raytracer_camera_to_world_uniform_buffer,
                 &self.raytracer_camera_inverse_projection_uniform_buffer,
             );
@@ -324,6 +332,7 @@ impl<'window> Renderer<'window> {
         );
 
         if self.is_raytracer_enabled {
+            // TODO: Does the compute shader need to be dispatched every frame?
             let mut raytracer_cpass =
                 compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("Raytracer Compute Pass"),

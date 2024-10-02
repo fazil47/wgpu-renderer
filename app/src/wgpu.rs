@@ -1,27 +1,33 @@
+use std::mem::{offset_of, size_of};
+
 use bytemuck::NoUninit;
 use winit::window::Window;
 
-pub type ColsArray = [f32; 16];
+// Vertex field offsets are calculated based on the following assumptions:
+// All the fields are of the same type and size ([f32; size]) and are aligned to 4 bytes.
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    pub position: [f32; 3],
-    pub color: [f32; 3],
+    pub position: [f32; 4],
+    pub color: [f32; 4],
 }
 
 impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBS,
         }
     }
 }
+
+pub const VERTEX_STRIDE: u32 = (size_of::<Vertex>() / size_of::<f32>()) as u32;
+pub const VERTEX_COLOR_OFFSET: u32 = (offset_of!(Vertex, color) / size_of::<f32>()) as u32;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
