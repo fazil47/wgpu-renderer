@@ -381,7 +381,7 @@ impl<'window> Renderer<'window> {
 
             rasterizer_rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rasterizer_rpass
-                .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             rasterizer_rpass.set_bind_group(0, &self.rasterizer_bind_group, &[]);
             rasterizer_rpass.set_pipeline(&self.rasterizer_render_pipeline);
             rasterizer_rpass.draw_indexed(0..self.num_indices, 0, 0..1);

@@ -2,7 +2,7 @@ use crate::wgpu::Vertex;
 
 pub struct Triangle<'tri> {
     pub vertices: &'tri [Vertex],
-    pub indices: &'tri [u16],
+    pub indices: &'tri [u32],
 }
 
 impl<'tri> Triangle<'tri> {
@@ -29,7 +29,7 @@ impl<'tri> Triangle<'tri> {
 
 pub struct Pentagon<'pent> {
     pub vertices: &'pent [Vertex],
-    pub indices: &'pent [u16],
+    pub indices: &'pent [u32],
 }
 
 impl<'pent> Pentagon<'pent> {

@@ -16,12 +16,18 @@ var<uniform> camera_inverse_projection: mat4x4f;
 @group(0) @binding(4)
 var result: texture_storage_2d<rgba8unorm, write>;
 
-fn get_triangle(index: u32) -> array<Vertex, 3> {
-    var triangle: array<Vertex, 3>;
+struct Triangle {
+    a: Vertex,
+    b: Vertex,
+    c: Vertex,
+}
 
-    for (var i = 0u; i < 3u; i = i + 1u) {
-        triangle[i] = vertices[indices[index * 3u + i]];
-    }
+fn get_triangle(index: u32) -> Triangle {
+    var triangle: Triangle;
+
+    triangle.a = vertices[indices[index * 3u + 0u]];
+    triangle.b = vertices[indices[index * 3u + 1u]];
+    triangle.c = vertices[indices[index * 3u + 2u]];
 
     return triangle;
 }
