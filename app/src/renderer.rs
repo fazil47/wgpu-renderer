@@ -14,8 +14,8 @@ use crate::{
     raytracer::{
         create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
     },
-    shapes::Pentagon,
-    wgpu::{initialize_wgpu, update_buffer, RGBA},
+    shapes::Triangle,
+    wgpu::{initialize_wgpu, update_buffer},
 };
 
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
@@ -76,6 +76,7 @@ struct Renderer<'window> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     color_uniform: [f32; 4],
+    rasterizer_camera_view_proj_uniform: wgpu::Buffer,
     rasterizer_color_uniform_buffer: wgpu::Buffer,
     rasterizer_bind_group: wgpu::BindGroup,
     rasterizer_render_pipeline: wgpu::RenderPipeline,
@@ -123,30 +124,36 @@ impl<'window> Renderer<'window> {
             window.scale_factor() as f32,
         );
 
-        // TODO: Use storage buffer instead of vertex buffer
         // Initialize vertex and index buffers
-        let shape = Pentagon::new();
+        let shape = Triangle::new();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
+            label: Some("Vertices Buffer"),
             contents: bytemuck::cast_slice(shape.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
+            label: Some("Indices Buffer"),
             contents: bytemuck::cast_slice(shape.indices),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: wgpu::BufferUsages::INDEX
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
         });
         let num_indices = shape.indices.len() as u32;
 
         let color_uniform = [1.0, 0.0, 0.0, 1.0];
 
-        let (rasterizer_color_uniform_buffer, rasterizer_bind_group, rasterizer_render_pipeline) =
-            initialize_rasterizer(color_uniform, &device, &queue, &surface, &adapter);
+        let (
+            rasterizer_camera_view_proj_uniform,
+            rasterizer_color_uniform_buffer,
+            rasterizer_bind_group,
+            rasterizer_render_pipeline,
+        ) = initialize_rasterizer(&camera, &color_uniform, &device, &surface, &adapter);
 
         let (raytracer_result_texture, raytracer_result_texture_view) =
             create_raytracer_result_texture(&device, window_size.width, window_size.height);
 
-        // TODO: Use same camera matrix buffers for the rasterizer and raytracer?
         let (
             raytracer_render_bind_group_layout,
             raytracer_render_bind_group,
@@ -157,10 +164,11 @@ impl<'window> Renderer<'window> {
             raytracer_compute_bind_group,
             raytracer_compute_pipeline,
         ) = initialize_raytracer(
+            &vertex_buffer,
+            &index_buffer,
             &camera,
             &raytracer_result_texture_view,
             &device,
-            &queue,
             &surface,
             &adapter,
         );
@@ -182,6 +190,7 @@ impl<'window> Renderer<'window> {
             index_buffer,
             num_indices,
             color_uniform,
+            rasterizer_camera_view_proj_uniform,
             rasterizer_color_uniform_buffer,
             rasterizer_bind_group,
             rasterizer_render_pipeline,
@@ -204,6 +213,21 @@ impl<'window> Renderer<'window> {
         // Update camera
         self.camera
             .set_aspect(new_size.width as f32 / new_size.height as f32);
+        update_buffer(
+            &self.queue,
+            &self.rasterizer_camera_view_proj_uniform,
+            &[self.camera.view_projection().to_cols_array_2d()],
+        );
+        update_buffer(
+            &self.queue,
+            &self.raytracer_camera_to_world_uniform_buffer,
+            &[self.camera.camera_to_world().to_cols_array_2d()],
+        );
+        update_buffer(
+            &self.queue,
+            &self.raytracer_camera_inverse_projection_uniform_buffer,
+            &[self.camera.camera_inverse_projection().to_cols_array_2d()],
+        );
 
         // Recreate the raytracer result texture with the new size
         let (raytracer_result_texture, raytracer_result_texture_view) =
@@ -223,6 +247,8 @@ impl<'window> Renderer<'window> {
                 &self.device,
                 &self.raytracer_render_bind_group_layout,
                 &self.raytracer_compute_bind_group_layout,
+                &self.vertex_buffer,
+                &self.index_buffer,
                 &self.raytracer_camera_to_world_uniform_buffer,
                 &self.raytracer_camera_inverse_projection_uniform_buffer,
             );
@@ -268,7 +294,7 @@ impl<'window> Renderer<'window> {
                                 update_buffer(
                                     &self.queue,
                                     &self.rasterizer_color_uniform_buffer,
-                                    RGBA::new(self.color_uniform),
+                                    &self.color_uniform,
                                 );
                             }
 

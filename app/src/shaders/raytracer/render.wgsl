@@ -13,9 +13,9 @@ var<private> full_screen_tri_positions: array<vec2f, 3> = array<vec2f, 3>(
 );
 
 @vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
     var out: VertexOutput;
-    out.position = vec4f(full_screen_tri_positions[vertex_index], 0.0, 1.0);
+    out.position = vec4f(full_screen_tri_positions[vi], 0.0, 1.0);
     out.uv = out.position.xy * 0.5 + 0.5;
     out.uv.y = 1.0 - out.uv.y;
 

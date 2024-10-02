@@ -24,7 +24,7 @@ impl Vertex {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RGBA {
     r: f32,
     g: f32,
@@ -43,10 +43,8 @@ impl RGBA {
     }
 }
 
-unsafe impl NoUninit for RGBA {}
-
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Resolution {
     width: f32,
     height: f32,
@@ -61,10 +59,8 @@ impl Resolution {
     }
 }
 
-unsafe impl NoUninit for Resolution {}
-
-pub fn update_buffer<T: NoUninit>(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, value: T) {
-    queue.write_buffer(&wgpu_buffer, 0, bytemuck::cast_slice(&[value]));
+pub fn update_buffer<T: NoUninit>(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, value: &[T]) {
+    queue.write_buffer(&wgpu_buffer, 0, bytemuck::cast_slice(value));
 }
 
 pub async fn initialize_wgpu<'window>(

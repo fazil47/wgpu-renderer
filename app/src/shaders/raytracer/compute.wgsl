@@ -1,11 +1,30 @@
+struct Vertex {
+    position: vec3f,
+    color: vec3f,
+}
+
 // TODO: Break up bind groups, see https://toji.dev/webgpu-best-practices/bind-groups.html
 
-@group(0) @binding(0)
-var<uniform> camera_to_world: mat4x4f;
+@group(0) @binding(0) 
+var<storage, read> vertices: array<Vertex>;
 @group(0) @binding(1)
-var<uniform> camera_inverse_projection: mat4x4f;
+var<storage, read> indices: array<u32>;
 @group(0) @binding(2)
+var<uniform> camera_to_world: mat4x4f;
+@group(0) @binding(3)
+var<uniform> camera_inverse_projection: mat4x4f;
+@group(0) @binding(4)
 var result: texture_storage_2d<rgba8unorm, write>;
+
+fn get_triangle(index: u32) -> array<Vertex, 3> {
+    var triangle: array<Vertex, 3>;
+
+    for (var i = 0u; i < 3u; i = i + 1u) {
+        triangle[i] = vertices[indices[index * 3u + i]];
+    }
+
+    return triangle;
+}
 
 struct Ray {
     origin: vec3f,

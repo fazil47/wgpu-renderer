@@ -1,7 +1,6 @@
-use crate::{
-    camera,
-    wgpu::{update_buffer, ColsArray},
-};
+use wgpu::util::DeviceExt;
+
+use crate::camera;
 
 pub fn create_raytracer_result_texture(
     device: &wgpu::Device,
@@ -31,10 +30,11 @@ pub fn create_raytracer_result_texture(
 }
 
 pub fn initialize_raytracer(
+    vertex_buffer: &wgpu::Buffer,
+    index_buffer: &wgpu::Buffer,
     camera: &camera::Camera,
     result_texture_view: &wgpu::TextureView,
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
     surface: &wgpu::Surface,
     adapter: &wgpu::Adapter,
 ) -> (
@@ -53,29 +53,21 @@ pub fn initialize_raytracer(
     let raytracer_compute_shader =
         device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/compute.wgsl"));
 
-    let camera_to_world_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Camera to World Uniform Buffer"),
-        size: std::mem::size_of::<ColsArray>() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    update_buffer(
-        &queue,
-        &camera_to_world_uniform_buffer,
-        camera.camera_to_world().to_cols_array(),
-    );
+    let camera_to_world_uniform_buffer =
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera to World Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[camera.camera_to_world().to_cols_array_2d()]),
+        });
 
-    let camera_inverse_projection_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Camera Inverse Projection Uniform Buffer"),
-        size: std::mem::size_of::<ColsArray>() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    update_buffer(
-        &queue,
-        &camera_inverse_projection_uniform_buffer,
-        camera.camera_inverse_projection().to_cols_array(),
-    );
+    let camera_inverse_projection_uniform_buffer =
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Inverse Projection Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[camera
+                .camera_inverse_projection()
+                .to_cols_array_2d()]),
+        });
 
     let raytracer_render_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -99,7 +91,7 @@ pub fn initialize_raytracer(
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -109,7 +101,7 @@ pub fn initialize_raytracer(
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -117,6 +109,26 @@ pub fn initialize_raytracer(
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -133,6 +145,8 @@ pub fn initialize_raytracer(
         device,
         &raytracer_render_bind_group_layout,
         &raytracer_compute_bind_group_layout,
+        &vertex_buffer,
+        &index_buffer,
         &camera_to_world_uniform_buffer,
         &camera_inverse_projection_uniform_buffer,
     );
@@ -204,6 +218,8 @@ pub fn create_raytracer_bind_groups(
     device: &wgpu::Device,
     raytracer_render_bind_group_layout: &wgpu::BindGroupLayout,
     raytracer_compute_bind_group_layout: &wgpu::BindGroupLayout,
+    vertex_buffer: &wgpu::Buffer,
+    index_buffer: &wgpu::Buffer,
     camera_to_world_uniform_buffer: &wgpu::Buffer,
     camera_inverse_projection_uniform_buffer: &wgpu::Buffer,
 ) -> (wgpu::BindGroup, wgpu::BindGroup) {
@@ -221,22 +237,22 @@ pub fn create_raytracer_bind_groups(
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &camera_to_world_uniform_buffer,
-                    offset: 0,
-                    size: None,
-                }),
+                resource: vertex_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &camera_inverse_projection_uniform_buffer,
-                    offset: 0,
-                    size: None,
-                }),
+                resource: index_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
+                resource: camera_to_world_uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: camera_inverse_projection_uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
                 resource: wgpu::BindingResource::TextureView(&result_texture_view),
             },
         ],

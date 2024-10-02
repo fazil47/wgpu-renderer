@@ -10,6 +10,7 @@ pub struct Camera {
     camera_to_world: glam::Mat4,
     camera_projection: glam::Mat4,
     camera_inverse_projection: glam::Mat4,
+    view_projection: glam::Mat4,
 }
 
 impl Camera {
@@ -22,10 +23,13 @@ impl Camera {
         znear: f32,
         zfar: f32,
     ) -> Self {
-        let world_to_camera = glam::Mat4::look_at_rh(eye, target, up);
-        let camera_to_world = world_to_camera.inverse();
-        let camera_projection = glam::Mat4::perspective_lh(fovy, aspect, znear, zfar);
-        let camera_inverse_projection = camera_projection.inverse();
+        let (
+            world_to_camera,
+            camera_to_world,
+            camera_projection,
+            camera_inverse_projection,
+            view_projection,
+        ) = Self::calculate_matrices(eye, target, up, aspect, fovy, znear, zfar);
 
         Self {
             eye,
@@ -39,6 +43,7 @@ impl Camera {
             camera_to_world,
             camera_projection,
             camera_inverse_projection,
+            view_projection,
         }
     }
 
@@ -121,11 +126,63 @@ impl Camera {
         self.camera_inverse_projection
     }
 
+    /// Returns the view projection matrix of the camera.
+    /// The view projection matrix is the product of the camera projection matrix and the world to camera matrix,
+    /// and it's used to transform the vertices of the objects from world space to clip space.
+    ///
+    /// # Returns
+    ///
+    /// * `glam::Mat4` - The view projection matrix of the camera.
+    /// ```
+    pub fn view_projection(&self) -> glam::Mat4 {
+        self.view_projection
+    }
+
     fn update_matrices(&mut self) {
-        self.world_to_camera = glam::Mat4::look_at_rh(self.eye, self.target, self.up);
-        self.camera_to_world = self.world_to_camera.inverse();
-        self.camera_projection =
-            glam::Mat4::perspective_lh(self.fovy, self.aspect, self.znear, self.zfar);
-        self.camera_inverse_projection = self.camera_projection.inverse();
+        let (
+            world_to_camera,
+            camera_to_world,
+            camera_projection,
+            camera_inverse_projection,
+            view_projection,
+        ) = Self::calculate_matrices(
+            self.eye,
+            self.target,
+            self.up,
+            self.aspect,
+            self.fovy,
+            self.znear,
+            self.zfar,
+        );
+
+        self.world_to_camera = world_to_camera;
+        self.camera_to_world = camera_to_world;
+        self.camera_projection = camera_projection;
+        self.camera_inverse_projection = camera_inverse_projection;
+        self.view_projection = view_projection;
+    }
+
+    fn calculate_matrices(
+        eye: glam::Vec3,
+        target: glam::Vec3,
+        up: glam::Vec3,
+        aspect: f32,
+        fovy: f32,
+        znear: f32,
+        zfar: f32,
+    ) -> (glam::Mat4, glam::Mat4, glam::Mat4, glam::Mat4, glam::Mat4) {
+        let world_to_camera = glam::Mat4::look_at_rh(eye, target, up);
+        let camera_to_world = world_to_camera.inverse();
+        let camera_projection = glam::Mat4::perspective_rh(fovy, aspect, znear, zfar);
+        let camera_inverse_projection = camera_projection.inverse();
+        let view_projection = camera_projection * world_to_camera;
+
+        (
+            world_to_camera,
+            camera_to_world,
+            camera_projection,
+            camera_inverse_projection,
+            view_projection,
+        )
     }
 }
