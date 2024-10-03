@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use wgpu::util::DeviceExt;
 use winit::{
@@ -32,6 +32,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
             {
                 let egui_event_response = renderer
                     .egui_state
+                    .borrow_mut()
                     .on_window_event(&renderer.window, &window_event);
 
                 if egui_event_response.repaint {
@@ -70,7 +71,7 @@ struct Renderer<'window> {
     window: Rc<&'window Window>,
     window_size: winit::dpi::PhysicalSize<u32>,
     egui_renderer: egui_wgpu::Renderer,
-    egui_state: egui_winit::State,
+    egui_state: Rc<RefCell<egui_winit::State>>,
     is_raytracer_enabled: bool,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -125,6 +126,7 @@ impl<'window> Renderer<'window> {
             &surface_config,
             window.scale_factor() as f32,
         );
+        let egui_state = Rc::new(RefCell::new(egui_state));
 
         // Initialize vertex and index buffers
         let shape = Triangle::new();
@@ -263,6 +265,10 @@ impl<'window> Renderer<'window> {
         self.raytracer_render_bind_group = raytracer_render_bind_group;
         self.raytracer_compute_bind_group = raytracer_compute_bind_group;
 
+        if self.is_raytracer_enabled {
+            self.run_raytracer();
+        }
+
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
         {
@@ -281,15 +287,12 @@ impl<'window> Renderer<'window> {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Command Encoder"),
                 });
-        let mut compute_encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Compute Command Encoder"),
-                });
 
-        let egui_raw_input = self.egui_state.take_egui_input(&self.window);
+        let egui_state = self.egui_state.clone();
+        let egui_raw_input = egui_state.borrow_mut().take_egui_input(&self.window);
         let egui_full_output =
-            self.egui_state
+            egui_state
+                .borrow()
                 .egui_ctx()
                 .run(egui_raw_input, |egui_ctx: &egui::Context| {
                     egui::CentralPanel::default()
@@ -306,11 +309,19 @@ impl<'window> Renderer<'window> {
                                 );
                             }
 
-                            ui.checkbox(&mut self.is_raytracer_enabled, "Raytracing");
+                            // Run the raytracer when the checkbox is toggled on
+                            ui.checkbox(&mut self.is_raytracer_enabled, "Raytracing")
+                                .changed()
+                                .then(|| {
+                                    if self.is_raytracer_enabled {
+                                        self.run_raytracer();
+                                    }
+                                });
                         });
                 });
         let egui_primitives = self
             .egui_state
+            .borrow()
             .egui_ctx()
             .tessellate(egui_full_output.shapes, egui_full_output.pixels_per_point);
         let egui_screen_descriptor = egui_wgpu::ScreenDescriptor {
@@ -332,20 +343,6 @@ impl<'window> Renderer<'window> {
         );
 
         if self.is_raytracer_enabled {
-            // TODO: Does the compute shader need to be dispatched every frame?
-            let mut raytracer_cpass =
-                compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Raytracer Compute Pass"),
-                    timestamp_writes: None,
-                });
-            raytracer_cpass.set_bind_group(0, &self.raytracer_compute_bind_group, &[]);
-            raytracer_cpass.set_pipeline(&self.raytracer_compute_pipeline);
-            raytracer_cpass.dispatch_workgroups(
-                self.window_size.width / 8,
-                self.window_size.height / 8,
-                1,
-            );
-
             let mut raytracer_rpass =
                 render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Raytracer Render Pass"),
@@ -402,7 +399,6 @@ impl<'window> Renderer<'window> {
             );
         }
 
-        self.queue.submit(Some(compute_encoder.finish()));
         self.queue.submit(Some(render_encoder.finish()));
         frame.present();
 
@@ -411,5 +407,31 @@ impl<'window> Renderer<'window> {
         }
 
         Ok(())
+    }
+
+    fn run_raytracer(&self) {
+        let mut compute_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Compute Command Encoder"),
+                });
+
+        {
+            let mut raytracer_cpass =
+                compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Raytracer Compute Pass"),
+                    timestamp_writes: None,
+                });
+
+            raytracer_cpass.set_bind_group(0, &self.raytracer_compute_bind_group, &[]);
+            raytracer_cpass.set_pipeline(&self.raytracer_compute_pipeline);
+            raytracer_cpass.dispatch_workgroups(
+                self.window_size.width / 8,
+                self.window_size.height / 8,
+                1,
+            );
+        }
+
+        self.queue.submit(Some(compute_encoder.finish()));
     }
 }
