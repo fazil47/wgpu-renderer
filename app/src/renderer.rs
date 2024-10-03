@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use wgpu::util::DeviceExt;
 use winit::{
@@ -10,9 +10,10 @@ use winit::{
 use crate::{
     camera::Camera,
     egui::initialize_egui,
-    rasterizer::initialize_rasterizer,
+    rasterizer::{initialize_rasterizer, render_rasterizer},
     raytracer::{
         create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
+        render_raytracer, run_raytracer,
     },
     shapes::Triangle,
     wgpu::{initialize_wgpu, update_buffer},
@@ -32,7 +33,6 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
             {
                 let egui_event_response = renderer
                     .egui_state
-                    .borrow_mut()
                     .on_window_event(&renderer.window, &window_event);
 
                 if egui_event_response.repaint {
@@ -71,7 +71,7 @@ struct Renderer<'window> {
     window: Rc<&'window Window>,
     window_size: winit::dpi::PhysicalSize<u32>,
     egui_renderer: egui_wgpu::Renderer,
-    egui_state: Rc<RefCell<egui_winit::State>>,
+    egui_state: egui_winit::State,
     is_raytracer_enabled: bool,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -126,7 +126,6 @@ impl<'window> Renderer<'window> {
             &surface_config,
             window.scale_factor() as f32,
         );
-        let egui_state = Rc::new(RefCell::new(egui_state));
 
         // Initialize vertex and index buffers
         let shape = Triangle::new();
@@ -266,7 +265,13 @@ impl<'window> Renderer<'window> {
         self.raytracer_compute_bind_group = raytracer_compute_bind_group;
 
         if self.is_raytracer_enabled {
-            self.run_raytracer();
+            run_raytracer(
+                &self.device,
+                &self.queue,
+                self.window_size,
+                &self.raytracer_compute_bind_group,
+                &self.raytracer_compute_pipeline,
+            );
         }
 
         // On macOS the window needs to be redrawn manually after resizing
@@ -277,9 +282,9 @@ impl<'window> Renderer<'window> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let frame = self.surface.get_current_texture()?;
+        let surface_texture = self.surface.get_current_texture()?;
 
-        let view = frame
+        let surface_texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut render_encoder =
@@ -288,11 +293,9 @@ impl<'window> Renderer<'window> {
                     label: Some("Render Command Encoder"),
                 });
 
-        let egui_state = self.egui_state.clone();
-        let egui_raw_input = egui_state.borrow_mut().take_egui_input(&self.window);
+        let egui_raw_input = self.egui_state.take_egui_input(&self.window);
         let egui_full_output =
-            egui_state
-                .borrow()
+            self.egui_state
                 .egui_ctx()
                 .run(egui_raw_input, |egui_ctx: &egui::Context| {
                     egui::CentralPanel::default()
@@ -314,14 +317,19 @@ impl<'window> Renderer<'window> {
                                 .changed()
                                 .then(|| {
                                     if self.is_raytracer_enabled {
-                                        self.run_raytracer();
+                                        run_raytracer(
+                                            &self.device,
+                                            &self.queue,
+                                            self.window_size,
+                                            &self.raytracer_compute_bind_group,
+                                            &self.raytracer_compute_pipeline,
+                                        );
                                     }
                                 });
                         });
                 });
         let egui_primitives = self
             .egui_state
-            .borrow()
             .egui_ctx()
             .tessellate(egui_full_output.shapes, egui_full_output.pixels_per_point);
         let egui_screen_descriptor = egui_wgpu::ScreenDescriptor {
@@ -342,96 +350,37 @@ impl<'window> Renderer<'window> {
             &egui_screen_descriptor,
         );
 
-        if self.is_raytracer_enabled {
-            let mut raytracer_rpass =
-                render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Raytracer Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+        {
+            let mut rpass = if self.is_raytracer_enabled {
+                render_raytracer(
+                    &mut render_encoder,
+                    &surface_texture_view,
+                    &self.raytracer_render_bind_group,
+                    &self.raytracer_render_pipeline,
+                )
+            } else {
+                render_rasterizer(
+                    &mut render_encoder,
+                    &surface_texture_view,
+                    &self.vertex_buffer,
+                    &self.index_buffer,
+                    self.num_indices,
+                    &self.rasterizer_bind_group,
+                    &self.rasterizer_render_pipeline,
+                )
+            };
 
-            raytracer_rpass.set_bind_group(0, &self.raytracer_render_bind_group, &[]);
-            raytracer_rpass.set_pipeline(&self.raytracer_render_pipeline);
-            raytracer_rpass.draw(0..3, 0..1);
-
-            self.egui_renderer.render(
-                &mut raytracer_rpass,
-                &egui_primitives,
-                &egui_screen_descriptor,
-            );
-        } else {
-            let mut rasterizer_rpass =
-                render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Rasterizer Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-
-            rasterizer_rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            rasterizer_rpass
-                .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            rasterizer_rpass.set_bind_group(0, &self.rasterizer_bind_group, &[]);
-            rasterizer_rpass.set_pipeline(&self.rasterizer_render_pipeline);
-            rasterizer_rpass.draw_indexed(0..self.num_indices, 0, 0..1);
-
-            self.egui_renderer.render(
-                &mut rasterizer_rpass,
-                &egui_primitives,
-                &egui_screen_descriptor,
-            );
+            self.egui_renderer
+                .render(&mut rpass, &egui_primitives, &egui_screen_descriptor);
         }
 
         self.queue.submit(Some(render_encoder.finish()));
-        frame.present();
+        surface_texture.present();
 
         for id in egui_full_output.textures_delta.free {
             self.egui_renderer.free_texture(&id);
         }
 
         Ok(())
-    }
-
-    fn run_raytracer(&self) {
-        let mut compute_encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Compute Command Encoder"),
-                });
-
-        {
-            let mut raytracer_cpass =
-                compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Raytracer Compute Pass"),
-                    timestamp_writes: None,
-                });
-
-            raytracer_cpass.set_bind_group(0, &self.raytracer_compute_bind_group, &[]);
-            raytracer_cpass.set_pipeline(&self.raytracer_compute_pipeline);
-            raytracer_cpass.dispatch_workgroups(
-                self.window_size.width / 8,
-                self.window_size.height / 8,
-                1,
-            );
-        }
-
-        self.queue.submit(Some(compute_encoder.finish()));
     }
 }

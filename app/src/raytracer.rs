@@ -313,3 +313,57 @@ pub fn create_raytracer_bind_groups(
 
     (raytracer_render_bind_group, raytracer_compute_bind_group)
 }
+
+pub fn render_raytracer<'rpass>(
+    render_encoder: &'rpass mut wgpu::CommandEncoder,
+    surface_texture_view: &'rpass wgpu::TextureView,
+    raytracer_render_bind_group: &'rpass wgpu::BindGroup,
+    raytracer_render_pipeline: &'rpass wgpu::RenderPipeline,
+) -> wgpu::RenderPass<'rpass> {
+    let mut raytracer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Raytracer Render Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &surface_texture_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    raytracer_rpass.set_bind_group(0, raytracer_render_bind_group, &[]);
+    raytracer_rpass.set_pipeline(raytracer_render_pipeline);
+    raytracer_rpass.draw(0..3, 0..1);
+
+    raytracer_rpass
+}
+
+pub fn run_raytracer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    window_size: winit::dpi::PhysicalSize<u32>,
+    raytracer_compute_bind_group: &wgpu::BindGroup,
+    raytracer_compute_pipeline: &wgpu::ComputePipeline,
+) {
+    let mut compute_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Compute Command Encoder"),
+    });
+
+    {
+        let mut raytracer_cpass =
+            compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Raytracer Compute Pass"),
+                timestamp_writes: None,
+            });
+
+        raytracer_cpass.set_bind_group(0, &raytracer_compute_bind_group, &[]);
+        raytracer_cpass.set_pipeline(&raytracer_compute_pipeline);
+        raytracer_cpass.dispatch_workgroups(window_size.width / 8, window_size.height / 8, 1);
+    }
+
+    queue.submit(Some(compute_encoder.finish()));
+}

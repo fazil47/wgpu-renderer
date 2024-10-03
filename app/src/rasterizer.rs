@@ -116,3 +116,36 @@ pub fn initialize_rasterizer(
         rasterizer_render_pipeline,
     )
 }
+
+pub fn render_rasterizer<'rpass>(
+    render_encoder: &'rpass mut wgpu::CommandEncoder,
+    surface_texture_view: &'rpass wgpu::TextureView,
+    vertex_buffer: &'rpass wgpu::Buffer,
+    index_buffer: &'rpass wgpu::Buffer,
+    num_indices: u32,
+    rasterizer_bind_group: &'rpass wgpu::BindGroup,
+    rasterizer_render_pipeline: &'rpass wgpu::RenderPipeline,
+) -> wgpu::RenderPass<'rpass> {
+    let mut rasterizer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Rasterizer Render Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &surface_texture_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+    rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+    rasterizer_rpass.set_bind_group(0, &rasterizer_bind_group, &[]);
+    rasterizer_rpass.set_pipeline(&rasterizer_render_pipeline);
+    rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
+
+    rasterizer_rpass
+}
