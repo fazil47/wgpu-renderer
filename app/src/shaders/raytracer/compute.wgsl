@@ -178,6 +178,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // Transform texture coordinate to [-1, 1] range from [0, 1]
     // Then the coordinates will go from -1 to 1 down the Y-axis
     // We want to go from -1 to 1 up the Y-axis to match WebGPU's render coordinate system
+    // Reference: https://github.com/gfx-rs/wgpu?tab=readme-ov-file#coordinate-systems
     let uv = ((vec2f(id.xy) + 0.5) / dims * 2.0 - 1.0) * vec2f(1.0, -1.0);
 
     // Get a ray for the UVs
