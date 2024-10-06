@@ -184,8 +184,8 @@ pub fn initialize_raytracer(
         device,
         &raytracer_render_bind_group_layout,
         &raytracer_compute_bind_group_layout,
-        &vertex_buffer,
-        &index_buffer,
+        vertex_buffer,
+        index_buffer,
         &vertex_stride_uniform_buffer,
         &vertex_color_offset_uniform_buffer,
         &camera_to_world_uniform_buffer,
@@ -205,7 +205,7 @@ pub fn initialize_raytracer(
             push_constant_ranges: &[],
         });
 
-    let swapchain_capabilities = surface.get_capabilities(&adapter);
+    let swapchain_capabilities = surface.get_capabilities(adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
     let raytracer_render_pipeline =
@@ -270,15 +270,15 @@ pub fn create_raytracer_bind_groups(
 ) -> (wgpu::BindGroup, wgpu::BindGroup) {
     let raytracer_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Raytracer Render Bind Group"),
-        layout: &raytracer_render_bind_group_layout,
+        layout: raytracer_render_bind_group_layout,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
-            resource: wgpu::BindingResource::TextureView(&result_texture_view),
+            resource: wgpu::BindingResource::TextureView(result_texture_view),
         }],
     });
     let raytracer_compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Raytracer Compute Bind Group"),
-        layout: &raytracer_compute_bind_group_layout,
+        layout: raytracer_compute_bind_group_layout,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
@@ -306,7 +306,7 @@ pub fn create_raytracer_bind_groups(
             },
             wgpu::BindGroupEntry {
                 binding: 6,
-                resource: wgpu::BindingResource::TextureView(&result_texture_view),
+                resource: wgpu::BindingResource::TextureView(result_texture_view),
             },
         ],
     });
@@ -323,7 +323,7 @@ pub fn render_raytracer<'rpass>(
     let mut raytracer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Raytracer Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &surface_texture_view,
+            view: surface_texture_view,
             resolve_target: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -360,8 +360,8 @@ pub fn run_raytracer(
                 timestamp_writes: None,
             });
 
-        raytracer_cpass.set_bind_group(0, &raytracer_compute_bind_group, &[]);
-        raytracer_cpass.set_pipeline(&raytracer_compute_pipeline);
+        raytracer_cpass.set_bind_group(0, raytracer_compute_bind_group, &[]);
+        raytracer_cpass.set_pipeline(raytracer_compute_pipeline);
         raytracer_cpass.dispatch_workgroups(window_size.width / 8, window_size.height / 8, 1);
     }
 

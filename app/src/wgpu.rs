@@ -67,7 +67,7 @@ impl Resolution {
 
 pub fn update_buffer<T: NoUninit>(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, value: &[T]) {
     // TODO: Maybe use encase?
-    queue.write_buffer(&wgpu_buffer, 0, bytemuck::cast_slice(value));
+    queue.write_buffer(wgpu_buffer, 0, bytemuck::cast_slice(value));
 }
 
 pub async fn initialize_wgpu<'window>(

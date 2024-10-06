@@ -68,7 +68,7 @@ struct Renderer<'window> {
     // The window must be declared after the surface so
     // it gets dropped after it as the surface contains
     // unsafe references to the window's resources.
-    window: Rc<&'window Window>,
+    window: &'window Window,
     window_size: winit::dpi::PhysicalSize<u32>,
     egui_renderer: egui_wgpu::Renderer,
     egui_state: egui_winit::State,
@@ -98,7 +98,6 @@ struct Renderer<'window> {
 impl<'window> Renderer<'window> {
     // Creating some of the wgpu types requires async code
     async fn new(window: &'window Window) -> Renderer<'window> {
-        let window = Rc::new(window);
         let mut window_size = window.inner_size();
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
@@ -220,21 +219,7 @@ impl<'window> Renderer<'window> {
         // Update camera
         self.camera
             .set_aspect(new_size.width as f32 / new_size.height as f32);
-        update_buffer(
-            &self.queue,
-            &self.rasterizer_camera_view_proj_uniform,
-            &[self.camera.view_projection().to_cols_array_2d()],
-        );
-        update_buffer(
-            &self.queue,
-            &self.raytracer_camera_to_world_uniform_buffer,
-            &[self.camera.camera_to_world().to_cols_array_2d()],
-        );
-        update_buffer(
-            &self.queue,
-            &self.raytracer_camera_inverse_projection_uniform_buffer,
-            &[self.camera.camera_inverse_projection().to_cols_array_2d()],
-        );
+        self.update_camera_uniforms();
 
         // Recreate the raytracer result texture with the new size
         let (raytracer_result_texture, raytracer_result_texture_view) =
@@ -382,5 +367,25 @@ impl<'window> Renderer<'window> {
         }
 
         Ok(())
+    }
+
+    fn update_camera_uniforms(&self) {
+        update_buffer(
+            &self.queue,
+            &self.rasterizer_camera_view_proj_uniform,
+            &[self.camera.view_projection().to_cols_array_2d()],
+        );
+
+        update_buffer(
+            &self.queue,
+            &self.raytracer_camera_to_world_uniform_buffer,
+            &[self.camera.camera_to_world().to_cols_array_2d()],
+        );
+
+        update_buffer(
+            &self.queue,
+            &self.raytracer_camera_inverse_projection_uniform_buffer,
+            &[self.camera.camera_inverse_projection().to_cols_array_2d()],
+        );
     }
 }

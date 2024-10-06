@@ -6,7 +6,7 @@ pub fn initialize_egui(
     surface_config: &wgpu::SurfaceConfiguration,
     pixels_per_point: f32,
 ) -> (egui_wgpu::Renderer, egui_winit::State) {
-    let egui_renderer = egui_wgpu::Renderer::new(&device, surface_config.format, None, 1);
+    let egui_renderer = egui_wgpu::Renderer::new(device, surface_config.format, None, 1);
     let egui_ctx = egui::Context::default();
 
     let egui_viewport_id = egui_ctx.viewport_id();

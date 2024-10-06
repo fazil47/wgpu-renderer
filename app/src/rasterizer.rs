@@ -80,7 +80,7 @@ pub fn initialize_rasterizer(
             push_constant_ranges: &[],
         });
 
-    let swapchain_capabilities = surface.get_capabilities(&adapter);
+    let swapchain_capabilities = surface.get_capabilities(adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
     let rasterizer_render_pipeline =
@@ -129,7 +129,7 @@ pub fn render_rasterizer<'rpass>(
     let mut rasterizer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Rasterizer Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &surface_texture_view,
+            view: surface_texture_view,
             resolve_target: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -143,8 +143,8 @@ pub fn render_rasterizer<'rpass>(
 
     rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
     rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-    rasterizer_rpass.set_bind_group(0, &rasterizer_bind_group, &[]);
-    rasterizer_rpass.set_pipeline(&rasterizer_render_pipeline);
+    rasterizer_rpass.set_bind_group(0, rasterizer_bind_group, &[]);
+    rasterizer_rpass.set_pipeline(rasterizer_render_pipeline);
     rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
 
     rasterizer_rpass
