@@ -106,11 +106,14 @@ fn get_triangle_intersection(triangle: Triangle, ray: Ray) -> HitInfo {
 
     // Step 1: Does the ray intersect the triangle's plane?
 
-    // Check if the ray is parallel to the triangle
     let tri_plane_dot_ray: f32 = dot(tri_normal, ray.direction);
 
     if (abs(tri_plane_dot_ray) < K_EPSILON) {
         hit_info.did_hit = false;   // Ray is parallel to the triangle's plane
+        return hit_info;
+    } else if (tri_plane_dot_ray > 0.0) {
+        // TODO: Make backface culling optional
+        hit_info.did_hit = false;   // Ray is facing away from the triangle's plane
         return hit_info;
     }
 

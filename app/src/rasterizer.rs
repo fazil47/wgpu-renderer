@@ -83,6 +83,9 @@ pub fn initialize_rasterizer(
     let swapchain_capabilities = surface.get_capabilities(adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
+    let mut primitive = wgpu::PrimitiveState::default();
+    primitive.cull_mode = Some(wgpu::Face::Back);
+
     let rasterizer_render_pipeline =
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Rasterizer Render Pipeline"),
@@ -103,7 +106,7 @@ pub fn initialize_rasterizer(
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState::default(),
+            primitive,
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
