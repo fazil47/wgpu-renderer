@@ -84,24 +84,29 @@ fn create_camera_ray(uv: vec2f) -> Ray {
     return create_ray(origin, direction);
 }
 
-fn get_triangle_normal(triangle: Triangle) -> vec3f {
+fn get_unnormalized_triangle_normal(triangle: Triangle) -> vec3f {
     let edge1 = triangle.b.position.xyz - triangle.a.position.xyz;
     let edge2 = triangle.c.position.xyz - triangle.a.position.xyz;
-    return normalize(cross(edge1, edge2)); // TODO: Should I normalize?
+    return cross(edge1, edge2);
 }
 
 struct HitInfo {
     did_hit: bool,
     t: f32, // Distance to the intersection point from the ray origin
     p: vec3f, // Intersection point
-    normal: vec3f, // Normal at the intersection point
+    normal: vec3f, // Normal at the intersection point,
+    u: f32, // Barycentric coordinates u
+    v: f32, // Barycentric coordinates v
+    w: f32, // Barycentric coordinates w
 }
 
 // Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/ray-triangle-intersection-geometric-solution.html
 fn get_triangle_intersection(triangle: Triangle, ray: Ray) -> HitInfo {
     var hit_info: HitInfo;
 
-    let tri_normal: vec3f = get_triangle_normal(triangle);
+    let unnormalized_tri_normal: vec3f = get_unnormalized_triangle_normal(triangle);
+    let area = length(unnormalized_tri_normal);
+    let tri_normal = normalize(unnormalized_tri_normal);
     hit_info.normal = tri_normal;
 
     // Step 1: Does the ray intersect the triangle's plane?
@@ -147,8 +152,9 @@ fn get_triangle_intersection(triangle: Triangle, ray: Ray) -> HitInfo {
     let edge1: vec3f = triangle.c.position.xyz - triangle.b.position.xyz;
     let vp1: vec3f = p - triangle.b.position.xyz;
     c = cross(edge1, vp1);
+    let u: f32 = dot(tri_normal, c);
 
-    if (dot(tri_normal, c) < 0.0) {
+    if (u < 0.0) {
         hit_info.did_hit = false;   // Intersection point is to the right of edge 1
         return hit_info;
     }
@@ -157,14 +163,18 @@ fn get_triangle_intersection(triangle: Triangle, ray: Ray) -> HitInfo {
     let edge2: vec3f = triangle.a.position.xyz - triangle.c.position.xyz;
     let vp2: vec3f = p - triangle.c.position.xyz;
     c = cross(edge2, vp2);
+    let v: f32 = dot(tri_normal, c);
 
-    if (dot(tri_normal, c) < 0.0) {
+    if (v < 0.0) {
         hit_info.did_hit = false;   // Intersection point is to the right of edge 2
         return hit_info;
     }
 
     hit_info.did_hit = true;
     hit_info.t = t;
+    hit_info.u = u / area;
+    hit_info.v = v / area;
+    hit_info.w = 1.0 - hit_info.u - hit_info.v;
 
     return hit_info;
 }
@@ -195,8 +205,11 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let hit_info: HitInfo = get_triangle_intersection(triangle, ray);
 
     if (hit_info.did_hit) {
-        // TODO: Use barycentric coordinates to interpolate the color
-        textureStore(result, coords, triangle.a.color);
+        let interpolated_color = triangle.a.color * hit_info.u
+            + triangle.b.color * hit_info.v
+            + triangle.c.color * hit_info.w;
+        textureStore(result, coords, interpolated_color);
+
         return;
     }
 
