@@ -179,6 +179,26 @@ fn get_triangle_intersection(triangle: Triangle, ray: Ray) -> HitInfo {
     return hit_info;
 }
 
+fn get_interpolated_color(triangle: Triangle, hit_info: HitInfo) -> vec4f {
+    return triangle.a.color * hit_info.u + triangle.b.color * hit_info.v + triangle.c.color * hit_info.w;
+}
+
+fn trace_mesh(ray: Ray, coords: vec2i) -> bool {
+    let num_triangles = u32(arrayLength(&indices) / 3u);
+
+    for (var i: u32 = 0u; i < num_triangles; i = i + 1u) {
+        let triangle: Triangle = get_triangle(i);
+        let hit_info: HitInfo = get_triangle_intersection(triangle, ray);
+
+        if (hit_info.did_hit) {
+            textureStore(result, coords, get_interpolated_color(triangle, hit_info));
+            return true;
+        }
+    }
+
+    return false;
+}
+
 fn get_ray_color(ray: Ray) -> vec4f {
     return vec4f(ray.direction * 0.5 + 0.5, 1.0);
 }
@@ -201,15 +221,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // Write some colors
     let coords = vec2i(i32(id.x), i32(id.y));
 
-    let triangle: Triangle = get_triangle(0u);
-    let hit_info: HitInfo = get_triangle_intersection(triangle, ray);
-
-    if (hit_info.did_hit) {
-        let interpolated_color = triangle.a.color * hit_info.u
-            + triangle.b.color * hit_info.v
-            + triangle.c.color * hit_info.w;
-        textureStore(result, coords, interpolated_color);
-
+    // Trace the ray against the mesh
+    if (trace_mesh(ray, coords)) {
         return;
     }
 

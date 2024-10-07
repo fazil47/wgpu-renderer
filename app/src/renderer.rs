@@ -15,7 +15,7 @@ use crate::{
         create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
         render_raytracer, run_raytracer,
     },
-    shapes::Triangle,
+    shapes::Pentagon,
     wgpu::{initialize_wgpu, update_buffer},
 };
 
@@ -127,7 +127,7 @@ impl<'window> Renderer<'window> {
         );
 
         // Initialize vertex and index buffers
-        let shape = Triangle::new();
+        let shape = Pentagon::new();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertices Buffer"),
             contents: bytemuck::cast_slice(shape.vertices),
@@ -144,7 +144,7 @@ impl<'window> Renderer<'window> {
         });
         let num_indices = shape.indices.len() as u32;
 
-        let color_uniform = [1.0, 0.0, 0.0, 1.0];
+        let color_uniform = [1.0, 1.0, 1.0, 1.0];
 
         let (
             rasterizer_camera_view_proj_uniform,
