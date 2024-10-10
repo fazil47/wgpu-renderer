@@ -179,6 +179,58 @@ fn get_triangle_intersection(triangle: Triangle, ray: Ray) -> HitInfo {
     return hit_info;
 }
 
+// Reference: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+fn get_triangle_intersection_mt(triangle: Triangle, ray: Ray) -> HitInfo {
+    var hit_info: HitInfo;
+
+    let e0: vec3f = triangle.a.position.xyz - triangle.c.position.xyz;
+    let e1: vec3f = triangle.b.position.xyz - triangle.c.position.xyz;
+    let pvec: vec3f = cross(ray.direction, e1);
+    let det: f32 = dot(e0, pvec);
+
+    hit_info.normal = normalize(cross(e0, e1));
+
+    // If the determinant is less than zero, the triangle is backfacing
+    // TODO: Make backface culling optional
+    if (det < K_EPSILON) {
+        hit_info.did_hit = false;
+        return hit_info;
+    }
+
+    // If the determinant is close to zero, the ray is parallel to the triangle
+    if (abs(det) < K_EPSILON) {
+        hit_info.did_hit = false;
+        return hit_info;
+    }
+
+    let inv_det: f32 = 1.0 / det;
+
+    let tvec: vec3f = ray.origin - triangle.c.position.xyz;
+    let u: f32 = dot(tvec, pvec) * inv_det;
+    if (u < 0 || u > 1) {
+        hit_info.did_hit = false;
+        return hit_info;
+    }
+
+    let qvec: vec3f = cross(tvec, e0);
+    let v: f32 = dot(ray.direction, qvec) * inv_det;
+    if (v < 0 || u + v > 1) {
+        hit_info.did_hit = false;
+        return hit_info;
+    }
+
+    let t: f32 = dot(e1, qvec) * inv_det;
+
+    hit_info.did_hit = true;
+    hit_info.t = t;
+    hit_info.u = u;
+    hit_info.v = v;
+    hit_info.w = 1.0 - u - v;
+    hit_info.p = ray.origin + ray.direction * t;
+
+    return hit_info;
+}
+
 fn get_interpolated_color(triangle: Triangle, hit_info: HitInfo) -> vec4f {
     return triangle.a.color * hit_info.u + triangle.b.color * hit_info.v + triangle.c.color * hit_info.w;
 }
@@ -188,7 +240,7 @@ fn trace_mesh(ray: Ray, coords: vec2i) -> bool {
 
     for (var i: u32 = 0u; i < num_triangles; i = i + 1u) {
         let triangle: Triangle = get_triangle(i);
-        let hit_info: HitInfo = get_triangle_intersection(triangle, ray);
+        let hit_info: HitInfo = get_triangle_intersection_mt(triangle, ray);
 
         if (hit_info.did_hit) {
             textureStore(result, coords, get_interpolated_color(triangle, hit_info));
