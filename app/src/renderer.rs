@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::{
-    camera::Camera,
+    camera::{Camera, CameraController},
     egui::initialize_egui,
     rasterizer::{initialize_rasterizer, render_rasterizer},
     raytracer::{
@@ -43,6 +43,11 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     return;
                 }
 
+                if renderer.input(&window_event) {
+                    renderer.update();
+                    return;
+                }
+
                 match window_event {
                     WindowEvent::Resized(new_size) => renderer.resize(new_size),
 
@@ -59,6 +64,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 
 struct Renderer<'window> {
     camera: Camera,
+    camera_controller: CameraController,
     _instance: wgpu::Instance,
     surface: wgpu::Surface<'window>,
     _adapter: wgpu::Adapter,
@@ -115,6 +121,8 @@ impl<'window> Renderer<'window> {
             0.1,
             100.0,
         );
+
+        let camera_controller = CameraController::new(0.2);
 
         let (_instance, surface, adapter, device, queue, surface_config) =
             initialize_wgpu(&window, &window_size).await;
@@ -179,6 +187,7 @@ impl<'window> Renderer<'window> {
 
         Self {
             camera,
+            camera_controller,
             _instance,
             surface,
             _adapter: adapter,
@@ -367,6 +376,22 @@ impl<'window> Renderer<'window> {
         }
 
         Ok(())
+    }
+
+    fn input(&mut self, event: &WindowEvent) -> bool {
+        self.camera_controller.process_events(event)
+    }
+
+    fn update(&mut self) {
+        self.camera_controller.update_camera(&mut self.camera);
+        self.update_camera_uniforms();
+        run_raytracer(
+            &self.device,
+            &self.queue,
+            self.window_size,
+            &self.raytracer_compute_bind_group,
+            &self.raytracer_compute_pipeline,
+        );
     }
 
     fn update_camera_uniforms(&self) {
