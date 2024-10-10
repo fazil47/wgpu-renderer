@@ -15,7 +15,6 @@ use crate::{
         create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
         render_raytracer, run_raytracer,
     },
-    shapes::Pentagon,
     wgpu::{initialize_wgpu, update_buffer},
 };
 
@@ -135,7 +134,7 @@ impl<'window> Renderer<'window> {
         );
 
         // Initialize vertex and index buffers
-        let shape = Pentagon::new();
+        let shape = crate::shapes::Octahedron::new();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertices Buffer"),
             contents: bytemuck::cast_slice(shape.vertices),

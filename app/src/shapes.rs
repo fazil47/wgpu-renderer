@@ -61,3 +61,107 @@ impl<'pent> Pentagon<'pent> {
         }
     }
 }
+
+pub struct Cube<'cube> {
+    pub vertices: &'cube [Vertex],
+    pub indices: &'cube [u32],
+}
+
+impl<'cube> Cube<'cube> {
+    pub fn new() -> Self {
+        Self {
+            vertices: &[
+                // Front face
+                Vertex {
+                    position: [-0.5, -0.5, 0.5, 1.0],
+                    color: [1.0, 0.0, 0.0, 1.0],
+                },
+                Vertex {
+                    position: [0.5, -0.5, 0.5, 1.0],
+                    color: [1.0, 0.5, 0.0, 1.0],
+                },
+                Vertex {
+                    position: [0.5, 0.5, 0.5, 1.0],
+                    color: [1.0, 1.0, 0.0, 1.0],
+                },
+                Vertex {
+                    position: [-0.5, 0.5, 0.5, 1.0],
+                    color: [0.5, 1.0, 0.0, 1.0],
+                },
+                // Back face
+                Vertex {
+                    position: [-0.5, -0.5, -0.5, 1.0],
+                    color: [0.0, 1.0, 0.0, 1.0],
+                },
+                Vertex {
+                    position: [0.5, -0.5, -0.5, 1.0],
+                    color: [0.0, 1.0, 0.5, 1.0],
+                },
+                Vertex {
+                    position: [0.5, 0.5, -0.5, 1.0],
+                    color: [0.0, 1.0, 1.0, 1.0],
+                },
+                Vertex {
+                    position: [-0.5, 0.5, -0.5, 1.0],
+                    color: [0.0, 0.5, 1.0, 1.0],
+                },
+            ],
+            indices: &[
+                0, 1, 2, 2, 3, 0, // Front face
+                1, 5, 6, 6, 2, 1, // Right face
+                5, 4, 7, 7, 6, 5, // Back face
+                4, 0, 3, 3, 7, 4, // Left face
+                3, 2, 6, 6, 7, 3, // Top face
+                4, 5, 1, 1, 0, 4, // Bottom face
+            ],
+        }
+    }
+}
+
+pub struct Octahedron<'oct> {
+    pub vertices: &'oct [Vertex],
+    pub indices: &'oct [u32],
+}
+
+impl<'oct> Octahedron<'oct> {
+    pub fn new() -> Self {
+        Self {
+            vertices: &[
+                Vertex {
+                    position: [0.0, 1.0, 0.0, 1.0],
+                    color: [1.0, 0.0, 0.0, 1.0],
+                }, // 0: Top
+                Vertex {
+                    position: [0.0, -1.0, 0.0, 1.0],
+                    color: [0.0, 1.0, 0.0, 1.0],
+                }, // 1: Bottom
+                Vertex {
+                    position: [1.0, 0.0, 0.0, 1.0],
+                    color: [0.0, 0.0, 1.0, 1.0],
+                }, // 2: Right
+                Vertex {
+                    position: [-1.0, 0.0, 0.0, 1.0],
+                    color: [1.0, 1.0, 0.0, 1.0],
+                }, // 3: Left
+                Vertex {
+                    position: [0.0, 0.0, 1.0, 1.0],
+                    color: [1.0, 0.0, 1.0, 1.0],
+                }, // 4: Front
+                Vertex {
+                    position: [0.0, 0.0, -1.0, 1.0],
+                    color: [0.0, 1.0, 1.0, 1.0],
+                }, // 5: Back
+            ],
+            indices: &[
+                0, 4, 2, // Top-Front-Right
+                0, 3, 4, // Top-Left-Front
+                0, 5, 3, // Top-Back-Left
+                0, 2, 5, // Top-Right-Back
+                1, 2, 4, // Bottom-Right-Front
+                1, 4, 3, // Bottom-Front-Left
+                1, 3, 5, // Bottom-Left-Back
+                1, 5, 2, // Bottom-Back-Right
+            ],
+        }
+    }
+}
