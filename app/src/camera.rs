@@ -1,3 +1,5 @@
+use egui::Vec2;
+use glam::{Quat, Vec3};
 use winit::{
     event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -5,7 +7,9 @@ use winit::{
 
 pub struct Camera {
     eye: glam::Vec3,
-    target: glam::Vec3,
+    // The normalized forward vector of the camera is the direction the camera is looking at.
+    forward: glam::Vec3,
+    // The normalized up vector of the camera is the direction that is considered up for the camera.
     up: glam::Vec3,
     aspect: f32,
     fovy: f32,
@@ -19,26 +23,30 @@ pub struct Camera {
 }
 
 impl Camera {
+    const GLOBAL_UP: glam::Vec3 = glam::Vec3::Y;
+
     pub fn new(
         eye: glam::Vec3,
-        target: glam::Vec3,
-        up: glam::Vec3,
+        forward: glam::Vec3,
         aspect: f32,
         fovy: f32,
         znear: f32,
         zfar: f32,
     ) -> Self {
+        // The camera's up vector stays close to the global up
+        let up = forward.cross(Camera::GLOBAL_UP.cross(forward)).normalize();
+
         let (
             world_to_camera,
             camera_to_world,
             camera_projection,
             camera_inverse_projection,
             view_projection,
-        ) = Self::calculate_matrices(eye, target, up, aspect, fovy, znear, zfar);
+        ) = Self::calculate_matrices(eye, forward, up, aspect, fovy, znear, zfar);
 
         Self {
             eye,
-            target,
+            forward,
             up,
             aspect,
             fovy,
@@ -77,8 +85,8 @@ impl Camera {
         self.update_matrices();
     }
 
-    pub fn set_target(&mut self, target: glam::Vec3) {
-        self.target = target;
+    pub fn set_forward(&mut self, forward: glam::Vec3) {
+        self.forward = forward;
         self.update_matrices();
     }
 
@@ -91,8 +99,8 @@ impl Camera {
         self.eye
     }
 
-    pub fn target(&self) -> glam::Vec3 {
-        self.target
+    pub fn forward(&self) -> glam::Vec3 {
+        self.forward
     }
 
     pub fn up(&self) -> glam::Vec3 {
@@ -152,7 +160,7 @@ impl Camera {
             view_projection,
         ) = Self::calculate_matrices(
             self.eye,
-            self.target,
+            self.forward,
             self.up,
             self.aspect,
             self.fovy,
@@ -167,19 +175,38 @@ impl Camera {
         self.view_projection = view_projection;
     }
 
+    // `forward` is the normalized forward vector of the camera.
+    // `up` is the normalized up vector of the camera.
     fn calculate_matrices(
         eye: glam::Vec3,
-        target: glam::Vec3,
+        forward: glam::Vec3,
         up: glam::Vec3,
         aspect: f32,
         fovy: f32,
         znear: f32,
         zfar: f32,
     ) -> (glam::Mat4, glam::Mat4, glam::Mat4, glam::Mat4, glam::Mat4) {
-        let world_to_camera = glam::Mat4::look_at_rh(eye, target, up);
+        let right = forward.cross(up);
+
+        let world_to_camera = glam::Mat4::from_cols(
+            glam::Vec4::new(right.x, up.x, -forward.x, 0.0),
+            glam::Vec4::new(right.y, up.y, -forward.y, 0.0),
+            glam::Vec4::new(right.z, up.z, -forward.z, 0.0),
+            glam::Vec4::new(-right.dot(eye), -up.dot(eye), forward.dot(eye), 1.0),
+        );
         let camera_to_world = world_to_camera.inverse();
-        let camera_projection = glam::Mat4::perspective_rh(fovy, aspect, znear, zfar);
+
+        let top = znear * (fovy / 2.0).tan();
+        let right = top * aspect;
+
+        let camera_projection = glam::Mat4::from_cols(
+            glam::Vec4::new(znear / right, 0.0, 0.0, 0.0),
+            glam::Vec4::new(0.0, znear / top, 0.0, 0.0),
+            glam::Vec4::new(0.0, 0.0, -(zfar + znear) / (zfar - znear), -1.0),
+            glam::Vec4::new(0.0, 0.0, -(2.0 * zfar * znear) / (zfar - znear), 0.0),
+        );
         let camera_inverse_projection = camera_projection.inverse();
+
         let view_projection = camera_projection * world_to_camera;
 
         (
@@ -195,24 +222,34 @@ impl Camera {
 // Ref: https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms
 pub struct CameraController {
     speed: f32,
+    is_shift_pressed: bool,
     is_up_pressed: bool,
     is_down_pressed: bool,
     is_forward_pressed: bool,
     is_backward_pressed: bool,
     is_left_pressed: bool,
     is_right_pressed: bool,
+    is_cursor_locked: bool,
+    cursor_position: Vec2,
+    cursor_delta: Vec2,
+    sensitivity: f32,
 }
 
 impl CameraController {
     pub fn new(speed: f32) -> Self {
         Self {
             speed,
+            is_shift_pressed: false,
             is_up_pressed: false,
             is_down_pressed: false,
             is_forward_pressed: false,
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            is_cursor_locked: false,
+            cursor_position: Vec2::ZERO,
+            cursor_delta: Vec2::ZERO,
+            sensitivity: 0.003,
         }
     }
 
@@ -229,11 +266,11 @@ impl CameraController {
             } => {
                 let is_pressed = *state == ElementState::Pressed;
                 match keycode {
-                    KeyCode::Space => {
+                    KeyCode::KeyE => {
                         self.is_up_pressed = is_pressed;
                         true
                     }
-                    KeyCode::ShiftLeft => {
+                    KeyCode::KeyQ => {
                         self.is_down_pressed = is_pressed;
                         true
                     }
@@ -253,41 +290,89 @@ impl CameraController {
                         self.is_right_pressed = is_pressed;
                         true
                     }
+                    KeyCode::ShiftLeft => {
+                        self.is_shift_pressed = is_pressed;
+                        true
+                    }
                     _ => false,
                 }
             }
+
+            WindowEvent::MouseInput { state, button, .. } => {
+                if *button == winit::event::MouseButton::Right {
+                    self.is_cursor_locked = state.is_pressed();
+                }
+
+                true
+            }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                let new_position = Vec2::new(position.x as f32, position.y as f32);
+                self.cursor_delta = new_position - self.cursor_position;
+                self.cursor_position = new_position;
+
+                true
+            }
+
             _ => false,
         }
     }
 
-    pub fn update_camera(&self, camera: &mut Camera) {
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalize();
-        let forward_mag = forward.length();
+    pub fn update_camera(&mut self, camera: &mut Camera, delta_time: f32) {
+        if self.is_cursor_locked {
+            let rotation_delta = self.cursor_delta * self.sensitivity;
 
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
+            // Rotate around the global Y-axis (yaw)
+            let yaw_rotation = Quat::from_rotation_y(-rotation_delta.x);
+            camera.forward = yaw_rotation * camera.forward;
+            camera.up = yaw_rotation * camera.up;
+
+            // Rotate around the camera's local X-axis (pitch)
+            let right = camera.forward.cross(camera.up).normalize();
+            let pitch_rotation = Quat::from_axis_angle(right, -rotation_delta.y);
+            camera.forward = pitch_rotation * camera.forward;
+            camera.up = pitch_rotation * camera.up;
+
+            // Ensure the camera's up vector stays close to the global up
+            camera.up = camera
+                .forward
+                .cross(Camera::GLOBAL_UP.cross(camera.forward))
+                .normalize();
+
+            // Reset cursor delta
+            self.cursor_delta = Vec2::ZERO;
+        }
+
+        let mut translation_delta = Vec3::ZERO;
+        let right = camera.forward.cross(camera.up).normalize();
+
+        if self.is_forward_pressed {
+            translation_delta += camera.forward;
         }
         if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
+            translation_delta -= camera.forward;
         }
-
-        let right = forward_norm.cross(camera.up);
-
-        // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.length();
-
         if self.is_right_pressed {
-            // Rescale the distance between the target and eye so
-            // that it doesn't change. The eye therefore still
-            // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+            translation_delta += right;
         }
         if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+            translation_delta -= right;
+        }
+        if self.is_up_pressed {
+            translation_delta += camera.up;
+        }
+        if self.is_down_pressed {
+            translation_delta -= camera.up;
+        }
+
+        if translation_delta != Vec3::ZERO {
+            translation_delta = translation_delta.normalize() * self.speed * delta_time;
+
+            if self.is_shift_pressed {
+                translation_delta *= 2.0;
+            }
+
+            camera.eye += translation_delta;
         }
 
         camera.update_matrices();

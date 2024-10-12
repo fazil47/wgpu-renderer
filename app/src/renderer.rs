@@ -1,5 +1,6 @@
-use std::rc::Rc;
+use std::{rc::Rc, time::Instant};
 
+use glam::Vec3;
 use wgpu::util::DeviceExt;
 use winit::{
     event::{Event, WindowEvent},
@@ -38,12 +39,12 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     window.request_redraw();
                 }
 
-                if egui_event_response.consumed {
+                if renderer.input(&window_event) {
+                    renderer.update();
                     return;
                 }
 
-                if renderer.input(&window_event) {
-                    renderer.update();
+                if egui_event_response.consumed {
                     return;
                 }
 
@@ -64,6 +65,8 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 struct Renderer<'window> {
     camera: Camera,
     camera_controller: CameraController,
+    last_frame_time: Instant,
+    delta_time: f32,
     _instance: wgpu::Instance,
     surface: wgpu::Surface<'window>,
     _adapter: wgpu::Adapter,
@@ -107,21 +110,18 @@ impl<'window> Renderer<'window> {
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
 
+        // position the camera 1 unit up and 2 units back
+        // +z is out of the screen
+        let camera_position: Vec3 = (0.0, 1.0, 2.0).into();
         let camera = Camera::new(
-            // position the camera 1 unit up and 2 units back
-            // +z is out of the screen
-            (0.0, 1.0, 2.0).into(),
-            // have it look at the origin
-            (0.0, 0.0, 0.0).into(),
-            // which way is "up"
-            glam::Vec3::Y,
+            camera_position,
+            -camera_position.normalize(), // have the camera look at the origin
             window_size.width as f32 / window_size.height as f32,
             45.0,
             0.1,
             100.0,
         );
-
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = CameraController::new(0.8);
 
         let (_instance, surface, adapter, device, queue, surface_config) =
             initialize_wgpu(&window, &window_size).await;
@@ -134,7 +134,7 @@ impl<'window> Renderer<'window> {
         );
 
         // Initialize vertex and index buffers
-        let shape = crate::shapes::Octahedron::new();
+        let shape = crate::shapes::Cube::new();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertices Buffer"),
             contents: bytemuck::cast_slice(shape.vertices),
@@ -187,6 +187,8 @@ impl<'window> Renderer<'window> {
         Self {
             camera,
             camera_controller,
+            last_frame_time: Instant::now(),
+            delta_time: 0.0,
             _instance,
             surface,
             _adapter: adapter,
@@ -275,6 +277,13 @@ impl<'window> Renderer<'window> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Update delta time
+        let current_time = Instant::now();
+        self.delta_time = current_time
+            .duration_since(self.last_frame_time)
+            .as_secs_f32();
+        self.last_frame_time = current_time;
+
         let surface_texture = self.surface.get_current_texture()?;
 
         let surface_texture_view = surface_texture
@@ -382,7 +391,8 @@ impl<'window> Renderer<'window> {
     }
 
     fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_controller
+            .update_camera(&mut self.camera, self.delta_time);
         self.update_camera_uniforms();
         run_raytracer(
             &self.device,
