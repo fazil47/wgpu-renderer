@@ -253,6 +253,11 @@ impl CameraController {
         }
     }
 
+    pub fn with_sensitivity(mut self, sensitivity: f32) -> Self {
+        self.sensitivity = sensitivity;
+        self
+    }
+
     pub fn process_events(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
@@ -301,9 +306,10 @@ impl CameraController {
             WindowEvent::MouseInput { state, button, .. } => {
                 if *button == winit::event::MouseButton::Right {
                     self.is_cursor_locked = state.is_pressed();
+                    return true;
                 }
 
-                true
+                false
             }
 
             WindowEvent::CursorMoved { position, .. } => {

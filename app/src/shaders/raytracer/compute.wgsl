@@ -221,6 +221,12 @@ fn get_triangle_intersection_mt(triangle: Triangle, ray: Ray) -> HitInfo {
 
     let t: f32 = dot(e1, qvec) * inv_det;
 
+    if (t < 0) {
+        // Intersection point is behind the ray
+        hit_info.did_hit = false;
+        return hit_info;
+    }
+
     hit_info.did_hit = true;
     hit_info.t = t;
     hit_info.u = u;
