@@ -134,22 +134,22 @@ impl<'window> Renderer<'window> {
         );
 
         // Initialize vertex and index buffers
-        let shape = crate::shapes::Cube::new();
+        let mesh = crate::mesh::PlyMesh::new("assets/cube.ply");
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertices Buffer"),
-            contents: bytemuck::cast_slice(shape.vertices),
+            contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Indices Buffer"),
-            contents: bytemuck::cast_slice(shape.indices),
+            contents: bytemuck::cast_slice(&mesh.indices),
             usage: wgpu::BufferUsages::INDEX
                 | wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST,
         });
-        let num_indices = shape.indices.len() as u32;
+        let num_indices = mesh.indices.len() as u32;
 
         let color_uniform = [1.0, 1.0, 1.0, 1.0];
 
@@ -394,6 +394,7 @@ impl<'window> Renderer<'window> {
         self.camera_controller
             .update_camera(&mut self.camera, self.delta_time);
         self.update_camera_uniforms();
+
         run_raytracer(
             &self.device,
             &self.queue,
@@ -401,6 +402,8 @@ impl<'window> Renderer<'window> {
             &self.raytracer_compute_bind_group,
             &self.raytracer_compute_pipeline,
         );
+
+        self.window.request_redraw();
     }
 
     fn update_camera_uniforms(&self) {

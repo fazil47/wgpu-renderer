@@ -1,4 +1,90 @@
+use ply_rs::ply::Property;
+
 use crate::wgpu::Vertex;
+
+pub struct PlyMesh {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+}
+
+trait GetPropertyValue {
+    fn get_f32(&self) -> f32;
+    fn get_u8(&self) -> u8;
+    fn get_list_u32(&self) -> Vec<u32>;
+}
+
+impl GetPropertyValue for Option<&Property> {
+    fn get_f32(&self) -> f32 {
+        match self {
+            Some(Property::Float(value)) => *value,
+            _ => panic!("Property is not an f32"),
+        }
+    }
+
+    fn get_u8(&self) -> u8 {
+        match self {
+            Some(Property::UChar(value)) => *value,
+            _ => panic!("Property is not a u8"),
+        }
+    }
+
+    fn get_list_u32(&self) -> Vec<u32> {
+        match self {
+            Some(Property::ListUInt(value)) => value.clone(),
+            _ => panic!("Property is not a list of u32 values"),
+        }
+    }
+}
+
+impl PlyMesh {
+    pub fn new(path: &str) -> Self {
+        let parser = ply_rs::parser::Parser::<ply_rs::ply::DefaultElement>::new();
+        let mut file = std::fs::File::open(path).unwrap();
+        let mesh = parser.read_ply(&mut file).unwrap();
+
+        Self {
+            vertices: mesh
+                .payload
+                .get("vertex")
+                .unwrap()
+                .into_iter()
+                .map(|vertex| Vertex {
+                    position: [
+                        vertex.get("x").get_f32(),
+                        vertex.get("y").get_f32(),
+                        vertex.get("z").get_f32(),
+                        1.0,
+                    ],
+                    color: [
+                        vertex.get("red").get_u8() as f32 / 255.0,
+                        vertex.get("green").get_u8() as f32 / 255.0,
+                        vertex.get("blue").get_u8() as f32 / 255.0,
+                        1.0,
+                    ],
+                })
+                .collect::<Vec<Vertex>>(),
+            indices: mesh
+                .payload
+                .get("face")
+                .unwrap()
+                .into_iter()
+                .flat_map(|face| {
+                    let vertices = &face.get("vertex_indices").get_list_u32();
+
+                    // Split the quad into two triangles
+                    vec![
+                        vertices[0],
+                        vertices[1],
+                        vertices[2],
+                        vertices[0],
+                        vertices[2],
+                        vertices[3],
+                    ]
+                })
+                .collect(),
+        }
+    }
+}
 
 pub struct Triangle<'tri> {
     pub vertices: &'tri [Vertex],
