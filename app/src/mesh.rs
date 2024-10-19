@@ -1,4 +1,4 @@
-use ply_rs::ply::Property;
+use ply_rs::ply;
 
 use crate::wgpu::Vertex;
 
@@ -7,31 +7,31 @@ pub struct PlyMesh {
     pub indices: Vec<u32>,
 }
 
-trait GetPropertyValue {
+trait GetPlyPropertyValue {
     fn get_f32(&self) -> f32;
     fn get_u8(&self) -> u8;
     fn get_list_u32(&self) -> Vec<u32>;
 }
 
-impl GetPropertyValue for Option<&Property> {
+impl GetPlyPropertyValue for Option<&ply::Property> {
     fn get_f32(&self) -> f32 {
         match self {
-            Some(Property::Float(value)) => *value,
-            _ => panic!("Property is not an f32"),
+            Some(ply::Property::Float(value)) => *value,
+            _ => panic!("Ply Property is not an f32"),
         }
     }
 
     fn get_u8(&self) -> u8 {
         match self {
-            Some(Property::UChar(value)) => *value,
-            _ => panic!("Property is not a u8"),
+            Some(ply::Property::UChar(value)) => *value,
+            _ => panic!("Ply Property is not a u8"),
         }
     }
 
     fn get_list_u32(&self) -> Vec<u32> {
         match self {
-            Some(Property::ListUInt(value)) => value.clone(),
-            _ => panic!("Property is not a list of u32 values"),
+            Some(ply::Property::ListUInt(value)) => value.clone(),
+            _ => panic!("Ply Property is not a list of u32 values"),
         }
     }
 }

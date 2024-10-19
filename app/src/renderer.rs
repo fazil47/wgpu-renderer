@@ -110,9 +110,9 @@ impl<'window> Renderer<'window> {
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
 
-        // position the camera 1 unit up and 2 units back
+        // position the camera 4 units back
         // +z is out of the screen
-        let camera_position: Vec3 = (0.0, 1.0, 2.0).into();
+        let camera_position: Vec3 = (0.0, 0.0, 4.0).into();
         let camera = Camera::new(
             camera_position,
             -camera_position.normalize(), // have the camera look at the origin
