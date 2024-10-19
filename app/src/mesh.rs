@@ -59,7 +59,7 @@ impl PlyMesh {
                         vertex.get("red").get_u8() as f32 / 255.0,
                         vertex.get("green").get_u8() as f32 / 255.0,
                         vertex.get("blue").get_u8() as f32 / 255.0,
-                        1.0,
+                        vertex.get("alpha").get_u8() as f32 / 255.0,
                     ],
                 })
                 .collect::<Vec<Vertex>>(),
@@ -69,9 +69,14 @@ impl PlyMesh {
                 .unwrap()
                 .into_iter()
                 .flat_map(|face| {
-                    let vertices = &face.get("vertex_indices").get_list_u32();
+                    let vertices = face.get("vertex_indices").get_list_u32();
 
-                    // Split the quad into two triangles
+                    // If the face is a triangle, return the vertices
+                    if vertices.len() == 3 {
+                        return vertices;
+                    }
+
+                    // Else if the face is a quad, split it into two triangles
                     vec![
                         vertices[0],
                         vertices[1],

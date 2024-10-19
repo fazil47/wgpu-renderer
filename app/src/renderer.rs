@@ -134,7 +134,7 @@ impl<'window> Renderer<'window> {
         );
 
         // Initialize vertex and index buffers
-        let mesh = crate::mesh::PlyMesh::new("assets/cube.ply");
+        let mesh = crate::mesh::PlyMesh::new("assets/cornell-box.ply");
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertices Buffer"),
             contents: bytemuck::cast_slice(&mesh.vertices),
