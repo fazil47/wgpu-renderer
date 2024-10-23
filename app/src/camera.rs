@@ -258,7 +258,11 @@ impl CameraController {
         self
     }
 
-    pub fn process_events(&mut self, event: &WindowEvent) -> bool {
+    pub fn is_cursor_locked(&self) -> bool {
+        self.is_cursor_locked
+    }
+
+    pub fn process_events(&mut self, event: &WindowEvent) {
         match event {
             WindowEvent::KeyboardInput {
                 event:
@@ -273,81 +277,71 @@ impl CameraController {
                 match keycode {
                     KeyCode::KeyE => {
                         self.is_up_pressed = is_pressed;
-                        true
                     }
                     KeyCode::KeyQ => {
                         self.is_down_pressed = is_pressed;
-                        true
                     }
                     KeyCode::KeyW | KeyCode::ArrowUp => {
                         self.is_forward_pressed = is_pressed;
-                        true
                     }
                     KeyCode::KeyA | KeyCode::ArrowLeft => {
                         self.is_left_pressed = is_pressed;
-                        true
                     }
                     KeyCode::KeyS | KeyCode::ArrowDown => {
                         self.is_backward_pressed = is_pressed;
-                        true
                     }
                     KeyCode::KeyD | KeyCode::ArrowRight => {
                         self.is_right_pressed = is_pressed;
-                        true
                     }
                     KeyCode::ShiftLeft => {
                         self.is_shift_pressed = is_pressed;
-                        true
                     }
-                    _ => false,
+                    _ => (),
                 }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
                 if *button == winit::event::MouseButton::Right {
                     self.is_cursor_locked = state.is_pressed();
-                    return true;
                 }
-
-                false
             }
 
             WindowEvent::CursorMoved { position, .. } => {
                 let new_position = Vec2::new(position.x as f32, position.y as f32);
                 self.cursor_delta = new_position - self.cursor_position;
                 self.cursor_position = new_position;
-
-                true
             }
 
-            _ => false,
+            _ => (),
         }
     }
 
     pub fn update_camera(&mut self, camera: &mut Camera, delta_time: f32) {
-        if self.is_cursor_locked {
-            let rotation_delta = self.cursor_delta * self.sensitivity;
-
-            // Rotate around the global Y-axis (yaw)
-            let yaw_rotation = Quat::from_rotation_y(-rotation_delta.x);
-            camera.forward = yaw_rotation * camera.forward;
-            camera.up = yaw_rotation * camera.up;
-
-            // Rotate around the camera's local X-axis (pitch)
-            let right = camera.forward.cross(camera.up).normalize();
-            let pitch_rotation = Quat::from_axis_angle(right, -rotation_delta.y);
-            camera.forward = pitch_rotation * camera.forward;
-            camera.up = pitch_rotation * camera.up;
-
-            // Ensure the camera's up vector stays close to the global up
-            camera.up = camera
-                .forward
-                .cross(Camera::GLOBAL_UP.cross(camera.forward))
-                .normalize();
-
-            // Reset cursor delta
-            self.cursor_delta = Vec2::ZERO;
+        if !self.is_cursor_locked {
+            return;
         }
+
+        let rotation_delta = self.cursor_delta * self.sensitivity;
+
+        // Rotate around the global Y-axis (yaw)
+        let yaw_rotation = Quat::from_rotation_y(-rotation_delta.x);
+        camera.forward = yaw_rotation * camera.forward;
+        camera.up = yaw_rotation * camera.up;
+
+        // Rotate around the camera's local X-axis (pitch)
+        let right = camera.forward.cross(camera.up).normalize();
+        let pitch_rotation = Quat::from_axis_angle(right, -rotation_delta.y);
+        camera.forward = pitch_rotation * camera.forward;
+        camera.up = pitch_rotation * camera.up;
+
+        // Ensure the camera's up vector stays close to the global up
+        camera.up = camera
+            .forward
+            .cross(Camera::GLOBAL_UP.cross(camera.forward))
+            .normalize();
+
+        // Reset cursor delta
+        self.cursor_delta = Vec2::ZERO;
 
         let mut translation_delta = Vec3::ZERO;
         let right = camera.forward.cross(camera.up).normalize();

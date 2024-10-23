@@ -39,9 +39,9 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     window.request_redraw();
                 }
 
-                if renderer.input(&window_event) {
+                renderer.input(&window_event);
+                if renderer.camera_controller.is_cursor_locked() {
                     renderer.update();
-                    return;
                 }
 
                 if egui_event_response.consumed {
@@ -63,6 +63,8 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 }
 
 struct Renderer<'window> {
+    target_frame_time: f32,
+    time_since_last_frame: f32,
     camera: Camera,
     camera_controller: CameraController,
     last_frame_time: Instant,
@@ -185,6 +187,8 @@ impl<'window> Renderer<'window> {
         );
 
         Self {
+            target_frame_time: 1.0 / 120.0,
+            time_since_last_frame: 0.0,
             camera,
             camera_controller,
             last_frame_time: Instant::now(),
@@ -386,11 +390,22 @@ impl<'window> Renderer<'window> {
         Ok(())
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera_controller.process_events(event)
+    fn input(&mut self, event: &WindowEvent) {
+        self.camera_controller.process_events(event);
     }
 
     fn update(&mut self) {
+        self.time_since_last_frame += self.delta_time;
+
+        // Raytracing is expensive, so run it every 4 frames
+        if self.is_raytracer_enabled && self.time_since_last_frame < self.target_frame_time * 4.0 {
+            return;
+        } else if self.time_since_last_frame < self.target_frame_time {
+            return;
+        } else {
+            self.time_since_last_frame = 0.0;
+        }
+
         self.camera_controller
             .update_camera(&mut self.camera, self.delta_time);
         self.update_camera_uniforms();
