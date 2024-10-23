@@ -395,13 +395,15 @@ impl<'window> Renderer<'window> {
             .update_camera(&mut self.camera, self.delta_time);
         self.update_camera_uniforms();
 
-        run_raytracer(
-            &self.device,
-            &self.queue,
-            self.window_size,
-            &self.raytracer_compute_bind_group,
-            &self.raytracer_compute_pipeline,
-        );
+        if self.is_raytracer_enabled {
+            run_raytracer(
+                &self.device,
+                &self.queue,
+                self.window_size,
+                &self.raytracer_compute_bind_group,
+                &self.raytracer_compute_pipeline,
+            );
+        }
 
         self.window.request_redraw();
     }
