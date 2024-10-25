@@ -83,6 +83,7 @@ struct Renderer<'window> {
     egui_renderer: egui_wgpu::Renderer,
     egui_state: egui_winit::State,
     is_raytracer_enabled: bool,
+    depth_texture: crate::wgpu::Texture,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
@@ -134,6 +135,9 @@ impl<'window> Renderer<'window> {
             &surface_config,
             window.scale_factor() as f32,
         );
+
+        let depth_texture =
+            crate::wgpu::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
         // Initialize vertex and index buffers
         let mesh = crate::mesh::PlyMesh::new("assets/cornell-box.ply");
@@ -204,6 +208,7 @@ impl<'window> Renderer<'window> {
             egui_renderer,
             egui_state,
             is_raytracer_enabled: false,
+            depth_texture,
             vertex_buffer,
             index_buffer,
             num_indices,
@@ -245,6 +250,12 @@ impl<'window> Renderer<'window> {
         self.surface_config.width = new_size.width.max(1);
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
+
+        self.depth_texture = crate::wgpu::Texture::create_depth_texture(
+            &self.device,
+            &self.surface_config,
+            "depth_texture",
+        );
 
         // Recreate the raytracer bind groups with the new texture view
         let (raytracer_render_bind_group, raytracer_compute_bind_group) =
@@ -357,27 +368,45 @@ impl<'window> Renderer<'window> {
         );
 
         {
-            let mut rpass = if self.is_raytracer_enabled {
+            if self.is_raytracer_enabled {
                 render_raytracer(
                     &mut render_encoder,
                     &surface_texture_view,
                     &self.raytracer_render_bind_group,
                     &self.raytracer_render_pipeline,
-                )
+                );
             } else {
                 render_rasterizer(
                     &mut render_encoder,
                     &surface_texture_view,
+                    &self.depth_texture,
                     &self.vertex_buffer,
                     &self.index_buffer,
                     self.num_indices,
                     &self.rasterizer_bind_group,
                     &self.rasterizer_render_pipeline,
-                )
+                );
             };
+        }
+
+        {
+            let mut egui_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Rasterizer Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
             self.egui_renderer
-                .render(&mut rpass, &egui_primitives, &egui_screen_descriptor);
+                .render(&mut egui_rpass, &egui_primitives, &egui_screen_descriptor);
         }
 
         self.queue.submit(Some(render_encoder.finish()));

@@ -107,7 +107,13 @@ pub fn initialize_rasterizer(
                 })],
             }),
             primitive,
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: crate::wgpu::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -120,15 +126,16 @@ pub fn initialize_rasterizer(
     )
 }
 
-pub fn render_rasterizer<'rpass>(
-    render_encoder: &'rpass mut wgpu::CommandEncoder,
-    surface_texture_view: &'rpass wgpu::TextureView,
-    vertex_buffer: &'rpass wgpu::Buffer,
-    index_buffer: &'rpass wgpu::Buffer,
+pub fn render_rasterizer(
+    render_encoder: &mut wgpu::CommandEncoder,
+    surface_texture_view: &wgpu::TextureView,
+    depth_texture: &crate::wgpu::Texture,
+    vertex_buffer: &wgpu::Buffer,
+    index_buffer: &wgpu::Buffer,
     num_indices: u32,
-    rasterizer_bind_group: &'rpass wgpu::BindGroup,
-    rasterizer_render_pipeline: &'rpass wgpu::RenderPipeline,
-) -> wgpu::RenderPass<'rpass> {
+    rasterizer_bind_group: &wgpu::BindGroup,
+    rasterizer_render_pipeline: &wgpu::RenderPipeline,
+) {
     let mut rasterizer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Rasterizer Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -139,7 +146,14 @@ pub fn render_rasterizer<'rpass>(
                 store: wgpu::StoreOp::Store,
             },
         })],
-        depth_stencil_attachment: None,
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: &depth_texture.view,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
         timestamp_writes: None,
         occlusion_query_set: None,
     });
@@ -149,6 +163,4 @@ pub fn render_rasterizer<'rpass>(
     rasterizer_rpass.set_bind_group(0, rasterizer_bind_group, &[]);
     rasterizer_rpass.set_pipeline(rasterizer_render_pipeline);
     rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
-
-    rasterizer_rpass
 }
