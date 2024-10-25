@@ -314,12 +314,12 @@ pub fn create_raytracer_bind_groups(
     (raytracer_render_bind_group, raytracer_compute_bind_group)
 }
 
-pub fn render_raytracer<'rpass>(
-    render_encoder: &'rpass mut wgpu::CommandEncoder,
-    surface_texture_view: &'rpass wgpu::TextureView,
-    raytracer_render_bind_group: &'rpass wgpu::BindGroup,
-    raytracer_render_pipeline: &'rpass wgpu::RenderPipeline,
-) -> wgpu::RenderPass<'rpass> {
+pub fn render_raytracer(
+    render_encoder: &mut wgpu::CommandEncoder,
+    surface_texture_view: &wgpu::TextureView,
+    raytracer_render_bind_group: &wgpu::BindGroup,
+    raytracer_render_pipeline: &wgpu::RenderPipeline,
+) {
     let mut raytracer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Raytracer Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -338,8 +338,6 @@ pub fn render_raytracer<'rpass>(
     raytracer_rpass.set_bind_group(0, raytracer_render_bind_group, &[]);
     raytracer_rpass.set_pipeline(raytracer_render_pipeline);
     raytracer_rpass.draw(0..3, 0..1);
-
-    raytracer_rpass
 }
 
 pub fn run_raytracer(
