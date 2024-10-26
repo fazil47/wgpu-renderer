@@ -34,5 +34,10 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
-    return color_uniform * vert_output.color;
+    let direct_light: f32 = max(0.0, dot(vert_output.normal, sun_direction));
+    let ambient_light: f32 = 0.05;
+    let total_light: f32 = direct_light + ambient_light;
+    let color = vert_output.color * vec4f(total_light, total_light, total_light, 1.0);
+
+    return color_uniform * color;
 }
