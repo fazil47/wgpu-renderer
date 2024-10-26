@@ -1,4 +1,5 @@
 const K_EPSILON: f32 = 1e-6;
+const FLT_MAX: f32 = 1e12;
 
 // TODO: Break up bind groups, see https://toji.dev/webgpu-best-practices/bind-groups.html
 
@@ -241,17 +242,29 @@ fn get_interpolated_color(triangle: Triangle, hit_info: HitInfo) -> vec4f {
     return triangle.a.color * hit_info.u + triangle.b.color * hit_info.v + triangle.c.color * hit_info.w;
 }
 
-fn trace_mesh(ray: Ray, coords: vec2i) -> bool {
+fn trace_triangles(ray: Ray, coords: vec2i) -> bool {
     let num_triangles = u32(arrayLength(&indices) / 3u);
+    
+    var nearest_hit_info: HitInfo;
+    var nearest_triangle: Triangle;
+
+    nearest_hit_info.t = FLT_MAX;
 
     for (var i: u32 = 0u; i < num_triangles; i = i + 1u) {
         let triangle: Triangle = get_triangle(i);
         let hit_info: HitInfo = get_triangle_intersection_mt(triangle, ray);
 
         if (hit_info.did_hit) {
-            textureStore(result, coords, get_interpolated_color(triangle, hit_info));
-            return true;
+            if (hit_info.t < nearest_hit_info.t) {
+                nearest_hit_info = hit_info;
+                nearest_triangle = triangle;
+            }
         }
+    }
+
+    if (nearest_hit_info.did_hit) {
+        textureStore(result, coords, get_interpolated_color(nearest_triangle, nearest_hit_info));
+        return true;
     }
 
     return false;
@@ -279,8 +292,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // Write some colors
     let coords = vec2i(i32(id.x), i32(id.y));
 
-    // Trace the ray against the mesh
-    if (trace_mesh(ray, coords)) {
+    // Trace the ray against the triangles
+    if (trace_triangles(ray, coords)) {
         return;
     }
 
