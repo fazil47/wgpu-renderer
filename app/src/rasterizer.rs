@@ -1,3 +1,4 @@
+use glam::Vec3A;
 use wgpu::util::DeviceExt;
 
 use crate::{camera::Camera, wgpu::Vertex};
@@ -5,10 +6,12 @@ use crate::{camera::Camera, wgpu::Vertex};
 pub fn initialize_rasterizer(
     camera: &Camera,
     color_uniform: &[f32; 4],
+    sun_direction_uniform: &Vec3A,
     device: &wgpu::Device,
     surface: &wgpu::Surface,
     adapter: &wgpu::Adapter,
 ) -> (
+    wgpu::Buffer,
     wgpu::Buffer,
     wgpu::Buffer,
     wgpu::BindGroup,
@@ -30,6 +33,13 @@ pub fn initialize_rasterizer(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         contents: bytemuck::cast_slice(color_uniform),
     });
+
+    let sun_direction_uniform_buffer =
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Direction Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&sun_direction_uniform.to_array()),
+        });
 
     let rasterizer_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -55,6 +65,16 @@ pub fn initialize_rasterizer(
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -69,6 +89,10 @@ pub fn initialize_rasterizer(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: color_uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: sun_direction_uniform_buffer.as_entire_binding(),
             },
         ],
     });
@@ -121,6 +145,7 @@ pub fn initialize_rasterizer(
     (
         camera_view_proj_uniform_buffer,
         color_uniform_buffer,
+        sun_direction_uniform_buffer,
         rasterizer_bind_group,
         rasterizer_render_pipeline,
     )

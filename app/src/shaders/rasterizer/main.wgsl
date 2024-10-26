@@ -5,18 +5,21 @@ struct Camera {
 struct VertexInput {
     @location(0) position: vec4f,
     @location(1) color: vec4f,
+    @location(2) normal: vec3f,
 };
 
 struct VertexOutput {
     @builtin(position) position: vec4f, // Clip space position
     @location(0) color: vec4f,
+    @location(1) normal: vec3f,
 }
 
 @group(0) @binding(0)
 var<uniform> camera_uniform: Camera;
-
 @group(0) @binding(1)
 var<uniform> color_uniform: vec4f;
+@group(0) @binding(2)
+var<uniform> sun_direction: vec3f;
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
@@ -24,6 +27,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
     out.position = camera_uniform.view_proj * model.position;
     out.color = model.color;
+    out.normal = model.normal;
 
     return out;
 }

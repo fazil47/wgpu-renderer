@@ -11,11 +11,12 @@ use winit::window::Window;
 pub struct Vertex {
     pub position: [f32; 4],
     pub color: [f32; 4],
+    pub normal: [f32; 4],
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+    const ATTRIBS: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
@@ -28,6 +29,7 @@ impl Vertex {
 
 pub const VERTEX_STRIDE: u32 = (size_of::<Vertex>() / size_of::<f32>()) as u32;
 pub const VERTEX_COLOR_OFFSET: u32 = (offset_of!(Vertex, color) / size_of::<f32>()) as u32;
+pub const VERTEX_NORMAL_OFFSET: u32 = (offset_of!(Vertex, normal) / size_of::<f32>()) as u32;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

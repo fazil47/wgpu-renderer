@@ -11,6 +11,7 @@ use winit::{
 use crate::{
     camera::{Camera, CameraController},
     egui::initialize_egui,
+    lights,
     rasterizer::{initialize_rasterizer, render_rasterizer},
     raytracer::{
         create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
@@ -88,8 +89,11 @@ struct Renderer<'window> {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     color_uniform: [f32; 4],
+    sun_light: lights::DirectionalLight,
+    sun_azi_alt: (f32, f32),
     rasterizer_camera_view_proj_uniform: wgpu::Buffer,
     rasterizer_color_uniform_buffer: wgpu::Buffer,
+    rasterizer_sun_direction_uniform_buffer: wgpu::Buffer,
     rasterizer_bind_group: wgpu::BindGroup,
     rasterizer_render_pipeline: wgpu::RenderPipeline,
     raytracer_result_texture: wgpu::Texture,
@@ -99,8 +103,10 @@ struct Renderer<'window> {
     raytracer_render_pipeline: wgpu::RenderPipeline,
     raytracer_vertex_stride_uniform_buffer: wgpu::Buffer,
     raytracer_vertex_color_offset_uniform_buffer: wgpu::Buffer,
+    raytracer_vertex_normal_offset_uniform_buffer: wgpu::Buffer,
     raytracer_camera_to_world_uniform_buffer: wgpu::Buffer,
     raytracer_camera_inverse_projection_uniform_buffer: wgpu::Buffer,
+    raytracer_sun_direction_uniform_buffer: wgpu::Buffer,
     raytracer_compute_bind_group_layout: wgpu::BindGroupLayout,
     raytracer_compute_bind_group: wgpu::BindGroup,
     raytracer_compute_pipeline: wgpu::ComputePipeline,
@@ -159,12 +165,23 @@ impl<'window> Renderer<'window> {
 
         let color_uniform = [1.0, 1.0, 1.0, 1.0];
 
+        let sun_azi_alt = (45.0, 45.0);
+        let sun_light = lights::DirectionalLight::from_azi_alt(sun_azi_alt.0, sun_azi_alt.1);
+
         let (
             rasterizer_camera_view_proj_uniform,
             rasterizer_color_uniform_buffer,
+            rasterizer_sun_direction_uniform_buffer,
             rasterizer_bind_group,
             rasterizer_render_pipeline,
-        ) = initialize_rasterizer(&camera, &color_uniform, &device, &surface, &adapter);
+        ) = initialize_rasterizer(
+            &camera,
+            &color_uniform,
+            &sun_light.direction,
+            &device,
+            &surface,
+            &adapter,
+        );
 
         let (raytracer_result_texture, raytracer_result_texture_view) =
             create_raytracer_result_texture(&device, window_size.width, window_size.height);
@@ -175,8 +192,10 @@ impl<'window> Renderer<'window> {
             raytracer_render_pipeline,
             raytracer_vertex_stride_uniform_buffer,
             raytracer_vertex_color_offset_uniform_buffer,
+            raytracer_vertex_normal_offset_uniform_buffer,
             raytracer_camera_to_world_uniform_buffer,
             raytracer_camera_inverse_projection_uniform_buffer,
+            raytracer_sun_direction_uniform_buffer,
             raytracer_compute_bind_group_layout,
             raytracer_compute_bind_group,
             raytracer_compute_pipeline,
@@ -184,6 +203,7 @@ impl<'window> Renderer<'window> {
             &vertex_buffer,
             &index_buffer,
             &camera,
+            &sun_light.direction,
             &raytracer_result_texture_view,
             &device,
             &surface,
@@ -213,8 +233,11 @@ impl<'window> Renderer<'window> {
             index_buffer,
             num_indices,
             color_uniform,
+            sun_azi_alt,
+            sun_light,
             rasterizer_camera_view_proj_uniform,
             rasterizer_color_uniform_buffer,
+            rasterizer_sun_direction_uniform_buffer,
             rasterizer_bind_group,
             rasterizer_render_pipeline,
             raytracer_result_texture,
@@ -224,8 +247,10 @@ impl<'window> Renderer<'window> {
             raytracer_render_pipeline,
             raytracer_vertex_stride_uniform_buffer,
             raytracer_vertex_color_offset_uniform_buffer,
+            raytracer_vertex_normal_offset_uniform_buffer,
             raytracer_camera_to_world_uniform_buffer,
             raytracer_camera_inverse_projection_uniform_buffer,
+            raytracer_sun_direction_uniform_buffer,
             raytracer_compute_bind_group_layout,
             raytracer_compute_bind_group,
             raytracer_compute_pipeline,
@@ -268,8 +293,10 @@ impl<'window> Renderer<'window> {
                 &self.index_buffer,
                 &self.raytracer_vertex_stride_uniform_buffer,
                 &self.raytracer_vertex_color_offset_uniform_buffer,
+                &self.raytracer_vertex_normal_offset_uniform_buffer,
                 &self.raytracer_camera_to_world_uniform_buffer,
                 &self.raytracer_camera_inverse_projection_uniform_buffer,
+                &self.raytracer_sun_direction_uniform_buffer,
             );
         self.raytracer_render_bind_group = raytracer_render_bind_group;
         self.raytracer_compute_bind_group = raytracer_compute_bind_group;
@@ -327,6 +354,48 @@ impl<'window> Renderer<'window> {
                                     &self.rasterizer_color_uniform_buffer,
                                     &self.color_uniform,
                                 );
+                            }
+
+                            let sun_azi_changed = ui
+                                .add(
+                                    egui::Slider::new(&mut self.sun_azi_alt.0, 0.0..=360.0)
+                                        .text("Sun Azimuth"),
+                                )
+                                .changed();
+
+                            let sun_alt_changed = ui
+                                .add(
+                                    egui::Slider::new(&mut self.sun_azi_alt.1, 0.0..=90.0)
+                                        .text("Sun Altitude"),
+                                )
+                                .changed();
+
+                            if sun_azi_changed || sun_alt_changed {
+                                self.sun_light = lights::DirectionalLight::from_azi_alt(
+                                    self.sun_azi_alt.0,
+                                    self.sun_azi_alt.1,
+                                );
+
+                                update_buffer(
+                                    &self.queue,
+                                    &self.rasterizer_sun_direction_uniform_buffer,
+                                    &self.sun_light.direction.to_array(),
+                                );
+                                update_buffer(
+                                    &self.queue,
+                                    &self.raytracer_sun_direction_uniform_buffer,
+                                    &self.sun_light.direction.to_array(),
+                                );
+
+                                if self.is_raytracer_enabled {
+                                    run_raytracer(
+                                        &self.device,
+                                        &self.queue,
+                                        self.window_size,
+                                        &self.raytracer_compute_bind_group,
+                                        &self.raytracer_compute_pipeline,
+                                    );
+                                }
                             }
 
                             // Run the raytracer when the checkbox is toggled on

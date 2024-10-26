@@ -61,6 +61,12 @@ impl PlyMesh {
                         vertex.get("blue").get_u8() as f32 / 255.0,
                         vertex.get("alpha").get_u8() as f32 / 255.0,
                     ],
+                    normal: [
+                        vertex.get("nx").get_f32(),
+                        vertex.get("ny").get_f32(),
+                        vertex.get("nz").get_f32(),
+                        0.0,
+                    ],
                 })
                 .collect::<Vec<Vertex>>(),
             indices: mesh
@@ -103,14 +109,17 @@ impl<'tri> Triangle<'tri> {
                 Vertex {
                     position: [0.0, 1.0, 0.0, 1.0],
                     color: [1.0, 0.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
                 Vertex {
                     position: [-1.0, -1.0, 0.0, 1.0],
                     color: [0.0, 1.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
                 Vertex {
                     position: [1.0, -1.0, 0.0, 1.0],
                     color: [0.0, 0.0, 1.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
             ],
             indices: &[0, 1, 2],
@@ -130,22 +139,27 @@ impl<'pent> Pentagon<'pent> {
                 Vertex {
                     position: [-0.0868241, 0.49240386, 0.0, 1.0],
                     color: [0.5, 0.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 }, // A
                 Vertex {
                     position: [-0.49513406, 0.06958647, 0.0, 1.0],
                     color: [0.0, 0.5, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 }, // B
                 Vertex {
                     position: [-0.21918549, -0.44939706, 0.0, 1.0],
                     color: [0.0, 0.0, 0.5, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 }, // C
                 Vertex {
                     position: [0.35966998, -0.3473291, 0.0, 1.0],
                     color: [0.0, 0.0, 1.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 }, // D
                 Vertex {
                     position: [0.44147372, 0.2347359, 0.0, 1.0],
                     color: [0.0, 1.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 }, // E
             ],
             indices: &[0, 1, 4, 1, 2, 4, 2, 3, 4],
@@ -166,35 +180,43 @@ impl<'cube> Cube<'cube> {
                 Vertex {
                     position: [-0.5, -0.5, 0.5, 1.0],
                     color: [1.0, 0.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
                 Vertex {
                     position: [0.5, -0.5, 0.5, 1.0],
                     color: [1.0, 0.5, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
                 Vertex {
                     position: [0.5, 0.5, 0.5, 1.0],
                     color: [1.0, 1.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
                 Vertex {
                     position: [-0.5, 0.5, 0.5, 1.0],
                     color: [0.5, 1.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 },
                 // Back face
                 Vertex {
                     position: [-0.5, -0.5, -0.5, 1.0],
                     color: [0.0, 1.0, 0.0, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
                 },
                 Vertex {
                     position: [0.5, -0.5, -0.5, 1.0],
                     color: [0.0, 1.0, 0.5, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
                 },
                 Vertex {
                     position: [0.5, 0.5, -0.5, 1.0],
                     color: [0.0, 1.0, 1.0, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
                 },
                 Vertex {
                     position: [-0.5, 0.5, -0.5, 1.0],
                     color: [0.0, 0.5, 1.0, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
                 },
             ],
             indices: &[
@@ -221,26 +243,32 @@ impl<'oct> Octahedron<'oct> {
                 Vertex {
                     position: [0.0, 1.0, 0.0, 1.0],
                     color: [1.0, 0.0, 0.0, 1.0],
+                    normal: [0.0, 1.0, 0.0, 0.0],
                 }, // 0: Top
                 Vertex {
                     position: [0.0, -1.0, 0.0, 1.0],
                     color: [0.0, 1.0, 0.0, 1.0],
+                    normal: [0.0, -1.0, 0.0, 0.0],
                 }, // 1: Bottom
                 Vertex {
                     position: [1.0, 0.0, 0.0, 1.0],
                     color: [0.0, 0.0, 1.0, 1.0],
+                    normal: [1.0, 0.0, 0.0, 0.0],
                 }, // 2: Right
                 Vertex {
                     position: [-1.0, 0.0, 0.0, 1.0],
                     color: [1.0, 1.0, 0.0, 1.0],
+                    normal: [-1.0, 0.0, 0.0, 0.0],
                 }, // 3: Left
                 Vertex {
                     position: [0.0, 0.0, 1.0, 1.0],
                     color: [1.0, 0.0, 1.0, 1.0],
+                    normal: [0.0, 0.0, 1.0, 0.0],
                 }, // 4: Front
                 Vertex {
                     position: [0.0, 0.0, -1.0, 1.0],
                     color: [0.0, 1.0, 1.0, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
                 }, // 5: Back
             ],
             indices: &[

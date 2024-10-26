@@ -1,5 +1,6 @@
 const K_EPSILON: f32 = 1e-6;
 const FLT_MAX: f32 = 1e12;
+const MAX_BOUNCES: u32 = 4;
 
 // TODO: Break up bind groups, see https://toji.dev/webgpu-best-practices/bind-groups.html
 
@@ -12,15 +13,20 @@ var<uniform> vertex_stride: u32;
 @group(0) @binding(3)
 var<uniform> vertex_color_offset: u32;
 @group(0) @binding(4)
-var<uniform> camera_to_world: mat4x4f;
+var<uniform> vertex_normal_offset: u32;
 @group(0) @binding(5)
-var<uniform> camera_inverse_projection: mat4x4f;
+var<uniform> camera_to_world: mat4x4f;
 @group(0) @binding(6)
+var<uniform> camera_inverse_projection: mat4x4f;
+@group(0) @binding(7)
+var<uniform> sun_direction: vec3f;
+@group(0) @binding(8)
 var result: texture_storage_2d<rgba8unorm, write>;
 
 struct Vertex {
     position: vec4f,
     color: vec4f,
+    normal: vec4f,
 }
 
 struct Triangle {
@@ -44,6 +50,13 @@ fn get_vertex(index: u32) -> Vertex {
         vertices[index * vertex_stride + vertex_color_offset + 1u],
         vertices[index * vertex_stride + vertex_color_offset + 2u],
         vertices[index * vertex_stride + vertex_color_offset + 3u],
+    );
+
+    vertex.normal = vec4f(
+        vertices[index * vertex_stride + vertex_normal_offset + 0u],
+        vertices[index * vertex_stride + vertex_normal_offset + 1u],
+        vertices[index * vertex_stride + vertex_normal_offset + 2u],
+        vertices[index * vertex_stride + vertex_normal_offset + 3u],
     );
 
     return vertex;
@@ -242,7 +255,16 @@ fn get_interpolated_color(triangle: Triangle, hit_info: HitInfo) -> vec4f {
     return triangle.a.color * hit_info.u + triangle.b.color * hit_info.v + triangle.c.color * hit_info.w;
 }
 
-fn trace_triangles(ray: Ray, coords: vec2i) -> bool {
+fn get_sky_color(ray: Ray) -> vec4f {
+    // The sky is black except for the sun
+    let sun_direction = normalize(sun_direction);
+    var sun_intensity = max(dot(sun_direction, ray.direction), 0.0);
+    sun_intensity = pow(sun_intensity, 32.0);
+
+    return vec4f(sun_intensity, sun_intensity, sun_intensity, 1.0);
+}
+
+fn trace_triangles(ray: Ray, coords: vec2i, bounces: u32) -> vec4f {
     let num_triangles = u32(arrayLength(&indices) / 3u);
     
     var nearest_hit_info: HitInfo;
@@ -263,11 +285,10 @@ fn trace_triangles(ray: Ray, coords: vec2i) -> bool {
     }
 
     if (nearest_hit_info.did_hit) {
-        textureStore(result, coords, get_interpolated_color(nearest_triangle, nearest_hit_info));
-        return true;
+        return get_interpolated_color(nearest_triangle, nearest_hit_info);
     }
 
-    return false;
+    return get_sky_color(ray);
 }
 
 fn get_ray_color(ray: Ray) -> vec4f {
@@ -293,11 +314,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let coords = vec2i(i32(id.x), i32(id.y));
 
     // Trace the ray against the triangles
-    if (trace_triangles(ray, coords)) {
-        return;
-    }
-
-    textureStore(result, coords, vec4f(0.0, 0.0, 0.0, 1.0)); // Background color
+    let ray_color: vec4f = trace_triangles(ray, coords, 0u);
+    textureStore(result, coords, ray_color);
 
     // textureStore(result, coords, get_ray_color(ray)); // Used to debug the camera
 }
