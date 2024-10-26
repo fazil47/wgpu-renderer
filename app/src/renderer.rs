@@ -12,9 +12,9 @@ use crate::{
     camera::{Camera, CameraController},
     egui::initialize_egui,
     lights,
-    rasterizer::{initialize_rasterizer, render_rasterizer},
+    rasterizer::{self, initialize_rasterizer, render_rasterizer},
     raytracer::{
-        create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
+        self, create_raytracer_bind_groups, create_raytracer_result_texture, initialize_raytracer,
         render_raytracer, run_raytracer,
     },
     wgpu::{initialize_wgpu, update_buffer},
@@ -33,7 +33,8 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
             } = event
             {
                 let egui_event_response = renderer
-                    .egui_state
+                    .egui
+                    .state
                     .on_window_event(&renderer.window, &window_event);
 
                 if egui_event_response.repaint {
@@ -71,47 +72,22 @@ struct Renderer<'window> {
     camera_controller: CameraController,
     last_frame_time: Instant,
     delta_time: f32,
-    _instance: wgpu::Instance,
-    surface: wgpu::Surface<'window>,
-    _adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface_config: wgpu::SurfaceConfiguration,
+    wgpu: crate::wgpu::RendererWgpuResources<'window>,
     // The window must be declared after the surface so
     // it gets dropped after it as the surface contains
     // unsafe references to the window's resources.
     window: &'window Window,
     window_size: winit::dpi::PhysicalSize<u32>,
-    egui_renderer: egui_wgpu::Renderer,
-    egui_state: egui_winit::State,
+    egui: crate::egui::RendererEguiResources,
     is_raytracer_enabled: bool,
-    depth_texture: crate::wgpu::Texture,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     color_uniform: [f32; 4],
     sun_light: lights::DirectionalLight,
     sun_azi_alt: (f32, f32),
-    rasterizer_camera_view_proj_uniform: wgpu::Buffer,
-    rasterizer_color_uniform_buffer: wgpu::Buffer,
-    rasterizer_sun_direction_uniform_buffer: wgpu::Buffer,
-    rasterizer_bind_group: wgpu::BindGroup,
-    rasterizer_render_pipeline: wgpu::RenderPipeline,
-    raytracer_result_texture: wgpu::Texture,
-    raytracer_result_texture_view: wgpu::TextureView,
-    raytracer_render_bind_group_layout: wgpu::BindGroupLayout,
-    raytracer_render_bind_group: wgpu::BindGroup,
-    raytracer_render_pipeline: wgpu::RenderPipeline,
-    raytracer_frame_count_uniform_buffer: wgpu::Buffer,
-    raytracer_vertex_stride_uniform_buffer: wgpu::Buffer,
-    raytracer_vertex_color_offset_uniform_buffer: wgpu::Buffer,
-    raytracer_vertex_normal_offset_uniform_buffer: wgpu::Buffer,
-    raytracer_camera_to_world_uniform_buffer: wgpu::Buffer,
-    raytracer_camera_inverse_projection_uniform_buffer: wgpu::Buffer,
-    raytracer_sun_direction_uniform_buffer: wgpu::Buffer,
-    raytracer_compute_bind_group_layout: wgpu::BindGroupLayout,
-    raytracer_compute_bind_group: wgpu::BindGroup,
-    raytracer_compute_pipeline: wgpu::ComputePipeline,
+    rasterizer: rasterizer::Rasterizer,
+    raytracer: raytracer::Raytracer,
 }
 
 impl<'window> Renderer<'window> {
@@ -134,7 +110,7 @@ impl<'window> Renderer<'window> {
         );
         let camera_controller = CameraController::new(0.8);
 
-        let (_instance, surface, adapter, device, queue, surface_config) =
+        let (instance, surface, adapter, device, queue, surface_config) =
             initialize_wgpu(&window, &window_size).await;
 
         let (egui_renderer, egui_state) = initialize_egui(
@@ -143,9 +119,6 @@ impl<'window> Renderer<'window> {
             &surface_config,
             window.scale_factor() as f32,
         );
-
-        let depth_texture =
-            crate::wgpu::Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
         // Initialize vertex and index buffers
         let mesh = crate::mesh::PlyMesh::new("assets/cornell-box.ply");
@@ -185,6 +158,12 @@ impl<'window> Renderer<'window> {
             &adapter,
         );
 
+        let rasterizer_depth_texture = crate::wgpu::Texture::create_depth_texture(
+            &device,
+            &surface_config,
+            "rasterizer_depth_texture",
+        );
+
         let (raytracer_result_texture, raytracer_result_texture_view) =
             create_raytracer_result_texture(&device, window_size.width, window_size.height);
 
@@ -222,44 +201,53 @@ impl<'window> Renderer<'window> {
             camera_controller,
             last_frame_time: Instant::now(),
             delta_time: 0.0,
-            _instance,
-            surface,
-            _adapter: adapter,
-            device,
-            queue,
-            surface_config,
+            wgpu: crate::wgpu::RendererWgpuResources {
+                instance,
+                surface,
+                adapter,
+                device,
+                queue,
+                surface_config,
+            },
             window,
             window_size,
-            egui_renderer,
-            egui_state,
+            egui: crate::egui::RendererEguiResources {
+                renderer: egui_renderer,
+                state: egui_state,
+            },
             is_raytracer_enabled: false,
-            depth_texture,
             vertex_buffer,
             index_buffer,
             num_indices,
             color_uniform,
             sun_azi_alt,
             sun_light,
-            rasterizer_camera_view_proj_uniform,
-            rasterizer_color_uniform_buffer,
-            rasterizer_sun_direction_uniform_buffer,
-            rasterizer_bind_group,
-            rasterizer_render_pipeline,
-            raytracer_result_texture,
-            raytracer_result_texture_view,
-            raytracer_render_bind_group_layout,
-            raytracer_render_bind_group,
-            raytracer_render_pipeline,
-            raytracer_frame_count_uniform_buffer,
-            raytracer_vertex_stride_uniform_buffer,
-            raytracer_vertex_color_offset_uniform_buffer,
-            raytracer_vertex_normal_offset_uniform_buffer,
-            raytracer_camera_to_world_uniform_buffer,
-            raytracer_camera_inverse_projection_uniform_buffer,
-            raytracer_sun_direction_uniform_buffer,
-            raytracer_compute_bind_group_layout,
-            raytracer_compute_bind_group,
-            raytracer_compute_pipeline,
+            rasterizer: rasterizer::Rasterizer {
+                depth_texture: rasterizer_depth_texture,
+                camera_view_proj_uniform: rasterizer_camera_view_proj_uniform,
+                color_uniform_buffer: rasterizer_color_uniform_buffer,
+                sun_direction_uniform_buffer: rasterizer_sun_direction_uniform_buffer,
+                bind_group: rasterizer_bind_group,
+                render_pipeline: rasterizer_render_pipeline,
+            },
+            raytracer: raytracer::Raytracer {
+                result_texture: raytracer_result_texture,
+                result_texture_view: raytracer_result_texture_view,
+                render_bind_group_layout: raytracer_render_bind_group_layout,
+                render_bind_group: raytracer_render_bind_group,
+                render_pipeline: raytracer_render_pipeline,
+                frame_count_uniform_buffer: raytracer_frame_count_uniform_buffer,
+                vertex_stride_uniform_buffer: raytracer_vertex_stride_uniform_buffer,
+                vertex_color_offset_uniform_buffer: raytracer_vertex_color_offset_uniform_buffer,
+                vertex_normal_offset_uniform_buffer: raytracer_vertex_normal_offset_uniform_buffer,
+                camera_to_world_uniform_buffer: raytracer_camera_to_world_uniform_buffer,
+                camera_inverse_projection_uniform_buffer:
+                    raytracer_camera_inverse_projection_uniform_buffer,
+                sun_direction_uniform_buffer: raytracer_sun_direction_uniform_buffer,
+                compute_bind_group_layout: raytracer_compute_bind_group_layout,
+                compute_bind_group: raytracer_compute_bind_group,
+                compute_pipeline: raytracer_compute_pipeline,
+            },
         }
     }
 
@@ -271,42 +259,46 @@ impl<'window> Renderer<'window> {
             .set_aspect(new_size.width as f32 / new_size.height as f32);
         self.update_camera_uniforms();
 
+        Self::reset_frame_count(&mut self.frame_count, &self.wgpu, &self.raytracer);
+
         // Recreate the raytracer result texture with the new size
         let (raytracer_result_texture, raytracer_result_texture_view) =
-            create_raytracer_result_texture(&self.device, new_size.width, new_size.height);
-        self.raytracer_result_texture = raytracer_result_texture;
-        self.raytracer_result_texture_view = raytracer_result_texture_view;
+            create_raytracer_result_texture(&self.wgpu.device, new_size.width, new_size.height);
+        self.raytracer.result_texture = raytracer_result_texture;
+        self.raytracer.result_texture_view = raytracer_result_texture_view;
 
         // Reconfigure the surface with the new size
-        self.surface_config.width = new_size.width.max(1);
-        self.surface_config.height = new_size.height.max(1);
-        self.surface.configure(&self.device, &self.surface_config);
+        self.wgpu.surface_config.width = new_size.width.max(1);
+        self.wgpu.surface_config.height = new_size.height.max(1);
+        self.wgpu
+            .surface
+            .configure(&self.wgpu.device, &self.wgpu.surface_config);
 
-        self.depth_texture = crate::wgpu::Texture::create_depth_texture(
-            &self.device,
-            &self.surface_config,
+        self.rasterizer.depth_texture = crate::wgpu::Texture::create_depth_texture(
+            &self.wgpu.device,
+            &self.wgpu.surface_config,
             "depth_texture",
         );
 
         // Recreate the raytracer bind groups with the new texture view
         let (raytracer_render_bind_group, raytracer_compute_bind_group) =
             create_raytracer_bind_groups(
-                &self.raytracer_result_texture_view,
-                &self.device,
-                &self.raytracer_render_bind_group_layout,
-                &self.raytracer_compute_bind_group_layout,
+                &self.raytracer.result_texture_view,
+                &self.wgpu.device,
+                &self.raytracer.render_bind_group_layout,
+                &self.raytracer.compute_bind_group_layout,
                 &self.vertex_buffer,
                 &self.index_buffer,
-                &self.raytracer_frame_count_uniform_buffer,
-                &self.raytracer_vertex_stride_uniform_buffer,
-                &self.raytracer_vertex_color_offset_uniform_buffer,
-                &self.raytracer_vertex_normal_offset_uniform_buffer,
-                &self.raytracer_camera_to_world_uniform_buffer,
-                &self.raytracer_camera_inverse_projection_uniform_buffer,
-                &self.raytracer_sun_direction_uniform_buffer,
+                &self.raytracer.frame_count_uniform_buffer,
+                &self.raytracer.vertex_stride_uniform_buffer,
+                &self.raytracer.vertex_color_offset_uniform_buffer,
+                &self.raytracer.vertex_normal_offset_uniform_buffer,
+                &self.raytracer.camera_to_world_uniform_buffer,
+                &self.raytracer.camera_inverse_projection_uniform_buffer,
+                &self.raytracer.sun_direction_uniform_buffer,
             );
-        self.raytracer_render_bind_group = raytracer_render_bind_group;
-        self.raytracer_compute_bind_group = raytracer_compute_bind_group;
+        self.raytracer.render_bind_group = raytracer_render_bind_group;
+        self.raytracer.compute_bind_group = raytracer_compute_bind_group;
 
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
@@ -318,18 +310,14 @@ impl<'window> Renderer<'window> {
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         if self.is_raytracer_enabled {
             run_raytracer(
-                &self.device,
-                &self.queue,
+                &self.wgpu.device,
+                &self.wgpu.queue,
                 self.window_size,
-                &self.raytracer_compute_bind_group,
-                &self.raytracer_compute_pipeline,
+                &self.raytracer.compute_bind_group,
+                &self.raytracer.compute_pipeline,
             );
 
-            Self::increment_frame_count(
-                &mut self.frame_count,
-                &self.queue,
-                &self.raytracer_frame_count_uniform_buffer,
-            );
+            Self::increment_frame_count(&mut self.frame_count, &self.wgpu, &self.raytracer);
         }
 
         // Update delta time
@@ -339,20 +327,22 @@ impl<'window> Renderer<'window> {
             .as_secs_f32();
         self.last_frame_time = current_time;
 
-        let surface_texture = self.surface.get_current_texture()?;
+        let surface_texture = self.wgpu.surface.get_current_texture()?;
 
         let surface_texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut render_encoder =
-            self.device
+            self.wgpu
+                .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Command Encoder"),
                 });
 
-        let egui_raw_input = self.egui_state.take_egui_input(&self.window);
+        let egui_raw_input = self.egui.state.take_egui_input(&self.window);
         let egui_full_output =
-            self.egui_state
+            self.egui
+                .state
                 .egui_ctx()
                 .run(egui_raw_input, |egui_ctx: &egui::Context| {
                     egui::CentralPanel::default()
@@ -363,8 +353,8 @@ impl<'window> Renderer<'window> {
                                 .changed()
                             {
                                 update_buffer(
-                                    &self.queue,
-                                    &self.rasterizer_color_uniform_buffer,
+                                    &self.wgpu.queue,
+                                    &self.rasterizer.color_uniform_buffer,
                                     &self.color_uniform,
                                 );
                             }
@@ -390,20 +380,20 @@ impl<'window> Renderer<'window> {
                                 );
 
                                 update_buffer(
-                                    &self.queue,
-                                    &self.rasterizer_sun_direction_uniform_buffer,
+                                    &self.wgpu.queue,
+                                    &self.rasterizer.sun_direction_uniform_buffer,
                                     &self.sun_light.direction.to_array(),
                                 );
                                 update_buffer(
-                                    &self.queue,
-                                    &self.raytracer_sun_direction_uniform_buffer,
+                                    &self.wgpu.queue,
+                                    &self.raytracer.sun_direction_uniform_buffer,
                                     &self.sun_light.direction.to_array(),
                                 );
 
                                 Self::reset_frame_count(
                                     &mut self.frame_count,
-                                    &self.queue,
-                                    &self.raytracer_frame_count_uniform_buffer,
+                                    &self.wgpu,
+                                    &self.raytracer,
                                 );
                             }
 
@@ -414,29 +404,37 @@ impl<'window> Renderer<'window> {
                             {
                                 Self::reset_frame_count(
                                     &mut self.frame_count,
-                                    &self.queue,
-                                    &self.raytracer_frame_count_uniform_buffer,
+                                    &self.wgpu,
+                                    &self.raytracer,
                                 );
                             }
                         });
                 });
         let egui_primitives = self
-            .egui_state
+            .egui
+            .state
             .egui_ctx()
             .tessellate(egui_full_output.shapes, egui_full_output.pixels_per_point);
         let egui_screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [self.surface_config.width, self.surface_config.height],
+            size_in_pixels: [
+                self.wgpu.surface_config.width,
+                self.wgpu.surface_config.height,
+            ],
             pixels_per_point: self.window.scale_factor() as f32,
         };
 
         for (id, image_delta) in egui_full_output.textures_delta.set {
-            self.egui_renderer
-                .update_texture(&self.device, &self.queue, id, &image_delta);
+            self.egui.renderer.update_texture(
+                &self.wgpu.device,
+                &self.wgpu.queue,
+                id,
+                &image_delta,
+            );
         }
 
-        self.egui_renderer.update_buffers(
-            &self.device,
-            &self.queue,
+        self.egui.renderer.update_buffers(
+            &self.wgpu.device,
+            &self.wgpu.queue,
             &mut render_encoder,
             &egui_primitives,
             &egui_screen_descriptor,
@@ -447,19 +445,19 @@ impl<'window> Renderer<'window> {
                 render_raytracer(
                     &mut render_encoder,
                     &surface_texture_view,
-                    &self.raytracer_render_bind_group,
-                    &self.raytracer_render_pipeline,
+                    &self.raytracer.render_bind_group,
+                    &self.raytracer.render_pipeline,
                 );
             } else {
                 render_rasterizer(
                     &mut render_encoder,
                     &surface_texture_view,
-                    &self.depth_texture,
+                    &self.rasterizer.depth_texture,
                     &self.vertex_buffer,
                     &self.index_buffer,
                     self.num_indices,
-                    &self.rasterizer_bind_group,
-                    &self.rasterizer_render_pipeline,
+                    &self.rasterizer.bind_group,
+                    &self.rasterizer.render_pipeline,
                 );
             };
         }
@@ -480,15 +478,18 @@ impl<'window> Renderer<'window> {
                 occlusion_query_set: None,
             });
 
-            self.egui_renderer
-                .render(&mut egui_rpass, &egui_primitives, &egui_screen_descriptor);
+            self.egui.renderer.render(
+                &mut egui_rpass,
+                &egui_primitives,
+                &egui_screen_descriptor,
+            );
         }
 
-        self.queue.submit(Some(render_encoder.finish()));
+        self.wgpu.queue.submit(Some(render_encoder.finish()));
         surface_texture.present();
 
         for id in egui_full_output.textures_delta.free {
-            self.egui_renderer.free_texture(&id);
+            self.egui.renderer.free_texture(&id);
         }
 
         Ok(())
@@ -514,50 +515,56 @@ impl<'window> Renderer<'window> {
             .update_camera(&mut self.camera, self.delta_time);
         self.update_camera_uniforms();
 
-        Self::reset_frame_count(
-            &mut self.frame_count,
-            &self.queue,
-            &self.raytracer_frame_count_uniform_buffer,
-        );
+        Self::reset_frame_count(&mut self.frame_count, &self.wgpu, &self.raytracer);
 
         self.window.request_redraw();
     }
 
     fn update_camera_uniforms(&self) {
         update_buffer(
-            &self.queue,
-            &self.rasterizer_camera_view_proj_uniform,
+            &self.wgpu.queue,
+            &self.rasterizer.camera_view_proj_uniform,
             &[self.camera.view_projection().to_cols_array_2d()],
         );
 
         update_buffer(
-            &self.queue,
-            &self.raytracer_camera_to_world_uniform_buffer,
+            &self.wgpu.queue,
+            &self.raytracer.camera_to_world_uniform_buffer,
             &[self.camera.camera_to_world().to_cols_array_2d()],
         );
 
         update_buffer(
-            &self.queue,
-            &self.raytracer_camera_inverse_projection_uniform_buffer,
+            &self.wgpu.queue,
+            &self.raytracer.camera_inverse_projection_uniform_buffer,
             &[self.camera.camera_inverse_projection().to_cols_array_2d()],
         );
     }
 
     fn increment_frame_count(
         frame_count: &mut u32,
-        queue: &wgpu::Queue,
-        raytracer_frame_count_uniform_buffer: &wgpu::Buffer,
+        wgpu: &crate::wgpu::RendererWgpuResources,
+        raytracer: &crate::raytracer::Raytracer,
     ) {
         *frame_count += 1;
-        update_buffer(queue, raytracer_frame_count_uniform_buffer, &[*frame_count]);
+
+        update_buffer(
+            &wgpu.queue,
+            &raytracer.frame_count_uniform_buffer,
+            &[*frame_count],
+        );
     }
 
     fn reset_frame_count(
         frame_count: &mut u32,
-        queue: &wgpu::Queue,
-        raytracer_frame_count_uniform_buffer: &wgpu::Buffer,
+        wgpu: &crate::wgpu::RendererWgpuResources,
+        raytracer: &crate::raytracer::Raytracer,
     ) {
         *frame_count = 0;
-        update_buffer(queue, raytracer_frame_count_uniform_buffer, &[*frame_count]);
+
+        update_buffer(
+            &wgpu.queue,
+            &raytracer.frame_count_uniform_buffer,
+            &[*frame_count],
+        );
     }
 }

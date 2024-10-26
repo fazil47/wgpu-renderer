@@ -20,3 +20,8 @@ pub fn initialize_egui(
 
     (egui_renderer, egui_state)
 }
+
+pub struct RendererEguiResources {
+    pub renderer: egui_wgpu::Renderer,
+    pub state: egui_winit::State,
+}

@@ -441,3 +441,21 @@ pub fn run_raytracer(
 
     queue.submit(Some(compute_encoder.finish()));
 }
+
+pub struct Raytracer {
+    pub result_texture: wgpu::Texture,
+    pub result_texture_view: wgpu::TextureView,
+    pub render_bind_group_layout: wgpu::BindGroupLayout,
+    pub render_bind_group: wgpu::BindGroup,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub frame_count_uniform_buffer: wgpu::Buffer,
+    pub vertex_stride_uniform_buffer: wgpu::Buffer,
+    pub vertex_color_offset_uniform_buffer: wgpu::Buffer,
+    pub vertex_normal_offset_uniform_buffer: wgpu::Buffer,
+    pub camera_to_world_uniform_buffer: wgpu::Buffer,
+    pub camera_inverse_projection_uniform_buffer: wgpu::Buffer,
+    pub sun_direction_uniform_buffer: wgpu::Buffer,
+    pub compute_bind_group_layout: wgpu::BindGroupLayout,
+    pub compute_bind_group: wgpu::BindGroup,
+    pub compute_pipeline: wgpu::ComputePipeline,
+}

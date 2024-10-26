@@ -169,3 +169,12 @@ impl Texture {
         }
     }
 }
+
+pub struct RendererWgpuResources<'window> {
+    pub instance: wgpu::Instance,
+    pub surface: wgpu::Surface<'window>,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub surface_config: wgpu::SurfaceConfiguration,
+}
