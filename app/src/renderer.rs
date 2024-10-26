@@ -64,6 +64,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 }
 
 struct Renderer<'window> {
+    frame_count: u32,
     target_frame_time: f32,
     time_since_last_frame: f32,
     camera: Camera,
@@ -101,6 +102,7 @@ struct Renderer<'window> {
     raytracer_render_bind_group_layout: wgpu::BindGroupLayout,
     raytracer_render_bind_group: wgpu::BindGroup,
     raytracer_render_pipeline: wgpu::RenderPipeline,
+    raytracer_frame_count_uniform_buffer: wgpu::Buffer,
     raytracer_vertex_stride_uniform_buffer: wgpu::Buffer,
     raytracer_vertex_color_offset_uniform_buffer: wgpu::Buffer,
     raytracer_vertex_normal_offset_uniform_buffer: wgpu::Buffer,
@@ -190,6 +192,7 @@ impl<'window> Renderer<'window> {
             raytracer_render_bind_group_layout,
             raytracer_render_bind_group,
             raytracer_render_pipeline,
+            raytracer_frame_count_uniform_buffer,
             raytracer_vertex_stride_uniform_buffer,
             raytracer_vertex_color_offset_uniform_buffer,
             raytracer_vertex_normal_offset_uniform_buffer,
@@ -200,6 +203,7 @@ impl<'window> Renderer<'window> {
             raytracer_compute_bind_group,
             raytracer_compute_pipeline,
         ) = initialize_raytracer(
+            0,
             &vertex_buffer,
             &index_buffer,
             &camera,
@@ -211,6 +215,7 @@ impl<'window> Renderer<'window> {
         );
 
         Self {
+            frame_count: 0,
             target_frame_time: 1.0 / 120.0,
             time_since_last_frame: 0.0,
             camera,
@@ -245,6 +250,7 @@ impl<'window> Renderer<'window> {
             raytracer_render_bind_group_layout,
             raytracer_render_bind_group,
             raytracer_render_pipeline,
+            raytracer_frame_count_uniform_buffer,
             raytracer_vertex_stride_uniform_buffer,
             raytracer_vertex_color_offset_uniform_buffer,
             raytracer_vertex_normal_offset_uniform_buffer,
@@ -291,6 +297,7 @@ impl<'window> Renderer<'window> {
                 &self.raytracer_compute_bind_group_layout,
                 &self.vertex_buffer,
                 &self.index_buffer,
+                &self.raytracer_frame_count_uniform_buffer,
                 &self.raytracer_vertex_stride_uniform_buffer,
                 &self.raytracer_vertex_color_offset_uniform_buffer,
                 &self.raytracer_vertex_normal_offset_uniform_buffer,
@@ -301,16 +308,6 @@ impl<'window> Renderer<'window> {
         self.raytracer_render_bind_group = raytracer_render_bind_group;
         self.raytracer_compute_bind_group = raytracer_compute_bind_group;
 
-        if self.is_raytracer_enabled {
-            run_raytracer(
-                &self.device,
-                &self.queue,
-                self.window_size,
-                &self.raytracer_compute_bind_group,
-                &self.raytracer_compute_pipeline,
-            );
-        }
-
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
         {
@@ -319,6 +316,22 @@ impl<'window> Renderer<'window> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        if self.is_raytracer_enabled {
+            run_raytracer(
+                &self.device,
+                &self.queue,
+                self.window_size,
+                &self.raytracer_compute_bind_group,
+                &self.raytracer_compute_pipeline,
+            );
+
+            Self::increment_frame_count(
+                &mut self.frame_count,
+                &self.queue,
+                &self.raytracer_frame_count_uniform_buffer,
+            );
+        }
+
         // Update delta time
         let current_time = Instant::now();
         self.delta_time = current_time
@@ -387,31 +400,24 @@ impl<'window> Renderer<'window> {
                                     &self.sun_light.direction.to_array(),
                                 );
 
-                                if self.is_raytracer_enabled {
-                                    run_raytracer(
-                                        &self.device,
-                                        &self.queue,
-                                        self.window_size,
-                                        &self.raytracer_compute_bind_group,
-                                        &self.raytracer_compute_pipeline,
-                                    );
-                                }
+                                Self::reset_frame_count(
+                                    &mut self.frame_count,
+                                    &self.queue,
+                                    &self.raytracer_frame_count_uniform_buffer,
+                                );
                             }
 
                             // Run the raytracer when the checkbox is toggled on
-                            ui.checkbox(&mut self.is_raytracer_enabled, "Raytracing")
+                            if ui
+                                .checkbox(&mut self.is_raytracer_enabled, "Raytracing")
                                 .changed()
-                                .then(|| {
-                                    if self.is_raytracer_enabled {
-                                        run_raytracer(
-                                            &self.device,
-                                            &self.queue,
-                                            self.window_size,
-                                            &self.raytracer_compute_bind_group,
-                                            &self.raytracer_compute_pipeline,
-                                        );
-                                    }
-                                });
+                            {
+                                Self::reset_frame_count(
+                                    &mut self.frame_count,
+                                    &self.queue,
+                                    &self.raytracer_frame_count_uniform_buffer,
+                                );
+                            }
                         });
                 });
         let egui_primitives = self
@@ -508,15 +514,11 @@ impl<'window> Renderer<'window> {
             .update_camera(&mut self.camera, self.delta_time);
         self.update_camera_uniforms();
 
-        if self.is_raytracer_enabled {
-            run_raytracer(
-                &self.device,
-                &self.queue,
-                self.window_size,
-                &self.raytracer_compute_bind_group,
-                &self.raytracer_compute_pipeline,
-            );
-        }
+        Self::reset_frame_count(
+            &mut self.frame_count,
+            &self.queue,
+            &self.raytracer_frame_count_uniform_buffer,
+        );
 
         self.window.request_redraw();
     }
@@ -539,5 +541,23 @@ impl<'window> Renderer<'window> {
             &self.raytracer_camera_inverse_projection_uniform_buffer,
             &[self.camera.camera_inverse_projection().to_cols_array_2d()],
         );
+    }
+
+    fn increment_frame_count(
+        frame_count: &mut u32,
+        queue: &wgpu::Queue,
+        raytracer_frame_count_uniform_buffer: &wgpu::Buffer,
+    ) {
+        *frame_count += 1;
+        update_buffer(queue, raytracer_frame_count_uniform_buffer, &[*frame_count]);
+    }
+
+    fn reset_frame_count(
+        frame_count: &mut u32,
+        queue: &wgpu::Queue,
+        raytracer_frame_count_uniform_buffer: &wgpu::Buffer,
+    ) {
+        *frame_count = 0;
+        update_buffer(queue, raytracer_frame_count_uniform_buffer, &[*frame_count]);
     }
 }

@@ -9,19 +9,21 @@ var<storage, read> vertices: array<f32>; // Raw vertex data
 @group(0) @binding(1)
 var<storage, read> indices: array<u32>;
 @group(0) @binding(2)
-var<uniform> vertex_stride: u32;
+var<uniform> frame_count: u32;
 @group(0) @binding(3)
-var<uniform> vertex_color_offset: u32;
+var<uniform> vertex_stride: u32;
 @group(0) @binding(4)
-var<uniform> vertex_normal_offset: u32;
+var<uniform> vertex_color_offset: u32;
 @group(0) @binding(5)
-var<uniform> camera_to_world: mat4x4f;
+var<uniform> vertex_normal_offset: u32;
 @group(0) @binding(6)
-var<uniform> camera_inverse_projection: mat4x4f;
+var<uniform> camera_to_world: mat4x4f;
 @group(0) @binding(7)
-var<uniform> sun_direction: vec3f;
+var<uniform> camera_inverse_projection: mat4x4f;
 @group(0) @binding(8)
-var result: texture_storage_2d<rgba8unorm, write>;
+var<uniform> sun_direction: vec3f;
+@group(0) @binding(9)
+var result: texture_storage_2d<rgba8unorm, read_write>;
 
 struct Vertex {
     position: vec4f,
@@ -107,6 +109,7 @@ fn get_unnormalized_triangle_normal(triangle: Triangle) -> vec3f {
 struct HitInfo {
     did_hit: bool,
     t: f32, // Distance to the intersection point from the ray origin
+    i: u32, // Index of the intersected triangle
     p: vec3f, // Intersection point
     normal: vec3f, // Normal at the intersection point,
     u: f32, // Barycentric coordinates u
@@ -251,25 +254,24 @@ fn get_triangle_intersection_mt(triangle: Triangle, ray: Ray) -> HitInfo {
     return hit_info;
 }
 
-fn get_interpolated_color(triangle: Triangle, hit_info: HitInfo) -> vec4f {
+fn get_interpolated_color(hit_info: HitInfo) -> vec4f {
+    let triangle: Triangle = get_triangle(hit_info.i);
     return triangle.a.color * hit_info.u + triangle.b.color * hit_info.v + triangle.c.color * hit_info.w;
 }
 
 fn get_sky_color(ray: Ray) -> vec4f {
     // The sky is black except for the sun
-    let sun_direction = normalize(sun_direction);
-    var sun_intensity = max(dot(sun_direction, ray.direction), 0.0);
+    var sun_intensity = max(0.0, dot(sun_direction, ray.direction));
     sun_intensity = pow(sun_intensity, 32.0);
 
     return vec4f(sun_intensity, sun_intensity, sun_intensity, 1.0);
 }
 
-fn trace_triangles(ray: Ray, coords: vec2i, bounces: u32) -> vec4f {
+fn trace_triangles(ray: Ray) -> HitInfo {
     let num_triangles = u32(arrayLength(&indices) / 3u);
     
     var nearest_hit_info: HitInfo;
-    var nearest_triangle: Triangle;
-
+    nearest_hit_info.did_hit = false;
     nearest_hit_info.t = FLT_MAX;
 
     for (var i: u32 = 0u; i < num_triangles; i = i + 1u) {
@@ -279,25 +281,41 @@ fn trace_triangles(ray: Ray, coords: vec2i, bounces: u32) -> vec4f {
         if (hit_info.did_hit) {
             if (hit_info.t < nearest_hit_info.t) {
                 nearest_hit_info = hit_info;
-                nearest_triangle = triangle;
+                nearest_hit_info.i = i;
             }
         }
     }
 
-    if (nearest_hit_info.did_hit) {
-        return get_interpolated_color(nearest_triangle, nearest_hit_info);
-    }
-
-    return get_sky_color(ray);
+    return nearest_hit_info;
 }
 
 fn get_ray_color(ray: Ray) -> vec4f {
     return vec4f(ray.direction * 0.5 + 0.5, 1.0);
 }
 
+fn random_in_hemisphere(normal: vec3f, seed: vec3f) -> vec3f {
+    // Generate a random direction in hemisphere above the surface
+    let theta = 2.0 * 3.14159 * fract(sin(dot(seed, vec3f(12.9898, 78.233, 45.164))) * 43758.5453);
+    let phi = acos(2.0 * fract(sin(dot(seed, vec3f(63.7264, 10.873, 98.234))) * 43758.5453) - 1.0);
+    
+    let x = sin(phi) * cos(theta);
+    let y = sin(phi) * sin(theta);
+    let z = cos(phi);
+    let random_dir = normalize(vec3f(x, y, z));
+    
+    // Ensure the direction is in the correct hemisphere
+    return normalize(normal + random_dir);
+}
+
 @compute
 @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
+    let coords = vec2i(i32(id.x), i32(id.y));
+
+    if (frame_count == 0) {
+        textureStore(result, coords, vec4f(0.0, 0.0, 0.0, 1.0));
+    }
+
     // Get the resolution of the result texture
     let dims = vec2f(textureDimensions(result).xy);
 
@@ -308,14 +326,41 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     let uv = ((vec2f(id.xy) + 0.5) / dims * 2.0 - 1.0) * vec2f(1.0, -1.0);
 
     // Get a ray for the UVs
-    let ray: Ray = create_camera_ray(uv);
+    var ray: Ray = create_camera_ray(uv);
 
-    // Write some colors
-    let coords = vec2i(i32(id.x), i32(id.y));
+    // Load the previous frame's color
+    let prev_color = textureLoad(result, coords);
 
     // Trace the ray against the triangles
-    let ray_color: vec4f = trace_triangles(ray, coords, 0u);
-    textureStore(result, coords, ray_color);
+    var ray_color: vec4f = vec4f(0.0);
+    for (var bounce = 1.0; bounce <= f32(MAX_BOUNCES); bounce = bounce + 1.0) {
+        let hit_info: HitInfo = trace_triangles(ray);
+
+        if (hit_info.did_hit) {
+            let sun_intensity = max(0.0, dot(sun_direction, hit_info.normal));
+            let bounce_intensity = pow(1.0 / bounce, 1.0);
+            let tri_color = get_interpolated_color(hit_info) * sun_intensity * bounce_intensity;
+            ray_color = clamp(ray_color + tri_color, vec4f(0.0), vec4f(1.0));
+
+            // Use frame number in random seed for temporal variation
+            ray = create_ray(
+                hit_info.p + hit_info.normal * 0.001, // Move the origin slightly to avoid self-intersection
+                random_in_hemisphere(hit_info.normal, hit_info.p + vec3f(f32(frame_count) * 0.1))
+            );
+        } else {
+            if (bounce == 1.0) {
+                // If ray misses all triangles, return the sky color
+                ray_color = get_sky_color(ray);
+            }
+            break;
+        }
+    }
+
+    // Blend with previous frame
+    let blend_factor = 1.0 / f32(frame_count + 1);
+    let final_color = mix(prev_color, ray_color, blend_factor);
+
+    textureStore(result, coords, final_color);
 
     // textureStore(result, coords, get_ray_color(ray)); // Used to debug the camera
 }
