@@ -80,6 +80,7 @@ struct Renderer<'window> {
     window_size: winit::dpi::PhysicalSize<u32>,
     egui: crate::egui::RendererEguiResources,
     is_raytracer_enabled: bool,
+    raytracer_max_frames: u32,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
@@ -216,6 +217,7 @@ impl<'window> Renderer<'window> {
                 state: egui_state,
             },
             is_raytracer_enabled: false,
+            raytracer_max_frames: 256,
             vertex_buffer,
             index_buffer,
             num_indices,
@@ -308,7 +310,7 @@ impl<'window> Renderer<'window> {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        if self.is_raytracer_enabled {
+        if self.is_raytracer_enabled && self.frame_count < self.raytracer_max_frames {
             run_raytracer(
                 &self.wgpu.device,
                 &self.wgpu.queue,
@@ -345,6 +347,20 @@ impl<'window> Renderer<'window> {
                 .state
                 .egui_ctx()
                 .run(egui_raw_input, |egui_ctx: &egui::Context| {
+                    egui::SidePanel::right("fps_panel")
+                        .exact_width(150.0)
+                        .show_separator_line(false)
+                        .resizable(false)
+                        .frame(egui::Frame::none().inner_margin(egui::Margin::same(10.0)))
+                        .show(egui_ctx, |ui| {
+                            ui.label(format!("Frame Time: {:.2}ms", self.delta_time * 1000.0));
+                            ui.label(format!("FPS: {:.1}", 1.0 / self.delta_time));
+
+                            if self.is_raytracer_enabled {
+                                ui.label(format!("Frame Count: {}", self.frame_count));
+                            }
+                        });
+
                     egui::CentralPanel::default()
                         .frame(egui::Frame::none().inner_margin(egui::Margin::same(10.0)))
                         .show(egui_ctx, |ui| {
@@ -478,11 +494,9 @@ impl<'window> Renderer<'window> {
                 occlusion_query_set: None,
             });
 
-            self.egui.renderer.render(
-                &mut egui_rpass,
-                &egui_primitives,
-                &egui_screen_descriptor,
-            );
+            self.egui
+                .renderer
+                .render(&mut egui_rpass, &egui_primitives, &egui_screen_descriptor);
         }
 
         self.wgpu.queue.submit(Some(render_encoder.finish()));
