@@ -1,10 +1,11 @@
 const K_EPSILON: f32 = 1e-6;
 const FLT_MAX: f32 = 1e12;
-const MAX_BOUNCES: u32 = 4;
+const MAX_BOUNCES: u32 = 8;
+const SUN_INTENSITY: f32 = 1.0;
 
 // TODO: Break up bind groups, see https://toji.dev/webgpu-best-practices/bind-groups.html
 
-@group(0) @binding(0) 
+@group(0) @binding(0)
 var<storage, read> vertices: array<f32>; // Raw vertex data
 @group(0) @binding(1)
 var<storage, read> indices: array<u32>;
@@ -269,7 +270,7 @@ fn get_sky_color(ray: Ray) -> vec4f {
 
 fn trace_triangles(ray: Ray) -> HitInfo {
     let num_triangles = u32(arrayLength(&indices) / 3u);
-    
+
     var nearest_hit_info: HitInfo;
     nearest_hit_info.did_hit = false;
     nearest_hit_info.t = FLT_MAX;
@@ -297,12 +298,12 @@ fn random_in_hemisphere(normal: vec3f, seed: vec3f) -> vec3f {
     // Generate a random direction in hemisphere above the surface
     let theta = 2.0 * 3.14159 * fract(sin(dot(seed, vec3f(12.9898, 78.233, 45.164))) * 43758.5453);
     let phi = acos(2.0 * fract(sin(dot(seed, vec3f(63.7264, 10.873, 98.234))) * 43758.5453) - 1.0);
-    
+
     let x = sin(phi) * cos(theta);
     let y = sin(phi) * sin(theta);
     let z = cos(phi);
     let random_dir = normalize(vec3f(x, y, z));
-    
+
     // Ensure the direction is in the correct hemisphere
     return normalize(normal + random_dir);
 }
@@ -310,9 +311,11 @@ fn random_in_hemisphere(normal: vec3f, seed: vec3f) -> vec3f {
 @compute
 @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
+    // Get the current pixel coordinates
     let coords = vec2i(i32(id.x), i32(id.y));
 
     if (frame_count == 0) {
+        // Clear the result texture on the first frame
         textureStore(result, coords, vec4f(0.0, 0.0, 0.0, 1.0));
     }
 
@@ -333,14 +336,21 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     // Trace the ray against the triangles
     var ray_color: vec4f = vec4f(0.0);
-    for (var bounce = 1.0; bounce <= f32(MAX_BOUNCES); bounce = bounce + 1.0) {
+    var ray_throughput: vec4f = vec4f(1.0);
+
+    for (var bounce = 0u; bounce <= MAX_BOUNCES; bounce += 1u) {
+        if (bounce == MAX_BOUNCES) {
+            // Set ray color as black if the ray has bounced too many times
+            ray_color = vec4f(0.0);
+            break;
+        }
+
         let hit_info: HitInfo = trace_triangles(ray);
 
         if (hit_info.did_hit) {
-            let sun_intensity = max(0.0, dot(sun_direction, hit_info.normal));
-            let bounce_intensity = pow(1.0 / bounce, 1.0);
-            let tri_color = get_interpolated_color(hit_info) * sun_intensity * bounce_intensity;
-            ray_color = clamp(ray_color + tri_color, vec4f(0.0), vec4f(1.0));
+            let tri_color = get_interpolated_color(hit_info);
+            ray_color += tri_color * ray_throughput;
+            ray_throughput *= tri_color;
 
             // Use frame number in random seed for temporal variation
             ray = create_ray(
@@ -348,16 +358,22 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
                 random_in_hemisphere(hit_info.normal, hit_info.p + vec3f(f32(frame_count) * 0.1))
             );
         } else {
-            if (bounce == 1.0) {
+            if (bounce == 0u) {
                 // If ray misses all triangles, return the sky color
                 ray_color = get_sky_color(ray);
+            } else {
+                let ray_sun_intensity = max(0.0, dot(sun_direction, ray.direction)) * SUN_INTENSITY;
+                ray_color *= ray_sun_intensity * ray_throughput;
             }
+
             break;
         }
     }
 
+    ray_color = clamp(ray_color, vec4f(0.0), vec4f(1.0));
+
     // Blend with previous frame
-    let blend_factor = 1.0 / f32(frame_count + 1);
+    let blend_factor = 1.0 / pow(f32(frame_count + 1), 1.05);
     let final_color = mix(prev_color, ray_color, blend_factor);
 
     textureStore(result, coords, final_color);
