@@ -10,3 +10,9 @@ To run:
 ```zsh
 cargo run --release
 ```
+
+To run wasm:
+
+```zsh
+cargo xtask run-wasm --release
+```
