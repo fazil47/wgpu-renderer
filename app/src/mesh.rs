@@ -284,3 +284,129 @@ impl<'oct> Octahedron<'oct> {
         }
     }
 }
+
+pub struct CornellBox<'cornell> {
+    pub vertices: &'cornell [Vertex],
+    pub indices: &'cornell [u32],
+}
+
+impl<'cornell> CornellBox<'cornell> {
+    pub fn new() -> Self {
+        Self {
+            vertices: &[
+                // Left wall (red)
+                Vertex {
+                    position: [-2.0, -2.0, -2.0, 1.0],
+                    color: [0.63, 0.065, 0.05, 1.0],
+                    normal: [-1.0, 0.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [-2.0, 2.0, -2.0, 1.0],
+                    color: [0.63, 0.065, 0.05, 1.0],
+                    normal: [-1.0, 0.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [-2.0, 2.0, 2.0, 1.0],
+                    color: [0.63, 0.065, 0.05, 1.0],
+                    normal: [-1.0, 0.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [-2.0, -2.0, 2.0, 1.0],
+                    color: [0.63, 0.065, 0.05, 1.0],
+                    normal: [-1.0, 0.0, 0.0, 0.0],
+                },
+                // Right wall (green)
+                Vertex {
+                    position: [2.0, -2.0, -2.0, 1.0],
+                    color: [0.14, 0.45, 0.091, 1.0],
+                    normal: [1.0, 0.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, -2.0, 2.0, 1.0],
+                    color: [0.14, 0.45, 0.091, 1.0],
+                    normal: [1.0, 0.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, 2.0, 2.0, 1.0],
+                    color: [0.14, 0.45, 0.091, 1.0],
+                    normal: [1.0, 0.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, 2.0, -2.0, 1.0],
+                    color: [0.14, 0.45, 0.091, 1.0],
+                    normal: [1.0, 0.0, 0.0, 0.0],
+                },
+                // Back wall (white)
+                Vertex {
+                    position: [-2.0, -2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, -2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, 2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
+                },
+                Vertex {
+                    position: [-2.0, 2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 0.0, -1.0, 0.0],
+                },
+                // Top wall (white)
+                Vertex {
+                    position: [-2.0, 2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, 2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, 2.0, 2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [-2.0, 2.0, 2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, 1.0, 0.0, 0.0],
+                },
+                // Bottom wall (white)
+                Vertex {
+                    position: [-2.0, -2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, -1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [-2.0, -2.0, 2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, -1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, -2.0, 2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, -1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    position: [2.0, -2.0, -2.0, 1.0],
+                    color: [0.725, 0.71, 0.68, 1.0],
+                    normal: [0.0, -1.0, 0.0, 0.0],
+                },
+            ],
+            indices: &[
+                0, 1, 2, 2, 3, 0, // Left wall
+                4, 5, 6, 6, 7, 4, // Right wall
+                8, 9, 10, 10, 11, 8, // Back wall
+                12, 13, 14, 14, 15, 12, // Top wall
+                16, 17, 18, 18, 19, 16, // Bottom wall
+            ],
+        }
+    }
+}

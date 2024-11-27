@@ -140,6 +140,7 @@ pub fn initialize_rasterizer(
             }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
     (

@@ -1,45 +1,52 @@
+use app::application::{Application, StateInitializationEvent};
+
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::EventLoopExtWebSys;
+
 use winit::event_loop::EventLoop;
 
-#[cfg(not(target_arch = "wasm32"))]
-use app::utils::load_icon;
-
-use app::renderer::run;
-
 fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    let mut builder = winit::window::WindowBuilder::new();
+    run();
+}
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::JsCast;
-        use winit::platform::web::WindowBuilderExtWebSys;
-        let canvas = web_sys::window()
-            .unwrap()
-            .document()
-            .unwrap()
-            .get_element_by_id("canvas")
-            .unwrap()
-            .dyn_into::<web_sys::HtmlCanvasElement>()
-            .unwrap();
-        builder = builder.with_canvas(Some(canvas));
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use wasm_bindgen::prelude::*;
+    #[wasm_bindgen(start)]
+    pub fn run() {
+        crate::run();
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let icon = load_icon(std::path::Path::new("assets/icon.png"));
-        builder = builder.with_window_icon(Some(icon));
-    }
+}
 
-    let window = builder.build(&event_loop).unwrap();
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        env_logger::init();
-        pollster::block_on(run(event_loop, window));
-    }
+/// # Panics
+pub fn run() {
     #[cfg(target_arch = "wasm32")]
     {
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        console_log::init().expect("could not initialize logger");
-        wasm_bindgen_futures::spawn_local(run(event_loop, window));
+        console_log::init_with_level(log::Level::Warn).expect("Couldn't initialize logger");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        env_logger::builder()
+            .filter(None, log::LevelFilter::Warn)
+            .filter(Some("wgpu_hal::vulkan"), log::LevelFilter::Error)
+            .init();
+    }
+
+    let event_loop = EventLoop::<StateInitializationEvent>::with_user_event()
+        .build()
+        .unwrap();
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let application: Application = Application::new(&event_loop);
+        event_loop.spawn_app(application);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut application: Application = Application::new(&event_loop);
+        event_loop.run_app(&mut application).unwrap();
     }
 }

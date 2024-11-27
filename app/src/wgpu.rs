@@ -1,7 +1,6 @@
 use std::mem::{offset_of, size_of};
 
 use bytemuck::NoUninit;
-use winit::window::Window;
 
 // Vertex field offsets are calculated based on the following assumptions:
 // All the fields are of the same type and size ([f32; size]) and are aligned to 4 bytes.
@@ -72,51 +71,6 @@ pub fn update_buffer<T: NoUninit>(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffe
     queue.write_buffer(wgpu_buffer, 0, bytemuck::cast_slice(value));
 }
 
-pub async fn initialize_wgpu<'window>(
-    window: &'window Window,
-    window_size: &winit::dpi::PhysicalSize<u32>,
-) -> (
-    wgpu::Instance,
-    wgpu::Surface<'window>,
-    wgpu::Adapter,
-    wgpu::Device,
-    wgpu::Queue,
-    wgpu::SurfaceConfiguration,
-) {
-    let instance = wgpu::Instance::default();
-    let surface = instance.create_surface(window).unwrap();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter: false,
-            // Request an adapter which can render to our surface
-            compatible_surface: Some(&surface),
-        })
-        .await
-        .expect("Failed to find an appropriate adapter");
-
-    // Create the logical device and command queue
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("Device"),
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // This can be removed when wgpu is upgraded to the next version.
-                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-            },
-            None,
-        )
-        .await
-        .expect("Failed to create device");
-
-    let surface_config = surface
-        .get_default_config(&adapter, window_size.width, window_size.height)
-        .expect("Failed to get default surface configuration");
-    surface.configure(&device, &surface_config);
-
-    (instance, surface, adapter, device, queue, surface_config)
-}
-
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -170,9 +124,9 @@ impl Texture {
     }
 }
 
-pub struct RendererWgpuResources<'window> {
+pub struct RendererWgpuResources {
     pub instance: wgpu::Instance,
-    pub surface: wgpu::Surface<'window>,
+    pub surface: wgpu::Surface<'static>,
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,

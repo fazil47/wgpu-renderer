@@ -5,6 +5,12 @@ use crate::{
     wgpu::{VERTEX_COLOR_OFFSET, VERTEX_NORMAL_OFFSET, VERTEX_STRIDE},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use wgpu::TextureFormat::Rgba8Unorm as RaytracerTextureFormat;
+
+#[cfg(target_arch = "wasm32")]
+use wgpu::TextureFormat::R32Float as RaytracerTextureFormat;
+
 pub fn create_raytracer_result_texture(
     device: &wgpu::Device,
     width: u32,
@@ -21,7 +27,7 @@ pub fn create_raytracer_result_texture(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: RaytracerTextureFormat,
         usage: wgpu::TextureUsages::STORAGE_BINDING
             | wgpu::TextureUsages::COPY_DST
             | wgpu::TextureUsages::COPY_SRC,
@@ -57,11 +63,41 @@ pub fn initialize_raytracer(
     wgpu::BindGroup,
     wgpu::ComputePipeline,
 ) {
-    // Load the shaders from disk
-    let raytracer_render_shader =
-        device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/render.wgsl"));
-    let raytracer_compute_shader =
-        device.create_shader_module(wgpu::include_wgsl!("shaders/raytracer/compute.wgsl"));
+    let raytracer_render_shader_source = include_str!("shaders/raytracer/render.wgsl");
+    let raytracer_compute_shader_source = include_str!("shaders/raytracer/compute.wgsl");
+
+    #[allow(unused_mut, unused_assignments)]
+    let mut raytracer_render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Raytracer Render Shader"),
+        source: wgpu::ShaderSource::Wgsl(raytracer_render_shader_source.into()),
+    });
+    #[allow(unused_mut, unused_assignments)]
+    let mut raytracer_compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Raytracer Compute Shader"),
+        source: wgpu::ShaderSource::Wgsl(raytracer_compute_shader_source.into()),
+    });
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Replace the storage texture format with r32float for WebGPU
+        let raytracer_render_shader_source = raytracer_render_shader_source.replace(
+            "var result: texture_storage_2d<rgba8unorm",
+            "var result: texture_storage_2d<r32float",
+        );
+        let raytracer_compute_shader_source = raytracer_compute_shader_source.replace(
+            "var result: texture_storage_2d<rgba8unorm",
+            "var result: texture_storage_2d<r32float",
+        );
+
+        raytracer_render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Raytracer Render Shader"),
+            source: wgpu::ShaderSource::Wgsl(raytracer_render_shader_source.into()),
+        });
+        raytracer_compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Raytracer Compute Shader"),
+            source: wgpu::ShaderSource::Wgsl(raytracer_compute_shader_source.into()),
+        });
+    }
 
     let frame_count_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Frame Count Uniform Buffer"),
@@ -121,7 +157,7 @@ pub fn initialize_raytracer(
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::StorageTexture {
                     view_dimension: wgpu::TextureViewDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    format: RaytracerTextureFormat,
                     access: wgpu::StorageTextureAccess::ReadOnly,
                 },
                 count: None,
@@ -226,7 +262,7 @@ pub fn initialize_raytracer(
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        format: RaytracerTextureFormat,
                         access: wgpu::StorageTextureAccess::ReadWrite,
                     },
                     count: None,
@@ -290,6 +326,7 @@ pub fn initialize_raytracer(
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
     let raytracer_compute_pipeline =
         device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -298,6 +335,7 @@ pub fn initialize_raytracer(
             module: &raytracer_compute_shader,
             entry_point: "main",
             compilation_options: Default::default(),
+            cache: None,
         });
 
     (
