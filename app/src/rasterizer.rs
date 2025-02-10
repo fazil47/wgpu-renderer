@@ -116,13 +116,13 @@ pub fn initialize_rasterizer(
             layout: Some(&rasterizer_render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &rasterizer_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[Vertex::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &rasterizer_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: swapchain_format,

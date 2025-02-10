@@ -212,7 +212,7 @@ impl Engine {
                         .exact_width(150.0)
                         .show_separator_line(false)
                         .resizable(false)
-                        .frame(egui::Frame::none().inner_margin(egui::Margin::same(10.0)))
+                        .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                         .show(egui_ctx, |ui| {
                             ui.label(format!("Frame Time: {:.2}ms", self.delta_time * 1000.0));
                             ui.label(format!("FPS: {:.1}", 1.0 / self.delta_time));
@@ -223,7 +223,7 @@ impl Engine {
                         });
 
                     egui::CentralPanel::default()
-                        .frame(egui::Frame::none().inner_margin(egui::Margin::same(10.0)))
+                        .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                         .show(egui_ctx, |ui| {
                             if ui
                                 .color_edit_button_rgba_unmultiplied(&mut self.color_uniform)

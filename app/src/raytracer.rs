@@ -308,13 +308,13 @@ pub fn initialize_raytracer(
             layout: Some(&raytracer_render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &raytracer_render_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &raytracer_render_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: swapchain_format,
@@ -333,7 +333,7 @@ pub fn initialize_raytracer(
             label: Some("Raytracer Compute Pipeline"),
             layout: Some(&raytracer_compute_pipeline_layout),
             module: &raytracer_compute_shader,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
