@@ -2,7 +2,7 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
 
 permissions:
   contents: read
@@ -14,24 +14,23 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Install wasm-bindgen-cli
-      run: cargo install wasm-bindgen-cli
-    - name: Install wasm-unknown-unknown target
-      run: rustup target add wasm32-unknown-unknown
-    - name: Build
-      run: cargo xtask run-wasm --release --no-serve
-    - name: Run tests
-      run: cargo test --verbose
-    - name: Upload static files as artifact
-      id: deployment
-      uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
-      with:
-        path: target/generated
+      - uses: actions/checkout@v4
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.100
+      - name: Install wasm-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build
+        run: cargo xtask run-wasm --release --no-serve
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Upload static files as artifact
+        id: deployment
+        uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
+        with:
+          path: target/generated
 
   # Deployment job
   deploy:
@@ -44,4 +43,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-            
