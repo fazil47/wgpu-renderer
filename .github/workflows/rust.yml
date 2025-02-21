@@ -18,6 +18,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Update rust
+        run: rustup update stable
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --version 0.2.100
       - name: Install wasm-unknown-unknown target
