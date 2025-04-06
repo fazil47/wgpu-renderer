@@ -243,32 +243,32 @@ impl Mat4 {
         let (d1, d2, d3, d4) = (self.d1(), self.d2(), self.d3(), self.d4());
 
         // Compute all cofactors
-        let co11 = Self::det3(b2, b3, b4, c2, c3, c4, d2, d3, d4);
-        let co12 = -Self::det3(b1, b3, b4, c1, c3, c4, d1, d3, d4);
-        let co13 = Self::det3(b1, b2, b4, c1, c2, c4, d1, d2, d4);
-        let co14 = -Self::det3(b1, b2, b3, c1, c2, c3, d1, d2, d3);
+        let coa1 = Self::det3(b2, b3, b4, c2, c3, c4, d2, d3, d4);
+        let coa2 = -Self::det3(b1, b3, b4, c1, c3, c4, d1, d3, d4);
+        let coa3 = Self::det3(b1, b2, b4, c1, c2, c4, d1, d2, d4);
+        let coa4 = -Self::det3(b1, b2, b3, c1, c2, c3, d1, d2, d3);
 
-        let co21 = -Self::det3(a2, a3, a4, c2, c3, c4, d2, d3, d4);
-        let co22 = Self::det3(a1, a3, a4, c1, c3, c4, d1, d3, d4);
-        let co23 = -Self::det3(a1, a2, a4, c1, c2, c4, d1, d2, d4);
-        let co24 = Self::det3(a1, a2, a3, c1, c2, c3, d1, d2, d3);
+        let cob1 = -Self::det3(a2, a3, a4, c2, c3, c4, d2, d3, d4);
+        let cob2 = Self::det3(a1, a3, a4, c1, c3, c4, d1, d3, d4);
+        let cob3 = -Self::det3(a1, a2, a4, c1, c2, c4, d1, d2, d4);
+        let cob4 = Self::det3(a1, a2, a3, c1, c2, c3, d1, d2, d3);
 
-        let co31 = Self::det3(a2, a3, a4, b2, b3, b4, d2, d3, d4);
-        let co32 = -Self::det3(a1, a3, a4, b1, b3, b4, d1, d3, d4);
-        let co33 = Self::det3(a1, a2, a4, b1, b2, b4, d1, d2, d4);
-        let co34 = -Self::det3(a1, a2, a3, b1, b2, b3, d1, d2, d3);
+        let coc1 = Self::det3(a2, a3, a4, b2, b3, b4, d2, d3, d4);
+        let coc2 = -Self::det3(a1, a3, a4, b1, b3, b4, d1, d3, d4);
+        let coc3 = Self::det3(a1, a2, a4, b1, b2, b4, d1, d2, d4);
+        let coc4 = -Self::det3(a1, a2, a3, b1, b2, b3, d1, d2, d3);
 
-        let co41 = -Self::det3(a2, a3, a4, b2, b3, b4, c2, c3, c4);
-        let co42 = Self::det3(a1, a3, a4, b1, b3, b4, c1, c3, c4);
-        let co43 = -Self::det3(a1, a2, a4, b1, b2, b4, c1, c2, c4);
-        let co44 = Self::det3(a1, a2, a3, b1, b2, b3, c1, c2, c3);
+        let cod1 = -Self::det3(a2, a3, a4, b2, b3, b4, c2, c3, c4);
+        let cod2 = Self::det3(a1, a3, a4, b1, b3, b4, c1, c3, c4);
+        let cod3 = -Self::det3(a1, a2, a4, b1, b2, b4, c1, c2, c4);
+        let cod4 = Self::det3(a1, a2, a3, b1, b2, b3, c1, c2, c3);
 
         // Return the cofactor matrix
         Self::from_cols(
-            Vec4::new(co11, co12, co13, co14),
-            Vec4::new(co21, co22, co23, co24),
-            Vec4::new(co31, co32, co33, co34),
-            Vec4::new(co41, co42, co43, co44),
+            Vec4::new(coa1, coa2, coa3, coa4),
+            Vec4::new(cob1, cob2, cob3, cob4),
+            Vec4::new(coc1, coc2, coc3, coc4),
+            Vec4::new(cod1, cod2, cod3, cod4),
         )
     }
 
