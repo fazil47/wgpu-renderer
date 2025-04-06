@@ -3,7 +3,7 @@ use anyhow::Context;
 use pico_args::Arguments;
 use xshell::Shell;
 
-use crate::util::{check_all_programs, Program};
+use crate::util::{Program, check_all_programs};
 
 pub(crate) fn run_wasm(shell: Shell, mut args: Arguments) -> anyhow::Result<()> {
     let no_serve = args.contains("--no-serve");

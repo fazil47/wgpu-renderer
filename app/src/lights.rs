@@ -1,11 +1,11 @@
-use glam::Vec3A;
+use maths::Vec3;
 
 pub struct DirectionalLight {
-    pub direction: Vec3A,
+    pub direction: Vec3,
 }
 
 impl DirectionalLight {
-    pub fn new(direction: Vec3A) -> Self {
+    pub fn new(direction: Vec3) -> Self {
         Self { direction }
     }
 
@@ -17,7 +17,7 @@ impl DirectionalLight {
         let z = alt.sin();
 
         Self {
-            direction: Vec3A::new(x, y, z),
+            direction: Vec3::new(x, y, z),
         }
     }
 }

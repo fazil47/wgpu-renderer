@@ -1,4 +1,3 @@
-use glam::Vec3A;
 use wgpu::util::DeviceExt;
 
 use crate::{camera::Camera, wgpu::Vertex};
@@ -6,7 +5,7 @@ use crate::{camera::Camera, wgpu::Vertex};
 pub fn initialize_rasterizer(
     camera: &Camera,
     color_uniform: &[f32; 4],
-    sun_direction_uniform: &Vec3A,
+    sun_direction_uniform: &maths::Vec3,
     device: &wgpu::Device,
     surface: &wgpu::Surface,
     adapter: &wgpu::Adapter,

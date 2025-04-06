@@ -6,7 +6,6 @@ use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use glam::Vec3;
 use winit::{event::WindowEvent, window::Window};
 
 use crate::{
@@ -52,7 +51,7 @@ impl Engine {
 
         // position the camera 4 units back
         // +z is out of the screen
-        let camera_position: Vec3 = (0.0, 0.0, 4.0).into();
+        let camera_position: maths::Vec3 = (0.0, 0.0, 4.0).into();
         let camera = Camera::new(
             camera_position,
             -camera_position.normalize(), // have the camera look at the origin

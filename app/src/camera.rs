@@ -1,38 +1,31 @@
 use egui::Vec2;
-use glam::{Quat, Vec3};
+use maths::{Mat4, Quat, Vec3, Vec4};
 use winit::{
     event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
 
 pub struct Camera {
-    eye: glam::Vec3,
+    eye: Vec3,
     // The normalized forward vector of the camera is the direction the camera is looking at.
-    forward: glam::Vec3,
+    forward: Vec3,
     // The normalized up vector of the camera is the direction that is considered up for the camera.
-    up: glam::Vec3,
+    up: Vec3,
     aspect: f32,
     fovy: f32,
     znear: f32,
     zfar: f32,
-    world_to_camera: glam::Mat4,
-    camera_to_world: glam::Mat4,
-    camera_projection: glam::Mat4,
-    camera_inverse_projection: glam::Mat4,
-    view_projection: glam::Mat4,
+    world_to_camera: Mat4,
+    camera_to_world: Mat4,
+    camera_projection: Mat4,
+    camera_inverse_projection: Mat4,
+    view_projection: Mat4,
 }
 
 impl Camera {
-    const GLOBAL_UP: glam::Vec3 = glam::Vec3::Y;
+    const GLOBAL_UP: Vec3 = Vec3::Y;
 
-    pub fn new(
-        eye: glam::Vec3,
-        forward: glam::Vec3,
-        aspect: f32,
-        fovy: f32,
-        znear: f32,
-        zfar: f32,
-    ) -> Self {
+    pub fn new(eye: Vec3, forward: Vec3, aspect: f32, fovy: f32, znear: f32, zfar: f32) -> Self {
         // The camera's up vector stays close to the global up
         let up = forward.cross(Camera::GLOBAL_UP.cross(forward)).normalize();
 
@@ -80,30 +73,30 @@ impl Camera {
         self.update_matrices();
     }
 
-    pub fn set_eye(&mut self, eye: glam::Vec3) {
+    pub fn set_eye(&mut self, eye: Vec3) {
         self.eye = eye;
         self.update_matrices();
     }
 
-    pub fn set_forward(&mut self, forward: glam::Vec3) {
+    pub fn set_forward(&mut self, forward: Vec3) {
         self.forward = forward;
         self.update_matrices();
     }
 
-    pub fn set_up(&mut self, up: glam::Vec3) {
+    pub fn set_up(&mut self, up: Vec3) {
         self.up = up;
         self.update_matrices();
     }
 
-    pub fn eye(&self) -> glam::Vec3 {
+    pub fn eye(&self) -> Vec3 {
         self.eye
     }
 
-    pub fn forward(&self) -> glam::Vec3 {
+    pub fn forward(&self) -> Vec3 {
         self.forward
     }
 
-    pub fn up(&self) -> glam::Vec3 {
+    pub fn up(&self) -> Vec3 {
         self.up
     }
 
@@ -123,19 +116,19 @@ impl Camera {
         self.zfar
     }
 
-    pub fn world_to_camera(&self) -> glam::Mat4 {
+    pub fn world_to_camera(&self) -> Mat4 {
         self.world_to_camera
     }
 
-    pub fn camera_to_world(&self) -> glam::Mat4 {
+    pub fn camera_to_world(&self) -> Mat4 {
         self.camera_to_world
     }
 
-    pub fn camera_projection(&self) -> glam::Mat4 {
+    pub fn camera_projection(&self) -> Mat4 {
         self.camera_projection
     }
 
-    pub fn camera_inverse_projection(&self) -> glam::Mat4 {
+    pub fn camera_inverse_projection(&self) -> Mat4 {
         self.camera_inverse_projection
     }
 
@@ -145,9 +138,9 @@ impl Camera {
     ///
     /// # Returns
     ///
-    /// * `glam::Mat4` - The view projection matrix of the camera.
+    /// * `Mat4` - The view projection matrix of the camera.
     /// ```
-    pub fn view_projection(&self) -> glam::Mat4 {
+    pub fn view_projection(&self) -> Mat4 {
         self.view_projection
     }
 
@@ -178,32 +171,32 @@ impl Camera {
     // `forward` is the normalized forward vector of the camera.
     // `up` is the normalized up vector of the camera.
     fn calculate_matrices(
-        eye: glam::Vec3,
-        forward: glam::Vec3,
-        up: glam::Vec3,
+        eye: Vec3,
+        forward: Vec3,
+        up: Vec3,
         aspect: f32,
         fovy: f32,
         znear: f32,
         zfar: f32,
-    ) -> (glam::Mat4, glam::Mat4, glam::Mat4, glam::Mat4, glam::Mat4) {
+    ) -> (Mat4, Mat4, Mat4, Mat4, Mat4) {
         let right = forward.cross(up);
 
-        let world_to_camera = glam::Mat4::from_cols(
-            glam::Vec4::new(right.x, up.x, -forward.x, 0.0),
-            glam::Vec4::new(right.y, up.y, -forward.y, 0.0),
-            glam::Vec4::new(right.z, up.z, -forward.z, 0.0),
-            glam::Vec4::new(-right.dot(eye), -up.dot(eye), forward.dot(eye), 1.0),
+        let world_to_camera = Mat4::from_cols(
+            Vec4::new(right.x, up.x, -forward.x, 0.0),
+            Vec4::new(right.y, up.y, -forward.y, 0.0),
+            Vec4::new(right.z, up.z, -forward.z, 0.0),
+            Vec4::new(-right.dot(eye), -up.dot(eye), forward.dot(eye), 1.0),
         );
         let camera_to_world = world_to_camera.inverse();
 
         let top = znear * (fovy / 2.0).tan();
         let right = top * aspect;
 
-        let camera_projection = glam::Mat4::from_cols(
-            glam::Vec4::new(znear / right, 0.0, 0.0, 0.0),
-            glam::Vec4::new(0.0, znear / top, 0.0, 0.0),
-            glam::Vec4::new(0.0, 0.0, -(zfar + znear) / (zfar - znear), -1.0),
-            glam::Vec4::new(0.0, 0.0, -(2.0 * zfar * znear) / (zfar - znear), 0.0),
+        let camera_projection = Mat4::from_cols(
+            Vec4::new(znear / right, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, znear / top, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, -(zfar + znear) / (zfar - znear), -1.0),
+            Vec4::new(0.0, 0.0, -(2.0 * zfar * znear) / (zfar - znear), 0.0),
         );
         let camera_inverse_projection = camera_projection.inverse();
 

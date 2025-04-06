@@ -43,7 +43,7 @@ pub fn initialize_raytracer(
     vertex_buffer: &wgpu::Buffer,
     index_buffer: &wgpu::Buffer,
     camera: &camera::Camera,
-    sun_direction: &glam::Vec3A,
+    sun_direction: &maths::Vec3,
     result_texture_view: &wgpu::TextureView,
     device: &wgpu::Device,
     surface: &wgpu::Surface,
@@ -146,7 +146,7 @@ pub fn initialize_raytracer(
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sun Direction Uniform Buffer"),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[sun_direction.extend(0.0).to_array()]),
+            contents: bytemuck::cast_slice(&[sun_direction.to_array()]),
         });
 
     let raytracer_render_bind_group_layout =
