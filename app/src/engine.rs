@@ -84,7 +84,7 @@ impl Engine {
             camera_controller,
             last_frame_time: Instant::now(),
             delta_time: 0.0,
-            window: window,
+            window,
             window_size,
             is_raytracer_enabled: false,
             raytracer_max_frames: 256,
