@@ -257,6 +257,10 @@ impl CameraController {
         self.is_cursor_locked
     }
 
+    pub fn set_aspect(&mut self, aspect: f32) {
+        self.camera.set_aspect(aspect);
+    }
+
     pub fn process_events(&mut self, event: &WindowEvent) {
         match event {
             WindowEvent::KeyboardInput {

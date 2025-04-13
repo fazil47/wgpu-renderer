@@ -2,6 +2,14 @@ use wgpu::util::DeviceExt;
 
 use crate::{camera::Camera, wgpu::Vertex};
 
+pub struct Rasterizer {
+    pub depth_texture: crate::wgpu::Texture,
+    pub camera_view_proj_uniform: wgpu::Buffer,
+    pub sun_direction_uniform_buffer: wgpu::Buffer,
+    pub bind_group: wgpu::BindGroup,
+    pub render_pipeline: wgpu::RenderPipeline,
+}
+
 pub fn initialize_rasterizer(
     camera: &Camera,
     sun_direction_uniform: &maths::Vec3,
@@ -165,12 +173,4 @@ pub fn render_rasterizer(
     rasterizer_rpass.set_bind_group(0, rasterizer_bind_group, &[]);
     rasterizer_rpass.set_pipeline(rasterizer_render_pipeline);
     rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
-}
-
-pub struct Rasterizer {
-    pub depth_texture: crate::wgpu::Texture,
-    pub camera_view_proj_uniform: wgpu::Buffer,
-    pub sun_direction_uniform_buffer: wgpu::Buffer,
-    pub bind_group: wgpu::BindGroup,
-    pub render_pipeline: wgpu::RenderPipeline,
 }

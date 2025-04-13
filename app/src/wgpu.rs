@@ -1,6 +1,70 @@
-use std::mem::{offset_of, size_of};
+use std::{
+    mem::{offset_of, size_of},
+    sync::Arc,
+};
 
 use bytemuck::NoUninit;
+use winit::window::Window;
+
+pub struct RendererWgpu {
+    pub instance: wgpu::Instance,
+    pub surface: wgpu::Surface<'static>,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub surface_config: wgpu::SurfaceConfiguration,
+}
+
+impl RendererWgpu {
+    pub async fn new(window: Arc<Window>, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
+        let instance = wgpu::Instance::default();
+        let surface = instance.create_surface(window.clone()).unwrap();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                force_fallback_adapter: false,
+                // Request an adapter which can render to our surface
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .expect("Failed to find an appropriate adapter");
+
+        // Create the logical device and command queue
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("Device"),
+                    required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES, // This can be removed when wgpu is upgraded to the next version.
+                    // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
+                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                },
+                None,
+            )
+            .await
+            .expect("Failed to create device");
+
+        let surface_config = surface
+            .get_default_config(&adapter, window_size.width, window_size.height)
+            .expect("Failed to get default surface configuration");
+        surface.configure(&device, &surface_config);
+
+        Self {
+            instance,
+            surface,
+            adapter,
+            device,
+            queue,
+            surface_config,
+        }
+    }
+
+    pub fn resize(&mut self, new_size: &winit::dpi::PhysicalSize<u32>) {
+        self.surface_config.width = new_size.width.max(1);
+        self.surface_config.height = new_size.height.max(1);
+        self.surface.configure(&self.device, &self.surface_config);
+    }
+}
 
 // Vertex field offsets are calculated based on the following assumptions:
 // All the fields are of the same type and size ([f32; size]) and are aligned to 4 bytes.
@@ -122,13 +186,4 @@ impl Texture {
             sampler,
         }
     }
-}
-
-pub struct RendererWgpuResources {
-    pub instance: wgpu::Instance,
-    pub surface: wgpu::Surface<'static>,
-    pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub surface_config: wgpu::SurfaceConfiguration,
 }

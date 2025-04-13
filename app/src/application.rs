@@ -130,10 +130,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             engine.window.request_redraw();
         }
 
-        engine.input(&event);
-        if engine.camera_controller.is_cursor_locked() {
-            engine.update();
-        }
+        engine.process_events(&event);
 
         if egui_event_response.consumed {
             return;
