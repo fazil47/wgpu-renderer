@@ -214,6 +214,7 @@ impl Camera {
 
 // Ref: https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms
 pub struct CameraController {
+    pub camera: Camera,
     speed: f32,
     is_shift_pressed: bool,
     is_up_pressed: bool,
@@ -229,8 +230,9 @@ pub struct CameraController {
 }
 
 impl CameraController {
-    pub fn new(speed: f32) -> Self {
+    pub fn new(camera: Camera, speed: f32) -> Self {
         Self {
+            camera,
             speed,
             is_shift_pressed: false,
             is_up_pressed: false,
@@ -309,7 +311,7 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &mut Camera, delta_time: f32) {
+    pub fn update_camera(&mut self, delta_time: f32) {
         if !self.is_cursor_locked {
             return;
         }
@@ -318,32 +320,33 @@ impl CameraController {
 
         // Rotate around the global Y-axis (yaw)
         let yaw_rotation = Quat::from_rotation_y(-rotation_delta.x);
-        camera.forward = yaw_rotation * camera.forward;
-        camera.up = yaw_rotation * camera.up;
+        self.camera.forward = yaw_rotation * self.camera.forward;
+        self.camera.up = yaw_rotation * self.camera.up;
 
         // Rotate around the camera's local X-axis (pitch)
-        let right = camera.forward.cross(camera.up).normalize();
+        let right = self.camera.forward.cross(self.camera.up).normalize();
         let pitch_rotation = Quat::from_axis_angle(right, -rotation_delta.y);
-        camera.forward = pitch_rotation * camera.forward;
-        camera.up = pitch_rotation * camera.up;
+        self.camera.forward = pitch_rotation * self.camera.forward;
+        self.camera.up = pitch_rotation * self.camera.up;
 
         // Ensure the camera's up vector stays close to the global up
-        camera.up = camera
+        self.camera.up = self
+            .camera
             .forward
-            .cross(Camera::GLOBAL_UP.cross(camera.forward))
+            .cross(Camera::GLOBAL_UP.cross(self.camera.forward))
             .normalize();
 
         // Reset cursor delta
         self.cursor_delta = Vec2::ZERO;
 
         let mut translation_delta = Vec3::ZERO;
-        let right = camera.forward.cross(camera.up).normalize();
+        let right = self.camera.forward.cross(self.camera.up).normalize();
 
         if self.is_forward_pressed {
-            translation_delta += camera.forward;
+            translation_delta += self.camera.forward;
         }
         if self.is_backward_pressed {
-            translation_delta -= camera.forward;
+            translation_delta -= self.camera.forward;
         }
         if self.is_right_pressed {
             translation_delta += right;
@@ -352,10 +355,10 @@ impl CameraController {
             translation_delta -= right;
         }
         if self.is_up_pressed {
-            translation_delta += camera.up;
+            translation_delta += self.camera.up;
         }
         if self.is_down_pressed {
-            translation_delta -= camera.up;
+            translation_delta -= self.camera.up;
         }
 
         if translation_delta != Vec3::ZERO {
@@ -365,9 +368,9 @@ impl CameraController {
                 translation_delta *= 2.0;
             }
 
-            camera.eye += translation_delta;
+            self.camera.eye += translation_delta;
         }
 
-        camera.update_matrices();
+        self.camera.update_matrices();
     }
 }

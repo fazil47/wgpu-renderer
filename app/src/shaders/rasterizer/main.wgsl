@@ -17,8 +17,6 @@ struct VertexOutput {
 @group(0) @binding(0)
 var<uniform> camera_uniform: Camera;
 @group(0) @binding(1)
-var<uniform> color_uniform: vec4f;
-@group(0) @binding(2)
 var<uniform> sun_direction: vec3f;
 
 @vertex
@@ -39,5 +37,5 @@ fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
     let total_light: f32 = direct_light + ambient_light;
     let color = vert_output.color * vec4f(total_light, total_light, total_light, 1.0);
 
-    return color_uniform * color;
+    return color;
 }

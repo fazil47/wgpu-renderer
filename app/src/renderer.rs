@@ -6,9 +6,9 @@ use winit::window::Window;
 use crate::{
     camera::Camera,
     egui::initialize_egui,
-    lights,
     rasterizer::{self, initialize_rasterizer},
     raytracer::{self, create_raytracer_result_texture, initialize_raytracer},
+    scene::Scene,
 };
 
 pub struct Renderer {
@@ -26,8 +26,7 @@ impl Renderer {
         window: Arc<Window>,
         window_size: &winit::dpi::PhysicalSize<u32>,
         camera: &Camera,
-        color_uniform: &[f32; 4],
-        sun_light: &lights::DirectionalLight,
+        scene: &Scene,
     ) -> Self {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).unwrap();
@@ -111,14 +110,12 @@ impl Renderer {
 
         let (
             rasterizer_camera_view_proj_uniform,
-            rasterizer_color_uniform_buffer,
             rasterizer_sun_direction_uniform_buffer,
             rasterizer_bind_group,
             rasterizer_render_pipeline,
         ) = initialize_rasterizer(
             &camera,
-            &color_uniform,
-            &sun_light.direction,
+            &scene.sun_light.direction,
             &device,
             &surface,
             &adapter,
@@ -152,7 +149,7 @@ impl Renderer {
             &vertex_buffer,
             &index_buffer,
             &camera,
-            &sun_light.direction,
+            &scene.sun_light.direction,
             &raytracer_result_texture_view,
             &device,
             &surface,
@@ -178,7 +175,6 @@ impl Renderer {
             rasterizer: rasterizer::Rasterizer {
                 depth_texture: rasterizer_depth_texture,
                 camera_view_proj_uniform: rasterizer_camera_view_proj_uniform,
-                color_uniform_buffer: rasterizer_color_uniform_buffer,
                 sun_direction_uniform_buffer: rasterizer_sun_direction_uniform_buffer,
                 bind_group: rasterizer_bind_group,
                 render_pipeline: rasterizer_render_pipeline,

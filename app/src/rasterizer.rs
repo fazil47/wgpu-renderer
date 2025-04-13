@@ -4,13 +4,11 @@ use crate::{camera::Camera, wgpu::Vertex};
 
 pub fn initialize_rasterizer(
     camera: &Camera,
-    color_uniform: &[f32; 4],
     sun_direction_uniform: &maths::Vec3,
     device: &wgpu::Device,
     surface: &wgpu::Surface,
     adapter: &wgpu::Adapter,
 ) -> (
-    wgpu::Buffer,
     wgpu::Buffer,
     wgpu::Buffer,
     wgpu::BindGroup,
@@ -26,12 +24,6 @@ pub fn initialize_rasterizer(
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             contents: bytemuck::cast_slice(&[camera.view_projection().to_cols_array_2d()]),
         });
-
-    let color_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Color Uniform Buffer"),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        contents: bytemuck::cast_slice(color_uniform),
-    });
 
     let sun_direction_uniform_buffer =
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -64,16 +56,6 @@ pub fn initialize_rasterizer(
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
             ],
         });
 
@@ -87,10 +69,6 @@ pub fn initialize_rasterizer(
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: color_uniform_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
                 resource: sun_direction_uniform_buffer.as_entire_binding(),
             },
         ],
@@ -144,7 +122,6 @@ pub fn initialize_rasterizer(
 
     (
         camera_view_proj_uniform_buffer,
-        color_uniform_buffer,
         sun_direction_uniform_buffer,
         rasterizer_bind_group,
         rasterizer_render_pipeline,
@@ -193,7 +170,6 @@ pub fn render_rasterizer(
 pub struct Rasterizer {
     pub depth_texture: crate::wgpu::Texture,
     pub camera_view_proj_uniform: wgpu::Buffer,
-    pub color_uniform_buffer: wgpu::Buffer,
     pub sun_direction_uniform_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,

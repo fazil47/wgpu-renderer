@@ -11,35 +11,27 @@ use winit::{event::WindowEvent, window::Window};
 use crate::{
     camera::{Camera, CameraController},
     egui::render_egui,
-    lights,
     rasterizer::render_rasterizer,
     raytracer::{
         create_raytracer_bind_groups, create_raytracer_result_texture, render_raytracer,
         run_raytracer,
     },
     renderer::Renderer,
+    scene::Scene,
     wgpu::update_buffer,
 };
 
 pub struct Engine {
-    frame_count: u32,
-    target_frame_time: f32,
-    time_since_last_frame: f32,
-    camera: Camera,
-    pub camera_controller: CameraController,
-    last_frame_time: Instant,
-    delta_time: f32,
-    pub renderer: Renderer,
     // The window must be declared after the wgpu surface so
     // it gets dropped after it as the surface contains
     // unsafe references to the window's resources.
     pub window: Arc<Window>,
     pub window_size: winit::dpi::PhysicalSize<u32>,
-    is_raytracer_enabled: bool,
-    raytracer_max_frames: u32,
-    color_uniform: [f32; 4],
-    sun_light: lights::DirectionalLight,
-    sun_azi_alt: (f32, f32),
+    pub camera_controller: CameraController,
+    pub renderer: Renderer,
+    scene: Scene,
+    stat: EngineStatistics,
+    config: EngineConfiguration,
 }
 
 impl Engine {
@@ -60,38 +52,25 @@ impl Engine {
             0.1,
             100.0,
         );
-        let camera_controller = CameraController::new(0.8);
-
-        let color_uniform = [1.0, 1.0, 1.0, 1.0];
-
-        let sun_azi_alt = (45.0, 45.0);
-        let sun_light = lights::DirectionalLight::from_azi_alt(sun_azi_alt.0, sun_azi_alt.1);
+        let camera_controller = CameraController::new(camera, 0.8);
+        let scene = Scene::default();
 
         let renderer = Renderer::new(
             window.clone(),
             &window_size,
-            &camera,
-            &color_uniform,
-            &sun_light,
+            &camera_controller.camera,
+            &scene,
         )
         .await;
 
         Self {
-            frame_count: 0,
-            target_frame_time: 1.0 / 120.0,
-            time_since_last_frame: 0.0,
-            camera,
-            camera_controller,
-            last_frame_time: Instant::now(),
-            delta_time: 0.0,
             window,
             window_size,
-            is_raytracer_enabled: false,
-            raytracer_max_frames: 256,
-            color_uniform,
-            sun_azi_alt,
-            sun_light,
+            camera_controller,
             renderer,
+            scene,
+            stat: EngineStatistics::default(),
+            config: EngineConfiguration::default(),
         }
     }
 
@@ -99,12 +78,13 @@ impl Engine {
         self.window_size = new_size;
 
         // Update camera
-        self.camera
+        self.camera_controller
+            .camera
             .set_aspect(new_size.width as f32 / new_size.height as f32);
         self.update_camera_uniforms();
 
         Self::reset_frame_count(
-            &mut self.frame_count,
+            &mut self.stat.frame_count,
             &self.renderer.wgpu,
             &self.renderer.raytracer,
         );
@@ -164,7 +144,9 @@ impl Engine {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        if self.is_raytracer_enabled && self.frame_count < self.raytracer_max_frames {
+        if self.config.is_raytracer_enabled
+            && self.stat.frame_count < self.config.raytracer_max_frames
+        {
             run_raytracer(
                 &self.renderer.wgpu.device,
                 &self.renderer.wgpu.queue,
@@ -174,7 +156,7 @@ impl Engine {
             );
 
             Self::increment_frame_count(
-                &mut self.frame_count,
+                &mut self.stat.frame_count,
                 &self.renderer.wgpu,
                 &self.renderer.raytracer,
             );
@@ -182,10 +164,10 @@ impl Engine {
 
         // Update delta time
         let current_time = Instant::now();
-        self.delta_time = current_time
-            .duration_since(self.last_frame_time)
+        self.stat.delta_time = current_time
+            .duration_since(self.stat.last_frame_time)
             .as_secs_f32();
-        self.last_frame_time = current_time;
+        self.stat.last_frame_time = current_time;
 
         let surface_texture = self.renderer.wgpu.surface.get_current_texture()?;
 
@@ -213,61 +195,56 @@ impl Engine {
                         .resizable(false)
                         .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                         .show(egui_ctx, |ui| {
-                            ui.label(format!("Frame Time: {:.2}ms", self.delta_time * 1000.0));
-                            ui.label(format!("FPS: {:.1}", 1.0 / self.delta_time));
+                            ui.label(format!(
+                                "Frame Time: {:.2}ms",
+                                self.stat.delta_time * 1000.0
+                            ));
+                            ui.label(format!("FPS: {:.1}", 1.0 / self.stat.delta_time));
 
-                            if self.is_raytracer_enabled {
-                                ui.label(format!("Frame Count: {}", self.frame_count));
+                            if self.config.is_raytracer_enabled {
+                                ui.label(format!("Frame Count: {}", self.stat.frame_count));
                             }
                         });
 
                     egui::CentralPanel::default()
                         .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                         .show(egui_ctx, |ui| {
-                            if ui
-                                .color_edit_button_rgba_unmultiplied(&mut self.color_uniform)
-                                .changed()
-                            {
-                                update_buffer(
-                                    &self.renderer.wgpu.queue,
-                                    &self.renderer.rasterizer.color_uniform_buffer,
-                                    &self.color_uniform,
-                                );
-                            }
-
                             let sun_azi_changed = ui
                                 .add(
-                                    egui::Slider::new(&mut self.sun_azi_alt.0, 0.0..=360.0)
-                                        .text("Sun Azimuth"),
+                                    egui::Slider::new(
+                                        &mut self.scene.sun_light.azimuth,
+                                        0.0..=360.0,
+                                    )
+                                    .text("Sun Azimuth"),
                                 )
                                 .changed();
 
                             let sun_alt_changed = ui
                                 .add(
-                                    egui::Slider::new(&mut self.sun_azi_alt.1, 0.0..=90.0)
-                                        .text("Sun Altitude"),
+                                    egui::Slider::new(
+                                        &mut self.scene.sun_light.altitude,
+                                        0.0..=90.0,
+                                    )
+                                    .text("Sun Altitude"),
                                 )
                                 .changed();
 
                             if sun_azi_changed || sun_alt_changed {
-                                self.sun_light = lights::DirectionalLight::from_azi_alt(
-                                    self.sun_azi_alt.0,
-                                    self.sun_azi_alt.1,
-                                );
+                                self.scene.sun_light.recalculate();
 
                                 update_buffer(
                                     &self.renderer.wgpu.queue,
                                     &self.renderer.rasterizer.sun_direction_uniform_buffer,
-                                    &self.sun_light.direction.to_array(),
+                                    &self.scene.sun_light.direction.to_array(),
                                 );
                                 update_buffer(
                                     &self.renderer.wgpu.queue,
                                     &self.renderer.raytracer.sun_direction_uniform_buffer,
-                                    &self.sun_light.direction.to_array(),
+                                    &self.scene.sun_light.direction.to_array(),
                                 );
 
                                 Self::reset_frame_count(
-                                    &mut self.frame_count,
+                                    &mut self.stat.frame_count,
                                     &self.renderer.wgpu,
                                     &self.renderer.raytracer,
                                 );
@@ -275,11 +252,11 @@ impl Engine {
 
                             // Run the raytracer when the checkbox is toggled on
                             if ui
-                                .checkbox(&mut self.is_raytracer_enabled, "Raytracing")
+                                .checkbox(&mut self.config.is_raytracer_enabled, "Raytracing")
                                 .changed()
                             {
                                 Self::reset_frame_count(
-                                    &mut self.frame_count,
+                                    &mut self.stat.frame_count,
                                     &self.renderer.wgpu,
                                     &self.renderer.raytracer,
                                 );
@@ -310,7 +287,7 @@ impl Engine {
         }
 
         {
-            if self.is_raytracer_enabled {
+            if self.config.is_raytracer_enabled {
                 render_raytracer(
                     &mut render_encoder,
                     &surface_texture_view,
@@ -359,23 +336,24 @@ impl Engine {
     }
 
     pub fn update(&mut self) {
-        self.time_since_last_frame += self.delta_time;
+        self.stat.time_since_last_frame += self.stat.delta_time;
 
         // Raytracing is expensive, so run it every 4 frames
-        if self.is_raytracer_enabled && self.time_since_last_frame < self.target_frame_time * 4.0 {
+        if self.config.is_raytracer_enabled
+            && self.stat.time_since_last_frame < self.config.target_frame_time * 4.0
+        {
             return;
-        } else if self.time_since_last_frame < self.target_frame_time {
+        } else if self.stat.time_since_last_frame < self.config.target_frame_time {
             return;
         } else {
-            self.time_since_last_frame = 0.0;
+            self.stat.time_since_last_frame = 0.0;
         }
 
-        self.camera_controller
-            .update_camera(&mut self.camera, self.delta_time);
+        self.camera_controller.update_camera(self.stat.delta_time);
         self.update_camera_uniforms();
 
         Self::reset_frame_count(
-            &mut self.frame_count,
+            &mut self.stat.frame_count,
             &self.renderer.wgpu,
             &self.renderer.raytracer,
         );
@@ -387,13 +365,21 @@ impl Engine {
         update_buffer(
             &self.renderer.wgpu.queue,
             &self.renderer.rasterizer.camera_view_proj_uniform,
-            &[self.camera.view_projection().to_cols_array_2d()],
+            &[self
+                .camera_controller
+                .camera
+                .view_projection()
+                .to_cols_array_2d()],
         );
 
         update_buffer(
             &self.renderer.wgpu.queue,
             &self.renderer.raytracer.camera_to_world_uniform_buffer,
-            &[self.camera.camera_to_world().to_cols_array_2d()],
+            &[self
+                .camera_controller
+                .camera
+                .camera_to_world()
+                .to_cols_array_2d()],
         );
 
         update_buffer(
@@ -402,7 +388,11 @@ impl Engine {
                 .renderer
                 .raytracer
                 .camera_inverse_projection_uniform_buffer,
-            &[self.camera.camera_inverse_projection().to_cols_array_2d()],
+            &[self
+                .camera_controller
+                .camera
+                .camera_inverse_projection()
+                .to_cols_array_2d()],
         );
     }
 
@@ -432,5 +422,39 @@ impl Engine {
             &raytracer.frame_count_uniform_buffer,
             &[*frame_count],
         );
+    }
+}
+
+struct EngineStatistics {
+    time_since_last_frame: f32,
+    last_frame_time: Instant,
+    delta_time: f32,
+    frame_count: u32,
+}
+
+impl Default for EngineStatistics {
+    fn default() -> Self {
+        Self {
+            time_since_last_frame: 0.0,
+            last_frame_time: Instant::now(),
+            delta_time: 0.0,
+            frame_count: 0,
+        }
+    }
+}
+
+struct EngineConfiguration {
+    target_frame_time: f32,
+    raytracer_max_frames: u32,
+    is_raytracer_enabled: bool,
+}
+
+impl Default for EngineConfiguration {
+    fn default() -> Self {
+        Self {
+            target_frame_time: 1.0 / 120.0,
+            raytracer_max_frames: 100,
+            is_raytracer_enabled: false,
+        }
     }
 }
