@@ -77,6 +77,8 @@ pub struct Vertex {
     pub normal: [f32; 4],
 }
 
+pub type Index = u32;
+
 impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];

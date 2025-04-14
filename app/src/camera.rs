@@ -5,6 +5,8 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
+use crate::scene::Scene;
+
 pub struct Camera {
     eye: Vec3,
     // The normalized forward vector of the camera is the direction the camera is looking at.
@@ -214,7 +216,6 @@ impl Camera {
 
 // Ref: https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms
 pub struct CameraController {
-    pub camera: Camera,
     speed: f32,
     is_shift_pressed: bool,
     is_up_pressed: bool,
@@ -230,9 +231,8 @@ pub struct CameraController {
 }
 
 impl CameraController {
-    pub fn new(camera: Camera, speed: f32) -> Self {
+    pub fn new(speed: f32) -> Self {
         Self {
-            camera,
             speed,
             is_shift_pressed: false,
             is_up_pressed: false,
@@ -255,10 +255,6 @@ impl CameraController {
 
     pub fn is_cursor_locked(&self) -> bool {
         self.is_cursor_locked
-    }
-
-    pub fn set_aspect(&mut self, aspect: f32) {
-        self.camera.set_aspect(aspect);
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {
@@ -315,42 +311,42 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, delta_time: f32) {
+    pub fn update_camera(&mut self, scene: &mut Scene, delta_time: f32) {
         if !self.is_cursor_locked {
             return;
         }
 
+        let camera = &mut scene.camera;
         let rotation_delta = self.cursor_delta * self.sensitivity;
 
         // Rotate around the global Y-axis (yaw)
         let yaw_rotation = Quat::from_rotation_y(-rotation_delta.x);
-        self.camera.forward = yaw_rotation * self.camera.forward;
-        self.camera.up = yaw_rotation * self.camera.up;
+        camera.forward = yaw_rotation * camera.forward;
+        camera.up = yaw_rotation * camera.up;
 
         // Rotate around the camera's local X-axis (pitch)
-        let right = self.camera.forward.cross(self.camera.up).normalize();
+        let right = camera.forward.cross(camera.up).normalize();
         let pitch_rotation = Quat::from_axis_angle(right, -rotation_delta.y);
-        self.camera.forward = pitch_rotation * self.camera.forward;
-        self.camera.up = pitch_rotation * self.camera.up;
+        camera.forward = pitch_rotation * camera.forward;
+        camera.up = pitch_rotation * camera.up;
 
         // Ensure the camera's up vector stays close to the global up
-        self.camera.up = self
-            .camera
+        camera.up = camera
             .forward
-            .cross(Camera::GLOBAL_UP.cross(self.camera.forward))
+            .cross(Camera::GLOBAL_UP.cross(camera.forward))
             .normalize();
 
         // Reset cursor delta
         self.cursor_delta = Vec2::ZERO;
 
         let mut translation_delta = Vec3::ZERO;
-        let right = self.camera.forward.cross(self.camera.up).normalize();
+        let right = camera.forward.cross(camera.up).normalize();
 
         if self.is_forward_pressed {
-            translation_delta += self.camera.forward;
+            translation_delta += camera.forward;
         }
         if self.is_backward_pressed {
-            translation_delta -= self.camera.forward;
+            translation_delta -= camera.forward;
         }
         if self.is_right_pressed {
             translation_delta += right;
@@ -359,10 +355,10 @@ impl CameraController {
             translation_delta -= right;
         }
         if self.is_up_pressed {
-            translation_delta += self.camera.up;
+            translation_delta += camera.up;
         }
         if self.is_down_pressed {
-            translation_delta -= self.camera.up;
+            translation_delta -= camera.up;
         }
 
         if translation_delta != Vec3::ZERO {
@@ -372,9 +368,9 @@ impl CameraController {
                 translation_delta *= 2.0;
             }
 
-            self.camera.eye += translation_delta;
+            camera.eye += translation_delta;
         }
 
-        self.camera.update_matrices();
+        camera.update_matrices();
     }
 }

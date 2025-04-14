@@ -1,17 +1,58 @@
 use ply_rs::ply;
 use wgpu::util::DeviceExt;
 
-use crate::wgpu::Vertex;
+use crate::wgpu::{Index, Vertex};
 
 pub trait Mesh {
     fn create_vertex_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
     fn create_index_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
     fn get_index_count(&self) -> u32;
+    fn get_vertices(&self) -> &[Vertex];
+    fn get_indices(&self) -> &[Index];
+}
+
+pub trait CombinedMeshExt {
+    fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+    fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+}
+
+impl CombinedMeshExt for Vec<Box<dyn Mesh>> {
+    fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        let all_vertices: Vec<Vertex> = self
+            .iter()
+            .flat_map(|mesh| mesh.get_vertices())
+            .map(|vertex| vertex.clone())
+            .collect();
+
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&all_vertices),
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
+        })
+    }
+
+    fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        let all_indices: Vec<Index> = self
+            .iter()
+            .flat_map(|mesh| mesh.get_indices())
+            .map(|index| index.clone())
+            .collect();
+
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&all_indices),
+            usage: wgpu::BufferUsages::INDEX
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
+        })
+    }
 }
 
 pub struct PlyMesh {
     pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+    pub indices: Vec<Index>,
 }
 
 impl Mesh for PlyMesh {
@@ -38,11 +79,19 @@ impl Mesh for PlyMesh {
     fn get_index_count(&self) -> u32 {
         self.indices.len() as u32
     }
+
+    fn get_vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+
+    fn get_indices(&self) -> &[Index] {
+        &self.indices
+    }
 }
 
 pub struct StaticMesh<'mesh> {
     pub vertices: &'mesh [Vertex],
-    pub indices: &'mesh [u32],
+    pub indices: &'mesh [Index],
 }
 
 impl<'mesh> Mesh for StaticMesh<'mesh> {
@@ -68,6 +117,14 @@ impl<'mesh> Mesh for StaticMesh<'mesh> {
 
     fn get_index_count(&self) -> u32 {
         self.indices.len() as u32
+    }
+
+    fn get_vertices(&self) -> &[Vertex] {
+        self.vertices
+    }
+
+    fn get_indices(&self) -> &[Index] {
+        self.indices
     }
 }
 

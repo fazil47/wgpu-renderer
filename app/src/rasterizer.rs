@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    camera::{Camera, CameraController},
+    scene::Scene,
     wgpu::{BufferExt, RendererWgpu, Vertex},
 };
 
@@ -14,7 +14,7 @@ pub struct Rasterizer {
 }
 
 impl Rasterizer {
-    pub fn new(camera: &Camera, sun_direction_uniform: &maths::Vec3, wgpu: &RendererWgpu) -> Self {
+    pub fn new(wgpu: &RendererWgpu, scene: &Scene) -> Self {
         let rasterizer_shader = wgpu
             .device
             .create_shader_module(wgpu::include_wgsl!("shaders/rasterizer/main.wgsl"));
@@ -24,7 +24,10 @@ impl Rasterizer {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Camera View Projection Uniform Buffer"),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                contents: bytemuck::cast_slice(&[camera.view_projection().to_cols_array_2d()]),
+                contents: bytemuck::cast_slice(&[scene
+                    .camera
+                    .view_projection()
+                    .to_cols_array_2d()]),
             });
 
         let sun_direction = wgpu
@@ -32,7 +35,7 @@ impl Rasterizer {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Sun Direction Uniform Buffer"),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                contents: bytemuck::cast_slice(&sun_direction_uniform.to_array()),
+                contents: bytemuck::cast_slice(&scene.sun_light.direction.to_array()),
             });
 
         let bind_group_layout =
@@ -149,14 +152,14 @@ impl Rasterizer {
         );
     }
 
-    pub fn update_camera(&self, queue: &wgpu::Queue, camera_controller: &CameraController) {
-        self.camera_view_proj.write(
-            queue,
-            &[camera_controller
-                .camera
-                .view_projection()
-                .to_cols_array_2d()],
-        );
+    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
+        self.camera_view_proj
+            .write(queue, &[scene.camera.view_projection().to_cols_array_2d()]);
+    }
+
+    pub fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
+        self.sun_direction
+            .write(queue, &[scene.sun_light.direction.to_array()]);
     }
 
     pub fn render(

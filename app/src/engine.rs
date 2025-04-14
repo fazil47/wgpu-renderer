@@ -8,11 +8,7 @@ use std::time::Instant;
 
 use winit::{event::WindowEvent, window::Window};
 
-use crate::{
-    camera::{Camera, CameraController},
-    renderer::Renderer,
-    scene::Scene,
-};
+use crate::{camera::CameraController, renderer::Renderer, scene::Scene};
 
 pub struct Engine {
     // The window must be declared after the wgpu surface so
@@ -34,33 +30,18 @@ impl Engine {
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
 
-        // position the camera 4 units back
-        // +z is out of the screen
-        let camera_position: maths::Vec3 = (0.0, 0.0, 4.0).into();
-        let camera = Camera::new(
-            camera_position,
-            -camera_position.normalize(), // have the camera look at the origin
-            window_size.width as f32 / window_size.height as f32,
-            45.0,
-            0.1,
-            100.0,
-        );
-        let camera_controller = CameraController::new(camera, 0.8);
         #[allow(unused_mut)]
-        let mut scene = Scene::default();
+        let mut scene = Scene::new(&window_size);
+        let camera_controller = CameraController::new(0.8);
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            scene.mesh = Box::new(crate::mesh::PlyMesh::new("assets/cornell-box.ply"));
+            scene.meshes = vec![Box::new(crate::mesh::PlyMesh::new(
+                "assets/cornell-box.ply",
+            ))];
         }
 
-        let renderer = Renderer::new(
-            window.clone(),
-            &window_size,
-            &camera_controller.camera,
-            &scene,
-        )
-        .await;
+        let renderer = Renderer::new(window.clone(), &window_size, &scene).await;
 
         Self {
             window,
@@ -75,12 +56,12 @@ impl Engine {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.window_size = new_size;
-        self.stat.frame_count += 1;
+        self.stat.frame_count = 0;
 
         // Update camera
-        self.camera_controller
+        self.scene
             .set_aspect(new_size.width as f32 / new_size.height as f32);
-        self.renderer.resize(new_size, &self.camera_controller);
+        self.renderer.resize(new_size, &self.scene);
 
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
@@ -126,22 +107,7 @@ impl Engine {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                     .show(egui_ctx, |ui| {
-                        let sun_azi_changed = ui
-                            .add(
-                                egui::Slider::new(&mut self.scene.sun_light.azimuth, 0.0..=360.0)
-                                    .text("Sun Azimuth"),
-                            )
-                            .changed();
-
-                        let sun_alt_changed = ui
-                            .add(
-                                egui::Slider::new(&mut self.scene.sun_light.altitude, 0.0..=90.0)
-                                    .text("Sun Altitude"),
-                            )
-                            .changed();
-
-                        if sun_azi_changed || sun_alt_changed {
-                            self.scene.sun_light.recalculate();
+                        if self.scene.run_ui(ui) {
                             self.stat.frame_count = 0;
                         }
 
@@ -159,10 +125,12 @@ impl Engine {
             &self.window,
             &self.window_size,
             &self.config,
-            &self.camera_controller,
+            &self.scene,
             self.stat.frame_count,
             egui_output,
         )?;
+        // Set the light dirty flag to false after rendering
+        self.scene.set_light_clean();
 
         Ok(())
     }
@@ -179,7 +147,8 @@ impl Engine {
 
         if self.camera_controller.is_cursor_locked() {
             self.stat.frame_count = 0;
-            self.camera_controller.update_camera(self.stat.delta_time);
+            self.camera_controller
+                .update_camera(&mut self.scene, self.stat.delta_time);
         }
     }
 }
