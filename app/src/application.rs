@@ -120,12 +120,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             return;
         };
 
-        let egui_event_response = engine
-            .renderer
-            .egui
-            .state
-            .on_window_event(&engine.window, &event);
-
+        let egui_event_response = engine.process_egui_events(&event);
         if egui_event_response.repaint {
             engine.window.request_redraw();
         }

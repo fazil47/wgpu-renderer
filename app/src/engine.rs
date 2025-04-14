@@ -160,11 +160,18 @@ impl Engine {
             &self.window_size,
             &self.config,
             &self.camera_controller,
-            &self.stat.frame_count,
+            self.stat.frame_count,
             egui_output,
         )?;
 
         Ok(())
+    }
+
+    pub fn process_egui_events(&mut self, event: &WindowEvent) -> egui_winit::EventResponse {
+        self.renderer
+            .egui
+            .state
+            .on_window_event(&self.window, &event)
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {

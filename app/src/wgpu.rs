@@ -130,9 +130,14 @@ impl Resolution {
     }
 }
 
-pub fn update_buffer<T: NoUninit>(queue: &wgpu::Queue, wgpu_buffer: &wgpu::Buffer, value: &[T]) {
-    // TODO: Maybe use encase?
-    queue.write_buffer(wgpu_buffer, 0, bytemuck::cast_slice(value));
+pub trait BufferExt<T: NoUninit> {
+    fn write(&self, queue: &wgpu::Queue, value: &[T]);
+}
+
+impl<T: NoUninit> BufferExt<T> for wgpu::Buffer {
+    fn write(&self, queue: &wgpu::Queue, value: &[T]) {
+        queue.write_buffer(self, 0, bytemuck::cast_slice(value));
+    }
 }
 
 pub struct Texture {

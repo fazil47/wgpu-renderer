@@ -3,28 +3,29 @@ const FLT_MAX: f32 = 1e12;
 const MAX_BOUNCES: u32 = 8;
 const SUN_INTENSITY: f32 = 1.0;
 
-// TODO: Break up bind groups, see https://toji.dev/webgpu-best-practices/bind-groups.html
-
 @group(0) @binding(0)
 var<storage, read> vertices: array<f32>; // Raw vertex data
 @group(0) @binding(1)
-var<storage, read> indices: array<u32>;
-@group(0) @binding(2)
-var<uniform> frame_count: u32;
-@group(0) @binding(3)
 var<uniform> vertex_stride: u32;
-@group(0) @binding(4)
+@group(0) @binding(2)
 var<uniform> vertex_color_offset: u32;
-@group(0) @binding(5)
+@group(0) @binding(3)
 var<uniform> vertex_normal_offset: u32;
-@group(0) @binding(6)
-var<uniform> camera_to_world: mat4x4f;
-@group(0) @binding(7)
-var<uniform> camera_inverse_projection: mat4x4f;
-@group(0) @binding(8)
-var<uniform> sun_direction: vec3f;
-@group(0) @binding(9)
+@group(0) @binding(4)
+var<storage, read> indices: array<u32>;
+
+@group(1) @binding(0)
 var result: texture_storage_2d<rgba8unorm, read_write>;
+
+@group(2) @binding(0)
+var<uniform> sun_direction: vec3f;
+
+@group(3) @binding(0)
+var<uniform> camera_to_world: mat4x4f;
+@group(3) @binding(1)
+var<uniform> camera_inverse_projection: mat4x4f;
+@group(3) @binding(2)
+var<uniform> frame_count: u32;
 
 struct Vertex {
     position: vec4f,
