@@ -3,7 +3,7 @@ use winit::dpi::PhysicalSize;
 use crate::{
     camera::Camera,
     lights::DirectionalLight,
-    mesh::{Mesh, StaticMesh},
+    mesh::{Mesh, static_mesh::StaticMesh},
 };
 
 pub struct Scene {

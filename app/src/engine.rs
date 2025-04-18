@@ -36,7 +36,7 @@ impl Engine {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            scene.meshes = vec![Box::new(crate::mesh::PlyMesh::new(
+            scene.meshes = vec![Box::new(crate::mesh::ply::PlyMesh::new(
                 "assets/cornell-box.ply",
             ))];
         }
