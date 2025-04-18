@@ -107,13 +107,52 @@ pub struct Vec4 {
 
 impl Vec4 {
     pub const ZERO: Self = Self::new(0.0, 0.0, 0.0, 0.0);
+    pub const UP: Self = Self::new(0.0, 1.0, 0.0, 0.0);
 
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
     }
 
+    pub const fn from_array(arr: [f32; 4]) -> Self {
+        Self::new(arr[0], arr[1], arr[2], arr[3])
+    }
+
+    pub const fn from_array3(arr: [f32; 3]) -> Self {
+        Self::new(arr[0], arr[1], arr[2], 1.0)
+    }
+
     pub const fn to_array(&self) -> [f32; 4] {
         [self.x, self.y, self.z, self.w]
+    }
+
+    pub fn length(&self) -> f32 {
+        (self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt()
+    }
+
+    pub fn normalize(&mut self) {
+        let length = self.length();
+        if length == 0.0 {
+            return;
+        }
+
+        self.x /= length;
+        self.y /= length;
+        self.z /= length;
+        self.w /= length;
+    }
+
+    pub fn normalized(&self) -> Self {
+        let length = self.length();
+        if length == 0.0 {
+            return Self::ZERO;
+        }
+
+        Self::new(
+            self.x / length,
+            self.y / length,
+            self.z / length,
+            self.w / length,
+        )
     }
 }
 
@@ -212,6 +251,15 @@ impl Mat4 {
             z_axis,
             w_axis,
         }
+    }
+
+    pub const fn from_matrix(mat: [[f32; 4]; 4]) -> Self {
+        Self::from_cols(
+            Vec4::new(mat[0][0], mat[1][0], mat[2][0], mat[3][0]),
+            Vec4::new(mat[0][1], mat[1][1], mat[2][1], mat[3][1]),
+            Vec4::new(mat[0][2], mat[1][2], mat[2][2], mat[3][2]),
+            Vec4::new(mat[0][3], mat[1][3], mat[2][3], mat[3][3]),
+        )
     }
 
     pub const fn to_cols_array_2d(&self) -> [[f32; 4]; 4] {
@@ -403,6 +451,19 @@ impl Mul<Mat4> for Mat4 {
         );
 
         Self::from_cols(x_axis, y_axis, z_axis, w_axis)
+    }
+}
+
+impl Mul<Vec4> for Mat4 {
+    type Output = Vec4;
+
+    fn mul(self, rhs: Vec4) -> Self::Output {
+        Vec4::new(
+            self.a1() * rhs.x + self.b1() * rhs.y + self.c1() * rhs.z + self.d1() * rhs.w,
+            self.a2() * rhs.x + self.b2() * rhs.y + self.c2() * rhs.z + self.d2() * rhs.w,
+            self.a3() * rhs.x + self.b3() * rhs.y + self.c3() * rhs.z + self.d3() * rhs.w,
+            self.a4() * rhs.x + self.b4() * rhs.y + self.c4() * rhs.z + self.d4() * rhs.w,
+        )
     }
 }
 

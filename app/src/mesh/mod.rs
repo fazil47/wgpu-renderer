@@ -20,11 +20,11 @@ impl CombinedMeshExt for Vec<Box<dyn Mesh>> {
         let all_vertices: Vec<Vertex> = self
             .iter()
             .flat_map(|mesh| mesh.get_vertices())
-            .map(|vertex| vertex.clone())
+            .cloned()
             .collect();
 
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
+            label: Some("Combined Vertex Buffer"),
             contents: bytemuck::cast_slice(&all_vertices),
             usage: wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::STORAGE
@@ -33,14 +33,21 @@ impl CombinedMeshExt for Vec<Box<dyn Mesh>> {
     }
 
     fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let all_indices: Vec<Index> = self
-            .iter()
-            .flat_map(|mesh| mesh.get_indices())
-            .map(|index| index.clone())
-            .collect();
+        let mut all_indices: Vec<Index> = Vec::new();
+        let mut vertices_offset: u32 = 0;
+
+        for mesh in self {
+            let mesh_indices = mesh.get_indices();
+
+            // Add indices with the vertices offset
+            all_indices.extend(mesh_indices.iter().map(|&index| index + vertices_offset));
+
+            // Update vertices offset for the next mesh
+            vertices_offset += mesh.get_vertices().len() as u32;
+        }
 
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
+            label: Some("Combined Index Buffer"),
             contents: bytemuck::cast_slice(&all_indices),
             usage: wgpu::BufferUsages::INDEX
                 | wgpu::BufferUsages::STORAGE
@@ -49,5 +56,6 @@ impl CombinedMeshExt for Vec<Box<dyn Mesh>> {
     }
 }
 
+pub mod gltf;
 pub mod ply;
 pub mod static_mesh;

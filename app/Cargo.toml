@@ -8,6 +8,7 @@ default-run = "app"
 bytemuck = { version = "1.18.0", features = ["derive"] }
 egui = "0.31"
 egui-wgpu = "0.31"
+gltf = { version = "1.4" }
 log = "0.4.22"
 maths = { path = "../maths" }
 ply-rs = "0.1.3"
