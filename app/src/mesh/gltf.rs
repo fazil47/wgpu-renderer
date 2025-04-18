@@ -44,7 +44,7 @@ impl Mesh for GltfMesh {
 }
 
 impl GltfMesh {
-    pub fn new<P: AsRef<Path>>(path: P) -> Vec<Box<dyn Mesh>> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Vec<Box<dyn Mesh>>, String> {
         let (document, buffers, _) = gltf::import(path).unwrap();
         let mut meshes = Vec::new();
 
@@ -112,21 +112,18 @@ impl GltfMesh {
                     if let Some(indices_reader) = reader.read_indices() {
                         indices.extend(indices_reader.into_u32().map(|i| i + base_index));
                     } else {
-                        // If no indices provided, create a default triangulation
-                        for i in 0..vertex_count as u32 / 3 {
-                            indices.push(base_index + i * 3);
-                            indices.push(base_index + i * 3 + 1);
-                            indices.push(base_index + i * 3 + 2);
-                        }
+                        return Err("No indices found".to_string());
                     }
 
                     base_index += vertex_count as u32;
+                } else {
+                    return Err("No positions found".to_string());
                 }
             }
 
             meshes.push(Box::new(Self { vertices, indices }) as Box<dyn Mesh>);
         }
 
-        meshes
+        Ok(meshes)
     }
 }

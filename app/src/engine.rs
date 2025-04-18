@@ -36,7 +36,11 @@ impl Engine {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            scene.meshes = crate::mesh::gltf::GltfMesh::new("assets/cornell-box.glb");
+            if let Ok(meshes) = crate::mesh::gltf::GltfMesh::new("assets/cornell-box.glb") {
+                scene.meshes = meshes;
+            } else {
+                log::warn!("Failed to load GLTF mesh");
+            }
         }
 
         let renderer = Renderer::new(window.clone(), &window_size, &scene).await;
