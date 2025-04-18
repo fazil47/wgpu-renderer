@@ -1,6 +1,6 @@
 use super::Mesh;
 use crate::wgpu::{Index, Vertex};
-use maths::{Mat4, Vec4};
+use maths::{Mat4, Vec3};
 use std::path::Path;
 use wgpu::util::DeviceExt;
 
@@ -79,7 +79,7 @@ impl GltfMesh {
                     let normals = reader.read_normals().map(|n| n.collect::<Vec<_>>());
 
                     for i in 0..vertex_count {
-                        let position = Vec4::from_array3(positions_vec[i]);
+                        let position = Vec3::from_array(positions_vec[i]);
 
                         // Transform position by mesh_transform
                         let transformed_pos = mesh_transform * position;
@@ -92,9 +92,9 @@ impl GltfMesh {
 
                         let normal_raw = normals.as_ref().and_then(|n| n.get(i)).copied();
                         let normal = if let Some(n) = normal_raw {
-                            Vec4::from_array3(n)
+                            Vec3::from_array(n)
                         } else {
-                            Vec4::UP
+                            Vec3::Y
                         };
 
                         // Transform normal vector by mesh_transform

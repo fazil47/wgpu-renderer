@@ -15,6 +15,10 @@ impl Vec3 {
         Self { x, y, z }
     }
 
+    pub const fn from_array(arr: [f32; 3]) -> Self {
+        Self::new(arr[0], arr[1], arr[2])
+    }
+
     pub const fn to_array(&self) -> [f32; 3] {
         [self.x, self.y, self.z]
     }
@@ -107,7 +111,6 @@ pub struct Vec4 {
 
 impl Vec4 {
     pub const ZERO: Self = Self::new(0.0, 0.0, 0.0, 0.0);
-    pub const UP: Self = Self::new(0.0, 1.0, 0.0, 0.0);
 
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
@@ -115,10 +118,6 @@ impl Vec4 {
 
     pub const fn from_array(arr: [f32; 4]) -> Self {
         Self::new(arr[0], arr[1], arr[2], arr[3])
-    }
-
-    pub const fn from_array3(arr: [f32; 3]) -> Self {
-        Self::new(arr[0], arr[1], arr[2], 1.0)
     }
 
     pub const fn to_array(&self) -> [f32; 4] {
@@ -451,6 +450,19 @@ impl Mul<Mat4> for Mat4 {
         );
 
         Self::from_cols(x_axis, y_axis, z_axis, w_axis)
+    }
+}
+
+impl Mul<Vec3> for Mat4 {
+    type Output = Vec4;
+
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        Vec4::new(
+            self.a1() * rhs.x + self.b1() * rhs.y + self.c1() * rhs.z,
+            self.a2() * rhs.x + self.b2() * rhs.y + self.c2() * rhs.z,
+            self.a3() * rhs.x + self.b3() * rhs.y + self.c3() * rhs.z,
+            1.0,
+        )
     }
 }
 
