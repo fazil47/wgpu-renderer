@@ -120,19 +120,12 @@ impl Renderer {
                 self.raytracer
                     .render(&mut render_encoder, &surface_texture_view);
             } else {
-                for mesh in &scene.meshes {
-                    let vertex_buffer = mesh.create_vertex_buffer(&self.wgpu.device);
-                    let index_buffer = mesh.create_index_buffer(&self.wgpu.device);
-                    let num_indices = mesh.get_index_count();
-
-                    self.rasterizer.render(
-                        &mut render_encoder,
-                        &surface_texture_view,
-                        &vertex_buffer,
-                        &index_buffer,
-                        num_indices,
-                    );
-                }
+                self.rasterizer.render(
+                    &self.wgpu.device,
+                    &mut render_encoder,
+                    &surface_texture_view,
+                    &scene.meshes,
+                );
             };
 
             self.egui.render(

@@ -36,9 +36,7 @@ impl Engine {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            scene.meshes = vec![Box::new(crate::mesh::gltf::GltfMesh::new(
-                "assets/cornell-box.glb",
-            ))];
+            scene.meshes = crate::mesh::gltf::GltfMesh::new("assets/cornell-box.glb");
         }
 
         let renderer = Renderer::new(window.clone(), &window_size, &scene).await;

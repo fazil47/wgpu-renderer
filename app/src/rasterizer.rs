@@ -1,6 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
+    mesh::Mesh,
     scene::Scene,
     wgpu::{BufferExt, RendererWgpu, Vertex},
 };
@@ -164,11 +165,10 @@ impl Rasterizer {
 
     pub fn render(
         &self,
+        device: &wgpu::Device,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        vertex_buffer: &wgpu::Buffer,
-        index_buffer: &wgpu::Buffer,
-        num_indices: u32,
+        meshes: &Vec<Box<dyn Mesh>>,
     ) {
         let mut rasterizer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Rasterizer Render Pass"),
@@ -192,10 +192,17 @@ impl Rasterizer {
             occlusion_query_set: None,
         });
 
-        rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         rasterizer_rpass.set_bind_group(0, &self.bind_group, &[]);
         rasterizer_rpass.set_pipeline(&self.render_pipeline);
-        rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
+
+        for mesh in meshes {
+            let vertex_buffer = mesh.create_vertex_buffer(device);
+            let index_buffer = mesh.create_index_buffer(device);
+            let num_indices = mesh.get_index_count();
+
+            rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
+        }
     }
 }

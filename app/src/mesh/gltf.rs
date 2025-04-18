@@ -1,7 +1,7 @@
 use super::Mesh;
 use crate::wgpu::{Index, Vertex};
-use std::path::Path;
 use maths::{Mat4, Vec4};
+use std::path::Path;
 use wgpu::util::DeviceExt;
 
 pub struct GltfMesh {
@@ -44,15 +44,17 @@ impl Mesh for GltfMesh {
 }
 
 impl GltfMesh {
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+    pub fn new<P: AsRef<Path>>(path: P) -> Vec<Box<dyn Mesh>> {
         let (document, buffers, _) = gltf::import(path).unwrap();
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-
-        // Track base index for correct indexing across primitives
-        let mut base_index = 0;
+        let mut meshes = Vec::new();
 
         for mesh in document.meshes() {
+            let mut vertices = Vec::new();
+            let mut indices = Vec::new();
+
+            // Track base index for correct indexing across primitives
+            let mut base_index = 0;
+
             // Find the node that references this mesh to get its transform
             let mesh_transform_raw = document
                 .nodes()
@@ -88,10 +90,7 @@ impl GltfMesh {
                             .copied()
                             .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
-                        let normal_raw = normals
-                            .as_ref()
-                            .and_then(|n| n.get(i))
-                            .copied();
+                        let normal_raw = normals.as_ref().and_then(|n| n.get(i)).copied();
                         let normal = if let Some(n) = normal_raw {
                             Vec4::from_array3(n)
                         } else {
@@ -124,8 +123,10 @@ impl GltfMesh {
                     base_index += vertex_count as u32;
                 }
             }
+
+            meshes.push(Box::new(Self { vertices, indices }) as Box<dyn Mesh>);
         }
 
-        Self { vertices, indices }
+        meshes
     }
 }
