@@ -2,9 +2,9 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     camera,
-    mesh::CombinedMeshExt,
+    mesh::{Material, RaytracerExt},
     scene::Scene,
-    wgpu::{BufferExt, VERTEX_COLOR_OFFSET, VERTEX_NORMAL_OFFSET, VERTEX_STRIDE},
+    wgpu::BufferExt,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -95,7 +95,7 @@ impl Raytracer {
         queue: &wgpu::Queue,
     ) {
         let mut compute_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Compute Command Encoder"),
+            label: Some("Raytracer Compute Command Encoder"),
         });
 
         {
@@ -105,10 +105,10 @@ impl Raytracer {
                     timestamp_writes: None,
                 });
 
-            raytracer_cpass.set_bind_group(0, &self.bind_groups.compute_mesh, &[]);
-            raytracer_cpass.set_bind_group(1, &self.bind_groups.compute_result, &[]);
-            raytracer_cpass.set_bind_group(2, &self.bind_groups.compute_light, &[]);
-            raytracer_cpass.set_bind_group(3, &self.bind_groups.compute_camera, &[]);
+            raytracer_cpass.set_bind_group(0, &self.bind_groups.compute_material, &[]);
+            raytracer_cpass.set_bind_group(1, &self.bind_groups.compute_mesh, &[]);
+            raytracer_cpass.set_bind_group(2, &self.bind_groups.compute_result, &[]);
+            raytracer_cpass.set_bind_group(3, &self.bind_groups.compute_other, &[]);
 
             raytracer_cpass.set_pipeline(&self.pipelines.compute);
             raytracer_cpass.dispatch_workgroups(window_size.width / 8, window_size.height / 8, 1);
@@ -165,42 +165,42 @@ impl RaytracerShaders {
     }
 }
 
+struct RaytracerMaterialBuffers {
+    materials: wgpu::Buffer,
+    material_stride: wgpu::Buffer,
+}
+
+impl RaytracerMaterialBuffers {
+    fn new(device: &wgpu::Device, materials: &Vec<Material>) -> Self {
+        Self {
+            materials: materials.create_materials_buffer(device),
+            material_stride: materials.create_material_stride_buffer(device),
+        }
+    }
+}
+
 struct RaytracerMeshBuffers {
-    vertex: wgpu::Buffer,
+    vertices: wgpu::Buffer,
     vertex_stride: wgpu::Buffer,
-    vertex_color_offset: wgpu::Buffer,
     vertex_normal_offset: wgpu::Buffer,
-    index: wgpu::Buffer,
+    vertex_material_offset: wgpu::Buffer,
+    indices: wgpu::Buffer,
 }
 
 impl RaytracerMeshBuffers {
-    fn new(
-        device: &wgpu::Device,
-        vertex_buffer: &wgpu::Buffer,
-        index_buffer: &wgpu::Buffer,
-    ) -> Self {
-        let vertex_stride = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Stride Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[VERTEX_STRIDE]),
-        });
-        let vertex_color_offset = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Color Offset Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[VERTEX_COLOR_OFFSET]),
-        });
-        let vertex_normal_offset = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Normal Offset Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[VERTEX_NORMAL_OFFSET]),
-        });
+    fn new(device: &wgpu::Device, materials: &Vec<Material>) -> Self {
+        let vertices = materials.create_vertices_buffer(device);
+        let vertex_stride = materials.create_vertex_stride_buffer(device);
+        let vertex_normal_offset = materials.create_vertex_normal_buffer(device);
+        let vertex_material_offset = materials.create_vertex_material_buffer(device);
+        let indices = materials.create_indices_buffer(device);
 
         Self {
-            vertex: vertex_buffer.clone(),
+            vertices,
             vertex_stride,
-            vertex_color_offset,
+            vertex_material_offset,
             vertex_normal_offset,
-            index: index_buffer.clone(),
+            indices,
         }
     }
 }
@@ -213,13 +213,13 @@ struct RaytracerCameraBuffers {
 impl RaytracerCameraBuffers {
     fn new(device: &wgpu::Device, camera: &camera::Camera) -> Self {
         let camera_to_world = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera to World Uniform Buffer"),
+            label: Some("Raytracer Camera to World Uniform Buffer"),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             contents: bytemuck::cast_slice(&[camera.camera_to_world().to_cols_array_2d()]),
         });
         let camera_inverse_projection =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Inverse Projection Uniform Buffer"),
+                label: Some("Raytracer Camera Inverse Projection Uniform Buffer"),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 contents: bytemuck::cast_slice(&[camera
                     .camera_inverse_projection()
@@ -233,54 +233,31 @@ impl RaytracerCameraBuffers {
     }
 }
 
-struct RaytracerBuffers {
-    mesh: RaytracerMeshBuffers,
-    result: wgpu::TextureView,
+struct RaytracerOtherBuffers {
     sun_direction: wgpu::Buffer,
     camera: RaytracerCameraBuffers,
     frame_count: wgpu::Buffer,
 }
 
-impl RaytracerBuffers {
-    fn new(
-        device: &wgpu::Device,
-        window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &Scene,
-    ) -> Self {
-        let vertices_buffer = scene.meshes.create_vertices_buffer(device);
-        let indices_buffer = scene.meshes.create_indices_buffer(device);
-        let mesh = RaytracerMeshBuffers::new(device, &vertices_buffer, &indices_buffer);
-
-        let result = Self::create_result_texture(device, window_size);
+impl RaytracerOtherBuffers {
+    fn new(device: &wgpu::Device, scene: &Scene) -> Self {
         let camera = RaytracerCameraBuffers::new(device, &scene.camera);
         let sun_direction = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sun Direction Uniform Buffer"),
+            label: Some("Raytracer Sun Direction Uniform Buffer"),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             contents: bytemuck::cast_slice(&[scene.sun_light.direction.to_array()]),
         });
         let frame_count = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Frame Count Uniform Buffer"),
+            label: Some("Raytracer Frame Count Uniform Buffer"),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             contents: bytemuck::cast_slice(&[0]),
         });
 
         Self {
-            mesh,
-            result,
             sun_direction,
             camera,
             frame_count,
         }
-    }
-
-    fn on_resize(
-        &mut self,
-        wgpu: &crate::wgpu::RendererWgpu,
-        new_size: &winit::dpi::PhysicalSize<u32>,
-    ) {
-        // Reset frame count and recreate the result texture with the new size
-        self.update_frame_count(&wgpu.queue, 0);
-        self.result = Self::create_result_texture(&wgpu.device, new_size);
     }
 
     fn update_frame_count(&self, queue: &wgpu::Queue, frame_count: u32) {
@@ -301,6 +278,55 @@ impl RaytracerBuffers {
     fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
         self.sun_direction
             .write(queue, &[scene.sun_light.direction.to_array()]);
+    }
+}
+
+struct RaytracerBuffers {
+    materials: RaytracerMaterialBuffers,
+    meshes: RaytracerMeshBuffers,
+    result: wgpu::TextureView,
+    other: RaytracerOtherBuffers,
+}
+
+impl RaytracerBuffers {
+    fn new(
+        device: &wgpu::Device,
+        window_size: &winit::dpi::PhysicalSize<u32>,
+        scene: &Scene,
+    ) -> Self {
+        let materials = RaytracerMaterialBuffers::new(device, &scene.materials);
+        let meshes = RaytracerMeshBuffers::new(device, &scene.materials);
+        let result = Self::create_result_texture(device, window_size);
+        let other = RaytracerOtherBuffers::new(device, scene);
+
+        Self {
+            materials,
+            meshes,
+            result,
+            other,
+        }
+    }
+
+    fn on_resize(
+        &mut self,
+        wgpu: &crate::wgpu::RendererWgpu,
+        new_size: &winit::dpi::PhysicalSize<u32>,
+    ) {
+        // Reset frame count and recreate the result texture with the new size
+        self.update_frame_count(&wgpu.queue, 0);
+        self.result = Self::create_result_texture(&wgpu.device, new_size);
+    }
+
+    fn update_frame_count(&self, queue: &wgpu::Queue, frame_count: u32) {
+        self.other.update_frame_count(queue, frame_count);
+    }
+
+    fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
+        self.other.update_camera(queue, scene);
+    }
+
+    fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
+        self.other.update_light(queue, scene);
     }
 
     fn create_result_texture(
@@ -331,10 +357,10 @@ impl RaytracerBuffers {
 
 struct RaytracerBindGroupLayouts {
     render: wgpu::BindGroupLayout,
-    compute_mesh: wgpu::BindGroupLayout,
+    compute_materials: wgpu::BindGroupLayout,
+    compute_meshes: wgpu::BindGroupLayout,
     compute_result: wgpu::BindGroupLayout,
-    compute_light: wgpu::BindGroupLayout,
-    compute_camera: wgpu::BindGroupLayout,
+    compute_other: wgpu::BindGroupLayout,
 }
 
 impl RaytracerBindGroupLayouts {
@@ -353,8 +379,33 @@ impl RaytracerBindGroupLayouts {
             }],
         });
 
-        let compute_mesh = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Raytracer Compute Mesh Bind Group Layout"),
+        let compute_materials = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Raytracer Compute Materials Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let compute_meshes = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Raytracer Compute Meshes Bind Group Layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -421,21 +472,8 @@ impl RaytracerBindGroupLayouts {
                 count: None,
             }],
         });
-        let compute_light = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Raytracer Compute Light Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let compute_camera = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Raytracer Compute Camera Bind Group Layout"),
+        let compute_other = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Raytracer Compute Other Bind Group Layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -467,25 +505,35 @@ impl RaytracerBindGroupLayouts {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
         Self {
             render,
-            compute_mesh,
+            compute_materials,
+            compute_meshes,
             compute_result,
-            compute_light,
-            compute_camera,
+            compute_other,
         }
     }
 }
 
 struct RaytracerBindGroups {
     render: wgpu::BindGroup,
+    compute_material: wgpu::BindGroup,
     compute_mesh: wgpu::BindGroup,
     compute_result: wgpu::BindGroup,
-    compute_light: wgpu::BindGroup,
-    compute_camera: wgpu::BindGroup,
+    compute_other: wgpu::BindGroup,
 }
 
 impl RaytracerBindGroups {
@@ -497,34 +545,33 @@ impl RaytracerBindGroups {
         let render =
             Self::create_render_bind_group(device, &bind_group_layouts.render, &buffers.result);
 
+        let compute_material = Self::create_compute_material_bind_group(
+            device,
+            &bind_group_layouts.compute_materials,
+            &buffers.materials,
+        );
         let compute_mesh = Self::create_compute_mesh_bind_group(
             device,
-            &bind_group_layouts.compute_mesh,
-            &buffers.mesh,
+            &bind_group_layouts.compute_meshes,
+            &buffers.meshes,
         );
         let compute_result = Self::create_compute_result_bind_group(
             device,
             &bind_group_layouts.compute_result,
             &buffers.result,
         );
-        let compute_light = Self::create_compute_light_bind_group(
+        let compute_other = Self::create_compute_other_bind_group(
             device,
-            &bind_group_layouts.compute_light,
-            &buffers.sun_direction,
-        );
-        let compute_camera = Self::create_compute_camera_bind_group(
-            device,
-            &bind_group_layouts.compute_camera,
-            &buffers.camera,
-            &buffers.frame_count,
+            &bind_group_layouts.compute_other,
+            &buffers.other,
         );
 
         Self {
             render,
+            compute_material,
             compute_mesh,
             compute_result,
-            compute_light,
-            compute_camera,
+            compute_other,
         }
     }
 
@@ -559,6 +606,27 @@ impl RaytracerBindGroups {
         })
     }
 
+    fn create_compute_material_bind_group(
+        device: &wgpu::Device,
+        compute_mesh_bind_group_layout: &wgpu::BindGroupLayout,
+        material_buffers: &RaytracerMaterialBuffers,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Raytracer Compute Material Bind Group"),
+            layout: compute_mesh_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: material_buffers.materials.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: material_buffers.material_stride.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
     fn create_compute_mesh_bind_group(
         device: &wgpu::Device,
         compute_mesh_bind_group_layout: &wgpu::BindGroupLayout,
@@ -570,7 +638,7 @@ impl RaytracerBindGroups {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: mesh_buffers.vertex.as_entire_binding(),
+                    resource: mesh_buffers.vertices.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -578,15 +646,15 @@ impl RaytracerBindGroups {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: mesh_buffers.vertex_color_offset.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
                     resource: mesh_buffers.vertex_normal_offset.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: mesh_buffers.vertex_material_offset.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: mesh_buffers.index.as_entire_binding(),
+                    resource: mesh_buffers.indices.as_entire_binding(),
                 },
             ],
         })
@@ -607,42 +675,33 @@ impl RaytracerBindGroups {
         })
     }
 
-    fn create_compute_light_bind_group(
+    fn create_compute_other_bind_group(
         device: &wgpu::Device,
-        compute_light_bind_group_layout: &wgpu::BindGroupLayout,
-        sun_direction_buffer: &wgpu::Buffer,
+        compute_other_bind_group_layout: &wgpu::BindGroupLayout,
+        other_buffers: &RaytracerOtherBuffers,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Raytracer Compute Light Bind Group"),
-            layout: compute_light_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: sun_direction_buffer.as_entire_binding(),
-            }],
-        })
-    }
-
-    fn create_compute_camera_bind_group(
-        device: &wgpu::Device,
-        compute_camera_bind_group_layout: &wgpu::BindGroupLayout,
-        camera_buffers: &RaytracerCameraBuffers,
-        frame_count_buffer: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Raytracer Compute Camera Bind Group"),
-            layout: compute_camera_bind_group_layout,
+            label: Some("Raytracer Compute Other Bind Group"),
+            layout: compute_other_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: camera_buffers.camera_to_world.as_entire_binding(),
+                    resource: other_buffers.sun_direction.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: camera_buffers.camera_inverse_projection.as_entire_binding(),
+                    resource: other_buffers.camera.camera_to_world.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: frame_count_buffer.as_entire_binding(),
+                    resource: other_buffers
+                        .camera
+                        .camera_inverse_projection
+                        .as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: other_buffers.frame_count.as_entire_binding(),
                 },
             ],
         })
@@ -664,10 +723,10 @@ impl RaytracerPipelineLayouts {
         let compute = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Raytracer Compute Pipeline Layout"),
             bind_group_layouts: &[
-                &bind_group_layouts.compute_mesh,
+                &bind_group_layouts.compute_materials,
+                &bind_group_layouts.compute_meshes,
                 &bind_group_layouts.compute_result,
-                &bind_group_layouts.compute_light,
-                &bind_group_layouts.compute_camera,
+                &bind_group_layouts.compute_other,
             ],
             push_constant_ranges: &[],
         });

@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use winit::{event::WindowEvent, window::Window};
 
-use crate::{camera::CameraController, renderer::Renderer, scene::Scene};
+use crate::{camera::CameraController, mesh::gltf::GltfMeshExt, renderer::Renderer, scene::Scene};
 
 pub struct Engine {
     // The window must be declared after the wgpu surface so
@@ -36,8 +36,8 @@ impl Engine {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(meshes) = crate::mesh::gltf::GltfMesh::new("assets/cornell-box.glb") {
-                scene.meshes = meshes;
+            if let Ok(materials) = crate::mesh::Material::from_gltf("assets/cornell-box.glb") {
+                scene.materials = materials;
             } else {
                 log::warn!("Failed to load GLTF mesh");
             }

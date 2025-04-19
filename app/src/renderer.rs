@@ -124,7 +124,7 @@ impl Renderer {
                     &self.wgpu.device,
                     &mut render_encoder,
                     &surface_texture_view,
-                    &scene.meshes,
+                    &scene.materials,
                 );
             };
 

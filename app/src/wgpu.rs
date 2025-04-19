@@ -6,6 +6,8 @@ use std::{
 use bytemuck::NoUninit;
 use winit::window::Window;
 
+use crate::mesh::Material;
+
 pub struct RendererWgpu {
     pub instance: wgpu::Instance,
     pub surface: wgpu::Surface<'static>,
@@ -66,22 +68,18 @@ impl RendererWgpu {
     }
 }
 
-// Vertex field offsets are calculated based on the following assumptions:
-// All the fields are of the same type and size ([f32; size]) and are aligned to 4 bytes.
+pub type Index = u32;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 4],
-    pub color: [f32; 4],
     pub normal: [f32; 4],
 }
 
-pub type Index = u32;
-
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 3] =
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
@@ -92,9 +90,49 @@ impl Vertex {
     }
 }
 
-pub const VERTEX_STRIDE: u32 = (size_of::<Vertex>() / size_of::<f32>()) as u32;
-pub const VERTEX_COLOR_OFFSET: u32 = (offset_of!(Vertex, color) / size_of::<f32>()) as u32;
-pub const VERTEX_NORMAL_OFFSET: u32 = (offset_of!(Vertex, normal) / size_of::<f32>()) as u32;
+// Raytracer vertex field offsets are calculated based on the following assumptions:
+// The field are aligned to 4 bytes.
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerVertex {
+    pub position: [f32; 4],
+    pub normal: [f32; 4],
+    pub material_id: f32,
+}
+
+impl RaytracerVertex {
+    pub fn from_vertex(vertex: &Vertex, material_id: usize) -> Self {
+        Self {
+            position: vertex.position,
+            normal: vertex.normal,
+            material_id: material_id as f32,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerMaterial {
+    pub color: [f32; 4],
+}
+
+impl RaytracerMaterial {
+    pub fn from_material(material: &Material) -> Self {
+        Self {
+            color: material.color.to_array(),
+        }
+    }
+}
+
+pub const RAYTRACE_MATERIAL_STRIDE: u32 =
+    (size_of::<RaytracerMaterial>() / size_of::<f32>()) as u32;
+
+pub const RAYTRACE_VERTEX_STRIDE: u32 = (size_of::<RaytracerVertex>() / size_of::<f32>()) as u32;
+pub const RAYTRACE_VERTEX_NORMAL_OFFSET: u32 =
+    (offset_of!(RaytracerVertex, normal) / size_of::<f32>()) as u32;
+pub const RAYTRACE_VERTEX_MATERIAL_ID_OFFSET: u32 =
+    (offset_of!(RaytracerVertex, material_id) / size_of::<f32>()) as u32;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -113,6 +151,10 @@ impl RGBA {
             b: rgba[2],
             a: rgba[3],
         }
+    }
+
+    pub fn to_array(&self) -> [f32; 4] {
+        [self.r, self.g, self.b, self.a]
     }
 }
 

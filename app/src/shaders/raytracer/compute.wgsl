@@ -4,39 +4,60 @@ const MAX_BOUNCES: u32 = 8;
 const SUN_INTENSITY: f32 = 1.0;
 
 @group(0) @binding(0)
-var<storage, read> vertices: array<f32>; // Raw vertex data
+var<storage, read> materials: array<f32>; // Raw material data
 @group(0) @binding(1)
-var<uniform> vertex_stride: u32;
-@group(0) @binding(2)
-var<uniform> vertex_color_offset: u32;
-@group(0) @binding(3)
-var<uniform> vertex_normal_offset: u32;
-@group(0) @binding(4)
-var<storage, read> indices: array<u32>;
+var<uniform> material_stride: u32;
 
 @group(1) @binding(0)
-var result: texture_storage_2d<rgba8unorm, read_write>;
+var<storage, read> vertices: array<f32>; // Raw vertex data
+@group(1) @binding(1)
+var<uniform> vertex_stride: u32;
+@group(1) @binding(2)
+var<uniform> vertex_normal_offset: u32;
+@group(1) @binding(3)
+var<uniform> vertex_material_offset: u32;
+@group(1) @binding(4)
+var<storage, read> indices: array<u32>;
 
 @group(2) @binding(0)
-var<uniform> sun_direction: vec3f;
+var result: texture_storage_2d<rgba8unorm, read_write>;
 
 @group(3) @binding(0)
-var<uniform> camera_to_world: mat4x4f;
+var<uniform> sun_direction: vec3f;
 @group(3) @binding(1)
-var<uniform> camera_inverse_projection: mat4x4f;
+var<uniform> camera_to_world: mat4x4f;
 @group(3) @binding(2)
+var<uniform> camera_inverse_projection: mat4x4f;
+@group(3) @binding(3)
 var<uniform> frame_count: u32;
+
+struct Material {
+    color: vec4f,
+}
 
 struct Vertex {
     position: vec4f,
-    color: vec4f,
     normal: vec4f,
+    color: vec4f,
 }
 
 struct Triangle {
     a: Vertex,
     b: Vertex,
     c: Vertex,
+}
+
+fn get_material(index: u32) -> Material {
+    var material: Material;
+
+    material.color = vec4f(
+        materials[index * material_stride + 0u],
+        materials[index * material_stride + 1u],
+        materials[index * material_stride + 2u],
+        materials[index * material_stride + 3u],
+    );
+
+    return material;
 }
 
 fn get_vertex(index: u32) -> Vertex {
@@ -49,19 +70,16 @@ fn get_vertex(index: u32) -> Vertex {
         vertices[index * vertex_stride + 3u],
     );
 
-    vertex.color = vec4f(
-        vertices[index * vertex_stride + vertex_color_offset + 0u],
-        vertices[index * vertex_stride + vertex_color_offset + 1u],
-        vertices[index * vertex_stride + vertex_color_offset + 2u],
-        vertices[index * vertex_stride + vertex_color_offset + 3u],
-    );
-
     vertex.normal = vec4f(
         vertices[index * vertex_stride + vertex_normal_offset + 0u],
         vertices[index * vertex_stride + vertex_normal_offset + 1u],
         vertices[index * vertex_stride + vertex_normal_offset + 2u],
         vertices[index * vertex_stride + vertex_normal_offset + 3u],
     );
+
+    let material_index: u32 = u32(vertices[index * vertex_stride + vertex_material_offset]);
+    let material = get_material(material_index);
+    vertex.color = material.color;
 
     return vertex;
 }

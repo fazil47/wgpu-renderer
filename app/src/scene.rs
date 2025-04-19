@@ -3,11 +3,11 @@ use winit::dpi::PhysicalSize;
 use crate::{
     camera::Camera,
     lights::DirectionalLight,
-    mesh::{Mesh, static_mesh::StaticMesh},
+    mesh::{Material, static_mesh::StaticMeshExt},
 };
 
 pub struct Scene {
-    pub meshes: Vec<Box<dyn Mesh>>,
+    pub materials: Vec<Material>,
     pub sun_light: DirectionalLight,
     pub camera: Camera,
     is_light_dirty: bool,
@@ -26,9 +26,10 @@ impl Scene {
             0.1,
             100.0,
         );
+        let materials = Material::cornell_box();
 
         Self {
-            meshes: vec![Box::new(StaticMesh::cornell_box())],
+            materials,
             sun_light: DirectionalLight::new(45.0, 45.0),
             camera,
             is_light_dirty: false,

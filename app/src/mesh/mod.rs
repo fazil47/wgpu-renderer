@@ -1,61 +1,198 @@
 use wgpu::util::DeviceExt;
 
-use crate::wgpu::{Index, Vertex};
+use crate::wgpu::{
+    Index, RAYTRACE_MATERIAL_STRIDE, RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
+    RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE, RGBA, RaytracerMaterial,
+    RaytracerVertex, Vertex,
+};
 
-pub trait Mesh {
-    fn create_vertex_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_index_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn get_index_count(&self) -> u32;
-    fn get_vertices(&self) -> &[Vertex];
-    fn get_indices(&self) -> &[Index];
+pub struct Material {
+    pub color: RGBA,
+    pub meshes: Vec<Mesh>,
 }
 
-pub trait CombinedMeshExt {
+impl Material {
+    pub fn new(color: RGBA) -> Self {
+        Self {
+            color,
+            meshes: Vec::new(),
+        }
+    }
+
+    fn add_mesh(&mut self, mesh: Mesh) {
+        self.meshes.push(mesh);
+    }
+
+    fn get_vertices(&self) -> Vec<Vertex> {
+        self.meshes
+            .iter()
+            .flat_map(|mesh| &mesh.vertices)
+            .copied()
+            .collect()
+    }
+
+    fn get_indices(&self) -> Vec<Index> {
+        let mut indices = Vec::new();
+        let mut vertices_offset: u32 = 0;
+
+        for mesh in &self.meshes {
+            let mesh_indices = &mesh.indices;
+
+            // Add indices with the vertices offset
+            indices.extend(mesh_indices.iter().map(|&index| index + vertices_offset));
+
+            // Update vertices offset for the next mesh
+            vertices_offset += mesh.vertices.len() as u32;
+        }
+
+        indices
+    }
+
+    fn get_raytracer_vertices(&self, material_id: usize) -> Vec<RaytracerVertex> {
+        self.meshes
+            .iter()
+            .flat_map(|mesh| {
+                mesh.vertices
+                    .iter()
+                    .map(|vertex| RaytracerVertex::from_vertex(vertex, material_id))
+            })
+            .collect()
+    }
+
+    fn get_raytracer_indices(&self, vertices_offset: &mut u32) -> Vec<Index> {
+        let mut indices = Vec::new();
+
+        for mesh in &self.meshes {
+            let mesh_indices = &mesh.indices;
+
+            // Add indices with the vertices offset
+            indices.extend(mesh_indices.iter().map(|&index| index + *vertices_offset));
+
+            // Update vertices offset for the next mesh
+            *vertices_offset += mesh.vertices.len() as u32;
+        }
+
+        indices
+    }
+
+    pub fn create_vertex_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&self.get_vertices()),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    }
+
+    pub fn create_index_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&self.get_indices()),
+            usage: wgpu::BufferUsages::INDEX,
+        })
+    }
+
+    pub fn get_index_count(&self) -> u32 {
+        self.meshes
+            .iter()
+            .map(|mesh| mesh.indices.len())
+            .sum::<usize>() as u32
+    }
+}
+
+pub trait RaytracerExt {
+    fn create_materials_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+    fn create_material_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
     fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+    fn create_vertex_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+    fn create_vertex_normal_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+    fn create_vertex_material_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
     fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
 }
 
-impl CombinedMeshExt for Vec<Box<dyn Mesh>> {
-    fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let all_vertices: Vec<Vertex> = self
+impl RaytracerExt for Vec<Material> {
+    fn create_materials_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        let raytracer_materials: Vec<RaytracerMaterial> = self
             .iter()
-            .flat_map(|mesh| mesh.get_vertices())
-            .cloned()
+            .map(|material| RaytracerMaterial::from_material(material))
             .collect();
 
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Combined Vertex Buffer"),
+            label: Some("Materials Buffer"),
+            contents: bytemuck::cast_slice(&raytracer_materials),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        })
+    }
+
+    fn create_material_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Material Stride Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[RAYTRACE_MATERIAL_STRIDE]),
+        })
+    }
+
+    fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        let mut all_vertices: Vec<RaytracerVertex> = Vec::new();
+        for material_id in 0..self.len() {
+            let material = &self[material_id];
+            let vertices = material.get_raytracer_vertices(material_id);
+            all_vertices.extend(vertices);
+        }
+
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Raytracer Vertices Buffer"),
             contents: bytemuck::cast_slice(&all_vertices),
-            usage: wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        })
+    }
+
+    fn create_vertex_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Stride Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[RAYTRACE_VERTEX_STRIDE]),
+        })
+    }
+    fn create_vertex_normal_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Normal Offset Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[RAYTRACE_VERTEX_NORMAL_OFFSET]),
+        })
+    }
+    fn create_vertex_material_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Material Offset Uniform Buffer"),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            contents: bytemuck::cast_slice(&[RAYTRACE_VERTEX_MATERIAL_ID_OFFSET]),
         })
     }
 
     fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
         let mut all_indices: Vec<Index> = Vec::new();
         let mut vertices_offset: u32 = 0;
-
-        for mesh in self {
-            let mesh_indices = mesh.get_indices();
-
-            // Add indices with the vertices offset
-            all_indices.extend(mesh_indices.iter().map(|&index| index + vertices_offset));
-
-            // Update vertices offset for the next mesh
-            vertices_offset += mesh.get_vertices().len() as u32;
+        for material in self {
+            all_indices.extend(material.get_raytracer_indices(&mut vertices_offset));
         }
 
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Combined Index Buffer"),
+            label: Some("Raytracer Indices Buffer"),
             contents: bytemuck::cast_slice(&all_indices),
-            usage: wgpu::BufferUsages::INDEX
-                | wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         })
     }
 }
 
+pub struct Mesh {
+    vertices: Vec<Vertex>,
+    indices: Vec<Index>,
+}
+
+impl Mesh {
+    fn new(vertices: Vec<Vertex>, indices: Vec<Index>) -> Self {
+        Self { vertices, indices }
+    }
+}
+
 pub mod gltf;
-pub mod ply;
 pub mod static_mesh;
