@@ -1,3 +1,4 @@
+use wesl::include_wesl;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -125,41 +126,14 @@ struct RaytracerShaders {
 
 impl RaytracerShaders {
     fn new(device: &wgpu::Device) -> Self {
-        let render_source = include_str!("shaders/raytracer/render.wgsl");
-        let compute_source = include_str!("shaders/raytracer/compute.wgsl");
-
-        #[allow(unused_mut, unused_assignments)]
-        let mut render = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let render = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Raytracer Render Shader"),
-            source: wgpu::ShaderSource::Wgsl(render_source.into()),
+            source: wgpu::ShaderSource::Wgsl(include_wesl!("raytracer-render").into()),
         });
-        #[allow(unused_mut, unused_assignments)]
-        let mut compute = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let compute = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Raytracer Compute Shader"),
-            source: wgpu::ShaderSource::Wgsl(compute_source.into()),
+            source: wgpu::ShaderSource::Wgsl(include_wesl!("raytracer-compute").into()),
         });
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            // Replace the storage texture format with r32float for WebGPU
-            let render_source = render_source.replace(
-                "var result: texture_storage_2d<rgba8unorm",
-                "var result: texture_storage_2d<r32float",
-            );
-            let compute_source = compute_source.replace(
-                "var result: texture_storage_2d<rgba8unorm",
-                "var result: texture_storage_2d<r32float",
-            );
-
-            render = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Raytracer Render Shader"),
-                source: wgpu::ShaderSource::Wgsl(render_source.into()),
-            });
-            compute = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Raytracer Compute Shader"),
-                source: wgpu::ShaderSource::Wgsl(compute_source.into()),
-            });
-        }
 
         Self { render, compute }
     }

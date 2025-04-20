@@ -1,7 +1,13 @@
+import super::super::util::{
+    encodeRGBA,
+    decodeRGBA,
+};
+
 const K_EPSILON: f32 = 1e-6;
 const FLT_MAX: f32 = 1e12;
 const MAX_BOUNCES: u32 = 8;
 const SUN_INTENSITY: f32 = 1.0;
+const CLEAR_COLOR: vec4f = vec4f(0.0, 0.0, 0.0, 1.0);
 
 @group(0) @binding(0)
 var<storage, read> materials: array<f32>; // Raw material data
@@ -19,8 +25,8 @@ var<uniform> vertex_material_offset: u32;
 @group(1) @binding(4)
 var<storage, read> indices: array<u32>;
 
-@group(2) @binding(0)
-var result: texture_storage_2d<rgba8unorm, read_write>;
+@group(2) @binding(0) @if(wasm) var result: texture_storage_2d<r32float, read_write>;
+@group(2) @binding(0) @else var result: texture_storage_2d<rgba8unorm, read_write>;
 
 @group(3) @binding(0)
 var<uniform> sun_direction: vec3f;
@@ -335,7 +341,12 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     if (frame_count == 0) {
         // Clear the result texture on the first frame
-        textureStore(result, coords, vec4f(0.0, 0.0, 0.0, 1.0));
+        @if(wasm)
+        let clear_color = vec4f(encodeRGBA(CLEAR_COLOR));
+        @else
+        let clear_color = CLEAR_COLOR;
+
+        textureStore(result, coords, clear_color);
     }
 
     // Get the resolution of the result texture
@@ -351,6 +362,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     var ray: Ray = create_camera_ray(uv);
 
     // Load the previous frame's color
+    @if(wasm)
+    let prev_color = decodeRGBA(textureLoad(result, coords).r);
+    @else
     let prev_color = textureLoad(result, coords);
 
     // Trace the ray against the triangles
@@ -393,7 +407,12 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
     // Blend with previous frame
     let blend_factor = 1.0 / pow(f32(frame_count + 1), 1.05);
-    let final_color = mix(prev_color, ray_color, blend_factor);
+    let mix_color = mix(prev_color, ray_color, blend_factor);
+
+    @if(wasm)
+    let final_color = vec4f(encodeRGBA(mix_color));
+    @else
+    let final_color = mix_color;
 
     textureStore(result, coords, final_color);
 

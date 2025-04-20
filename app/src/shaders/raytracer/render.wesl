@@ -1,5 +1,7 @@
-@group(0) @binding(0)
-var result: texture_storage_2d<rgba8unorm, read>;
+import super::super::util::decodeRGBA;
+
+@group(0) @binding(0) @if(wasm) var result: texture_storage_2d<r32float, read>;
+@group(0) @binding(0) @else var result: texture_storage_2d<rgba8unorm, read>;
 
 struct VertexOutput {
     @builtin(position) position: vec4f, // Clip-space position
@@ -26,5 +28,10 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
 fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
     let coord: vec2f = floor(vert_output.uv * vec2f(textureDimensions(result).xy));
 
-    return textureLoad(result, vec2i(coord));
+    @if(wasm)
+    let result_color = decodeRGBA(textureLoad(result, vec2i(coord)).r);
+    @else
+    let result_color = textureLoad(result, vec2i(coord));
+
+    return result_color;
 }

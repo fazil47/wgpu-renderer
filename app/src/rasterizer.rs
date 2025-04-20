@@ -1,3 +1,4 @@
+use wesl::include_wesl;
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -18,7 +19,10 @@ impl Rasterizer {
     pub fn new(wgpu: &RendererWgpu, scene: &Scene) -> Self {
         let rasterizer_shader = wgpu
             .device
-            .create_shader_module(wgpu::include_wgsl!("shaders/rasterizer/main.wgsl"));
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Rasterizer Main Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_wesl!("rasterizer-main").into()),
+            });
 
         let other_buffers = RasterizerOtherBuffers::new(&wgpu.device, scene);
         let bind_group_layouts = RasterizerBindGroupLayouts::new(&wgpu.device);

@@ -8,7 +8,10 @@ use std::time::Instant;
 
 use winit::{event::WindowEvent, window::Window};
 
-use crate::{camera::CameraController, mesh::gltf::GltfMeshExt, renderer::Renderer, scene::Scene};
+use crate::{camera::CameraController, renderer::Renderer, scene::Scene};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::mesh::gltf::GltfMeshExt;
 
 pub struct Engine {
     // The window must be declared after the wgpu surface so
@@ -181,7 +184,7 @@ impl Default for EngineConfiguration {
     fn default() -> Self {
         Self {
             target_frame_time: 1.0 / 120.0,
-            raytracer_max_frames: 128,
+            raytracer_max_frames: 256,
             is_raytracer_enabled: false,
         }
     }
