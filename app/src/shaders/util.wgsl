@@ -1,3 +1,5 @@
+const DECODE_MULTIPLIER: f32 = 1.0025; // To account for the loss of precision when encoding colors to 8 bits
+
 fn encodeRGBA(rgba: vec4f) -> f32 {
     let r_byte = u32(round(clamp(rgba.r, 0.0, 1.0) * 255.0));
     let g_byte = u32(round(clamp(rgba.g, 0.0, 1.0) * 255.0));
@@ -17,5 +19,5 @@ fn decodeRGBA(value: f32) -> vec4f {
     let b = f32((packed >> 8) & 0xFF) / 255.0;
     let a = f32(packed & 0xFF) / 255.0;
     
-    return vec4f(r, g, b, a);
+    return vec4f(r, g, b, a) * DECODE_MULTIPLIER;
 }
