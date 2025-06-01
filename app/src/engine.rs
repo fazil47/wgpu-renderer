@@ -46,7 +46,7 @@ impl Engine {
             }
         }
 
-        let renderer = Renderer::new(window.clone(), &window_size, &scene).await;
+        let renderer = Renderer::new(window.clone(), &window_size, &mut scene).await;
 
         Self {
             window,
@@ -89,6 +89,12 @@ impl Engine {
             .as_secs_f32();
         self.stat.last_frame_time = current_time;
 
+        // Clone the Rc to avoid borrow conflicts in the closure
+        let rasterizer = self.renderer.rasterizer.clone();
+
+        // Store probe baking request outside the closure
+        let mut bake_requested = false;
+
         let egui_output = self
             .renderer
             .setup_egui(&self.window, |egui_ctx: &egui::Context| {
@@ -116,21 +122,38 @@ impl Engine {
                             self.stat.frame_count = 0;
                         }
 
-                        // Run the raytracer when the checkbox is toggled on
-                        if ui
-                            .checkbox(&mut self.config.is_raytracer_enabled, "Raytracing")
-                            .changed()
-                        {
-                            self.stat.frame_count = 0;
+                        // Run probe UI and capture baking requests
+                        let probe_ui_result = rasterizer.borrow_mut().run_probe_ui(ui);
+                        if probe_ui_result.bake_requested {
+                            bake_requested = true;
                         }
+
+                        // Run the raytracer when the checkbox is toggled on
+                        ui.checkbox(&mut self.config.is_raytracer_enabled, "Raytracing");
                     });
             });
+
+        // Handle probe baking outside the closure
+        if bake_requested {
+            let rasterizer_borrowed = rasterizer.borrow();
+            let material_bind_group = self.renderer.raytracer.get_material_bind_group();
+            let mesh_bind_group = self.renderer.raytracer.get_mesh_bind_group();
+
+            // Trigger probe baking
+            rasterizer_borrowed.bake_probes(
+                &self.renderer.wgpu.device,
+                &self.renderer.wgpu.queue,
+                material_bind_group,
+                mesh_bind_group,
+            );
+            println!("Probe baking completed!");
+        }
 
         self.renderer.render(
             &self.window,
             &self.window_size,
             &self.config,
-            &self.scene,
+            &mut self.scene,
             self.stat.frame_count,
             egui_output,
         )?;
@@ -144,7 +167,7 @@ impl Engine {
         self.renderer
             .egui
             .state
-            .on_window_event(&self.window, &event)
+            .on_window_event(&self.window, event)
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {

@@ -1,0 +1,116 @@
+use wesl::include_wesl;
+
+use crate::wgpu_utils::WgpuExt;
+
+/// Compute pipeline for updating probe coefficients
+pub struct ProbeUpdatePipeline {
+    compute_pipeline: wgpu::ComputePipeline,
+    pub probe_bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl ProbeUpdatePipeline {
+    pub fn new(
+        device: &wgpu::Device,
+        l0_brick_atlas_view: &wgpu::TextureView,
+        l1x_brick_atlas_view: &wgpu::TextureView,
+        l1y_brick_atlas_view: &wgpu::TextureView,
+        l1z_brick_atlas_view: &wgpu::TextureView,
+        material_bind_group_layout: &wgpu::BindGroupLayout,
+        mesh_bind_group_layout: &wgpu::BindGroupLayout,
+        lights_bind_group_layout: &wgpu::BindGroupLayout,
+        config_sun_bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let shader = device
+            .shader()
+            .label("Probe Update Compute Shader")
+            .wesl(include_wesl!("probe-updater").into());
+
+        let probe_bind_group_layout = device
+            .bind_group_layout()
+            .label("Probe Update Probe Bind Group Layout")
+            .storage_texture_3d(
+                0,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::StorageTextureAccess::WriteOnly,
+                wgpu::TextureFormat::Rgba32Float,
+            )
+            .storage_texture_3d(
+                1,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::StorageTextureAccess::WriteOnly,
+                wgpu::TextureFormat::Rgba32Float,
+            )
+            .storage_texture_3d(
+                2,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::StorageTextureAccess::WriteOnly,
+                wgpu::TextureFormat::Rgba32Float,
+            )
+            .storage_texture_3d(
+                3,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::StorageTextureAccess::WriteOnly,
+                wgpu::TextureFormat::Rgba32Float,
+            )
+            .uniform(4, wgpu::ShaderStages::COMPUTE)
+            .build();
+
+        let pipeline_layout = device
+            .pipeline_layout()
+            .label("Probe Update Pipeline Layout")
+            .bind_group_layouts(&[
+                material_bind_group_layout,
+                mesh_bind_group_layout,
+                lights_bind_group_layout,
+                &probe_bind_group_layout,
+            ])
+            .build();
+
+        let compute_pipeline = device
+            .compute_pipeline()
+            .label("Probe Update Compute Pipeline")
+            .layout(&pipeline_layout)
+            .shader(&shader, "main")
+            .build()
+            .unwrap();
+
+        Self {
+            compute_pipeline,
+            probe_bind_group_layout,
+        }
+    }
+
+    pub fn dispatch(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        material_bind_group: &wgpu::BindGroup,
+        mesh_bind_group: &wgpu::BindGroup,
+        lights_bind_group: &wgpu::BindGroup,
+        probe_bind_group: &wgpu::BindGroup,
+        probe_count: u32,
+    ) {
+        log::debug!(
+            "ProbeUpdatePipeline::dispatch called with {probe_count} probes"
+        );
+
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Probe Update Compute Pass"),
+            timestamp_writes: None,
+        });
+
+        compute_pass.set_pipeline(&self.compute_pipeline);
+        compute_pass.set_bind_group(0, material_bind_group, &[]);
+        compute_pass.set_bind_group(1, mesh_bind_group, &[]);
+        compute_pass.set_bind_group(2, lights_bind_group, &[]);
+        compute_pass.set_bind_group(3, probe_bind_group, &[]);
+
+        let workgroup_size = 64;
+        let num_workgroups = probe_count.div_ceil(workgroup_size);
+        log::debug!(
+            "Dispatching {num_workgroups} workgroups (workgroup_size={workgroup_size})"
+        );
+        compute_pass.dispatch_workgroups(num_workgroups, 1, 1);
+        log::debug!("Compute workgroups dispatched successfully");
+    }
+
+}

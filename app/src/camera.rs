@@ -29,7 +29,7 @@ impl Camera {
 
     pub fn new(eye: Vec3, forward: Vec3, aspect: f32, fovy: f32, znear: f32, zfar: f32) -> Self {
         // The camera's up vector stays close to the global up
-        let up = forward.cross(Camera::GLOBAL_UP.cross(forward)).normalize();
+        let up = forward.cross(Camera::GLOBAL_UP.cross(forward)).normalized();
 
         let (
             world_to_camera,
@@ -325,7 +325,7 @@ impl CameraController {
         camera.up = yaw_rotation * camera.up;
 
         // Rotate around the camera's local X-axis (pitch)
-        let right = camera.forward.cross(camera.up).normalize();
+        let right = camera.forward.cross(camera.up).normalized();
         let pitch_rotation = Quat::from_axis_angle(right, -rotation_delta.y);
         camera.forward = pitch_rotation * camera.forward;
         camera.up = pitch_rotation * camera.up;
@@ -334,13 +334,13 @@ impl CameraController {
         camera.up = camera
             .forward
             .cross(Camera::GLOBAL_UP.cross(camera.forward))
-            .normalize();
+            .normalized();
 
         // Reset cursor delta
         self.cursor_delta = Vec2::ZERO;
 
         let mut translation_delta = Vec3::ZERO;
-        let right = camera.forward.cross(camera.up).normalize();
+        let right = camera.forward.cross(camera.up).normalized();
 
         if self.is_forward_pressed {
             translation_delta += camera.forward;
@@ -362,7 +362,7 @@ impl CameraController {
         }
 
         if translation_delta != Vec3::ZERO {
-            translation_delta = translation_delta.normalize() * self.speed * delta_time;
+            translation_delta = translation_delta.normalized() * self.speed * delta_time;
 
             if self.is_shift_pressed {
                 translation_delta *= 2.0;

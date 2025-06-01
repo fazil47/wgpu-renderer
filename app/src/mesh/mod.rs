@@ -5,6 +5,7 @@ use crate::wgpu::{
     RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE, RGBA, RaytracerMaterial,
     RaytracerVertex, Vertex,
 };
+use crate::wgpu_utils::WgpuExt;
 
 pub struct Material {
     pub color: RGBA,
@@ -76,19 +77,19 @@ impl Material {
     }
 
     pub fn create_vertex_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&self.get_vertices()),
-            usage: wgpu::BufferUsages::VERTEX,
-        })
+        device
+            .buffer()
+            .label("Vertex Buffer")
+            .usage(wgpu::BufferUsages::VERTEX)
+            .vertex(&self.get_vertices())
     }
 
     pub fn create_index_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&self.get_indices()),
-            usage: wgpu::BufferUsages::INDEX,
-        })
+        device
+            .buffer()
+            .label("Index Buffer")
+            .usage(wgpu::BufferUsages::INDEX)
+            .index(&self.get_indices())
     }
 
     pub fn get_index_count(&self) -> u32 {
@@ -111,10 +112,8 @@ pub trait RaytracerExt {
 
 impl RaytracerExt for Vec<Material> {
     fn create_materials_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let raytracer_materials: Vec<RaytracerMaterial> = self
-            .iter()
-            .map(|material| RaytracerMaterial::from_material(material))
-            .collect();
+        let raytracer_materials: Vec<RaytracerMaterial> =
+            self.iter().map(RaytracerMaterial::from_material).collect();
 
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Materials Buffer"),
@@ -133,8 +132,7 @@ impl RaytracerExt for Vec<Material> {
 
     fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
         let mut all_vertices: Vec<RaytracerVertex> = Vec::new();
-        for material_id in 0..self.len() {
-            let material = &self[material_id];
+        for (material_id, material) in self.iter().enumerate() {
             let vertices = material.get_raytracer_vertices(material_id);
             all_vertices.extend(vertices);
         }

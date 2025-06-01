@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 use winit::window::Window;
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub struct Renderer {
-    pub rasterizer: Rasterizer,
+    pub rasterizer: Rc<RefCell<Rasterizer>>,
     pub raytracer: Raytracer,
     pub egui: RendererEgui,
     pub wgpu: RendererWgpu,
@@ -17,7 +17,7 @@ impl Renderer {
     pub async fn new(
         window: Arc<Window>,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &Scene,
+        scene: &mut Scene,
     ) -> Self {
         let wgpu = RendererWgpu::new(window.clone(), window_size).await;
         let egui = RendererEgui::new(
@@ -27,14 +27,14 @@ impl Renderer {
             window.scale_factor() as f32,
         );
 
-        let rasterizer = Rasterizer::new(&wgpu, &scene);
-        let raytracer = Raytracer::new(&wgpu, &window_size, &scene);
+        let rasterizer = Rc::new(RefCell::new(Rasterizer::new(&wgpu, scene)));
+        let raytracer = Raytracer::new(&wgpu, window_size, scene);
 
         Self {
             wgpu,
-            egui,
             rasterizer,
             raytracer,
+            egui,
         }
     }
 
@@ -45,7 +45,7 @@ impl Renderer {
         self.wgpu.resize(&new_size);
 
         // Update the rasterizer with the new size
-        self.rasterizer.resize(&self.wgpu);
+        self.rasterizer.borrow_mut().resize(&self.wgpu);
 
         // Update the raytracer with the new size
         self.raytracer.resize(&new_size, &self.wgpu);
@@ -65,7 +65,7 @@ impl Renderer {
         window: &winit::window::Window,
         window_size: &winit::dpi::PhysicalSize<u32>,
         config: &EngineConfiguration,
-        scene: &Scene,
+        scene: &mut Scene,
         frame_count: u32,
         egui_output: egui::FullOutput,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -75,9 +75,17 @@ impl Renderer {
             self.update_light(scene);
         }
 
+        // Check if probe grid configuration changed
+        if self.rasterizer.borrow().is_probe_dirty() {
+            self.rasterizer
+                .borrow_mut()
+                .update_probes(&self.wgpu.device, &self.wgpu.queue);
+            self.rasterizer.borrow_mut().clear_probe_dirty();
+        }
+
         if config.is_raytracer_enabled && frame_count < config.raytracer_max_frames {
             self.raytracer
-                .compute(&window_size, &self.wgpu.device, &self.wgpu.queue);
+                .compute(window_size, &self.wgpu.device, &self.wgpu.queue);
             self.raytracer
                 .update_frame_count(&self.wgpu.queue, frame_count);
         }
@@ -120,12 +128,19 @@ impl Renderer {
                 self.raytracer
                     .render(&mut render_encoder, &surface_texture_view);
             } else {
-                self.rasterizer.render(
+                self.rasterizer.borrow().render(
                     &self.wgpu.device,
                     &mut render_encoder,
                     &surface_texture_view,
                     &scene.materials,
                 );
+
+                // Render probe visualization if enabled
+                let rasterizer = self.rasterizer.borrow();
+                if rasterizer.should_render_probe_visualization() {
+                    rasterizer
+                        .render_probe_visualization(&mut render_encoder, &surface_texture_view);
+                }
             };
 
             self.egui.render(
@@ -149,12 +164,20 @@ impl Renderer {
     }
 
     pub fn update_camera(&self, scene: &Scene) {
-        self.rasterizer.update_camera(&self.wgpu.queue, scene);
+        self.rasterizer
+            .borrow()
+            .update_camera(&self.wgpu.queue, scene);
         self.raytracer.update_camera(&self.wgpu.queue, scene);
     }
 
     pub fn update_light(&self, scene: &Scene) {
-        self.rasterizer.update_light(&self.wgpu.queue, scene);
+        self.rasterizer
+            .borrow()
+            .update_light(&self.wgpu.queue, scene);
         self.raytracer.update_light(&self.wgpu.queue, scene);
     }
+
+    // pub fn update_probe_grid(&self, scene: &mut Scene) {
+    //     scene.update_probe_grid(&self.wgpu.device, &self.wgpu.queue);
+    // }
 }

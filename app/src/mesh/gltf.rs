@@ -32,7 +32,7 @@ impl GltfMeshExt for Material {
             // Find the node that references this mesh to get its transform
             let mesh_transform_raw = document
                 .nodes()
-                .find(|node| node.mesh().map_or(false, |m| m.index() == mesh.index()))
+                .find(|node| node.mesh().is_some_and(|m| m.index() == mesh.index()))
                 .map(|node| node.transform().matrix());
             let mesh_transform = if let Some(mat) = mesh_transform_raw {
                 Mat4::from_matrix(mat)
@@ -48,14 +48,14 @@ impl GltfMeshExt for Material {
                 if let Some(material_id) = material_id {
                     primitives_by_material
                         .entry(material_id)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(primitive);
                 }
             }
 
             for (material_id, primitives) in primitives_by_material {
                 if material_id >= materials.len() {
-                    return Err(format!("Material index out of bounds: {}", material_id));
+                    return Err(format!("Material index out of bounds: {material_id}"));
                 }
 
                 let mut mesh_vertices = Vec::new();
@@ -80,7 +80,7 @@ impl GltfMeshExt for Material {
                             let normal = if let Some(n) = normal_raw {
                                 Vec3::from_array(n)
                             } else {
-                                return Err(format!("Missing normal for vertex {}", i));
+                                return Err(format!("Missing normal for vertex {i}"));
                             };
 
                             // Transform normal vector by mesh_transform

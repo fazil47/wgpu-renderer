@@ -1,6 +1,7 @@
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,
@@ -23,7 +24,22 @@ impl Vec3 {
         [self.x, self.y, self.z]
     }
 
-    pub fn normalize(&self) -> Self {
+    pub fn length(&self) -> f32 {
+        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+    }
+
+    pub fn normalize(&mut self) {
+        let length = self.length();
+        if length == 0.0 {
+            return;
+        }
+
+        self.x /= length;
+        self.y /= length;
+        self.z /= length;
+    }
+
+    pub fn normalized(&self) -> Self {
         let length = (self.x * self.x + self.y * self.y + self.z * self.z).sqrt();
         if length == 0.0 {
             return Self::ZERO;
@@ -42,6 +58,10 @@ impl Vec3 {
             -(self.x * rhs.z - self.z * rhs.x),
             self.x * rhs.y - self.y * rhs.x,
         )
+    }
+
+    pub const fn extend(&self, w: f32) -> Vec4 {
+        Vec4::new(self.x, self.y, self.z, w)
     }
 }
 
@@ -78,6 +98,14 @@ impl Mul<f32> for Vec3 {
 
     fn mul(self, rhs: f32) -> Self::Output {
         Self::new(self.x * rhs, self.y * rhs, self.z * rhs)
+    }
+}
+
+impl Mul<Vec3> for Vec3 {
+    type Output = Self;
+
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        Self::new(self.x * rhs.x, self.y * rhs.y, self.z * rhs.z)
     }
 }
 
@@ -122,6 +150,10 @@ impl Vec4 {
 
     pub const fn to_array(&self) -> [f32; 4] {
         [self.x, self.y, self.z, self.w]
+    }
+
+    pub const fn dot(&self, rhs: Self) -> f32 {
+        self.x * rhs.x + self.y * rhs.y + self.z * rhs.z + self.w * rhs.w
     }
 
     pub fn length(&self) -> f32 {

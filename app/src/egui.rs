@@ -38,7 +38,7 @@ impl RendererEgui {
         queue: &wgpu::Queue,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        egui_primitives: &Vec<egui::ClippedPrimitive>,
+        egui_primitives: &[egui::ClippedPrimitive],
         egui_screen_descriptor: &egui_wgpu::ScreenDescriptor,
     ) {
         self.renderer.update_buffers(
@@ -52,7 +52,7 @@ impl RendererEgui {
         let egui_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Rasterizer Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &surface_texture_view,
+                view: surface_texture_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -66,8 +66,8 @@ impl RendererEgui {
 
         self.renderer.render(
             &mut egui_rpass.forget_lifetime(),
-            &egui_primitives,
-            &egui_screen_descriptor,
+            egui_primitives,
+            egui_screen_descriptor,
         );
     }
 }

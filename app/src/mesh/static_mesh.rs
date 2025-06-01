@@ -8,6 +8,7 @@ pub trait StaticMeshExt {
     fn cube() -> Material;
     fn octahedron() -> Material;
     fn cornell_box() -> Vec<Material>;
+    fn sphere() -> Material;
 }
 
 impl StaticMeshExt for Material {
@@ -273,5 +274,68 @@ impl StaticMeshExt for Material {
         vec![left_material, right_material, other_material]
         // vec![other_material, right_material, left_material]
         // vec![right_material, left_material, other_material]
+    }
+
+    fn sphere() -> Material {
+        let mut material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]));
+
+        let radius = 1.0;
+        let sectors = 36; // longitude divisions
+        let stacks = 18; // latitude divisions
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Generate vertices
+        for i in 0..=stacks {
+            let stack_angle =
+                std::f32::consts::PI / 2.0 - i as f32 * std::f32::consts::PI / stacks as f32; // from pi/2 to -pi/2
+            let xy = radius * stack_angle.cos(); // r * cos(u)
+            let z = radius * stack_angle.sin(); // r * sin(u)
+
+            for j in 0..=sectors {
+                let sector_angle = j as f32 * 2.0 * std::f32::consts::PI / sectors as f32; // from 0 to 2pi
+
+                // vertex position (x, y, z)
+                let x = xy * sector_angle.cos(); // r * cos(u) * cos(v)
+                let y = xy * sector_angle.sin(); // r * cos(u) * sin(v)
+
+                // normalized vertex normal (nx, ny, nz)
+                let nx = x / radius;
+                let ny = y / radius;
+                let nz = z / radius;
+
+                vertices.push(Vertex {
+                    position: [x, y, z, 1.0],
+                    normal: [nx, ny, nz, 0.0],
+                });
+            }
+        }
+
+        // Generate indices
+        for i in 0..stacks {
+            let k1 = i * (sectors + 1); // beginning of current stack
+            let k2 = k1 + sectors + 1; // beginning of next stack
+
+            for j in 0..sectors {
+                // 2 triangles per sector excluding first and last stacks
+                // k1 => k2 => k1+1
+                if i != 0 {
+                    indices.push(k1 + j);
+                    indices.push(k2 + j);
+                    indices.push(k1 + j + 1);
+                }
+
+                // k1+1 => k2 => k2+1
+                if i != (stacks - 1) {
+                    indices.push(k1 + j + 1);
+                    indices.push(k2 + j);
+                    indices.push(k2 + j + 1);
+                }
+            }
+        }
+
+        material.add_mesh(Mesh::new(vertices, indices));
+        material
     }
 }
