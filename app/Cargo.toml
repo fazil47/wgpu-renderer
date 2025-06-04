@@ -1,33 +1,33 @@
 [package]
 name = "app"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 default-run = "app"
 
 [dependencies]
 bytemuck = { version = "1.18.0", features = ["derive"] }
-egui = "0.31"
-egui-wgpu = "0.31"
-gltf = { version = "1.4" }
+egui = "0.24"
+egui-wgpu = "0.24"
+gltf = { version = "1.4" } # May need adjustment
 log = "0.4.22"
 maths = { path = "../maths" }
-wesl = { version = "0.1.2" }
-wgpu = "24"
-winit = "0.30"
+wesl = { version = "0.1.2" } # May need adjustment
+wgpu = "0.19"
+winit = "0.29" # Downgraded to match common wgpu 0.19 examples, may need further adjustment
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = "0.31"
-env_logger = "0.11.5"
-image = { version = "0.25.2", default-features = false, features = ["png"] }
-pollster = "0.3.0"
+egui-winit = "0.24"
+env_logger = "0.11.5" # May need adjustment
+image = { version = "0.25.2", default-features = false, features = ["png"] } # May need adjustment
+pollster = "0.3.0" # May need adjustment
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
-egui-winit = { version = "0.31", default-features = false }
-fern = "0.6.2"
-wgpu = { version = "24", features = ["webgpu"] }
-wasm-bindgen = "=0.2.100"
+egui-winit = { version = "0.24", default-features = false }
+fern = "0.6.2" # May need adjustment
+wgpu = { version = "0.19", features = ["webgpu"] }
+wasm-bindgen = "=0.2.92" # Downgraded wasm-bindgen to align with wgpu 0.19 examples
 wasm-bindgen-futures = "0.4.42"
 web-sys = { version = "0.3.69", features = [
     "Location",
