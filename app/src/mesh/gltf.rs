@@ -1,17 +1,22 @@
-use super::{Material, Mesh};
-use crate::rendering::wgpu::{RGBA, Vertex};
+use super::{Mesh, Vertex};
+use crate::{
+    material::{Material, RGBA},
+    transform::Transform,
+};
+use ecs::{Entity, World};
 use gltf::material::AlphaMode;
-use maths::{Mat4, Vec3};
+use maths::{Mat4, Vec3, Vec4};
 use std::{collections::HashMap, path::Path};
 
 pub trait GltfMeshExt {
-    fn from_gltf<P: AsRef<Path>>(path: P) -> Result<Vec<Material>, String>;
+    fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String>;
 }
 
-impl GltfMeshExt for Material {
-    fn from_gltf<P: AsRef<Path>>(path: P) -> Result<Vec<Material>, String> {
+impl GltfMeshExt for Mesh {
+    fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String> {
         let (document, buffers, _) = gltf::import(path).unwrap();
         let mut materials = Vec::new();
+        let mut meshes = Vec::new();
 
         for material in document.materials() {
             let pbr = material.pbr_metallic_roughness();
@@ -25,7 +30,11 @@ impl GltfMeshExt for Material {
             };
 
             let rgba = RGBA::new([base_color[0], base_color[1], base_color[2], alpha]);
-            materials.push(Material::new(rgba));
+            let material = Material::new(rgba);
+            let material_entity = world.create_entity();
+            world.add_component(material_entity, material.clone());
+
+            materials.push(material_entity);
         }
 
         for mesh in document.meshes() {
@@ -39,10 +48,15 @@ impl GltfMeshExt for Material {
             } else {
                 Mat4::IDENTITY
             };
+            let mesh_transform_component = Transform {
+                position: mesh_transform.extract_translation(),
+                rotation: mesh_transform.extract_rotation(),
+                scale: mesh_transform.extract_scale(),
+                parent: None,
+            };
 
             // Group mesh primitives by material
             let mut primitives_by_material: HashMap<usize, Vec<gltf::Primitive>> = HashMap::new();
-
             for primitive in mesh.primitives() {
                 let material_id = primitive.material().index();
                 if let Some(material_id) = material_id {
@@ -70,27 +84,17 @@ impl GltfMeshExt for Material {
                         let positions_vec: Vec<_> = positions.collect();
                         let vertex_count = positions_vec.len();
 
-                        for i in 0..vertex_count {
-                            let position = Vec3::from_array(positions_vec[i]);
-
-                            // Transform position by mesh_transform
-                            let transformed_pos = mesh_transform * position;
+                        for (i, position) in positions_vec.iter().enumerate().take(vertex_count) {
+                            let position = Vec4::from_point(Vec3::from_array(position));
 
                             let normal_raw = normals.as_ref().and_then(|n| n.get(i)).copied();
                             let normal = if let Some(n) = normal_raw {
-                                Vec3::from_array(n)
+                                Vec4::from_direction(Vec3::from_array(&n))
                             } else {
                                 return Err(format!("Missing normal for vertex {i}"));
                             };
 
-                            // Transform normal vector by mesh_transform
-                            let mut transformed_normal = mesh_transform * normal;
-                            transformed_normal.normalize();
-
-                            mesh_vertices.push(Vertex {
-                                position: transformed_pos.to_array(),
-                                normal: transformed_normal.to_array(),
-                            });
+                            mesh_vertices.push(Vertex { position, normal });
                         }
 
                         // Handle indices
@@ -106,10 +110,16 @@ impl GltfMeshExt for Material {
                     }
                 }
 
-                materials[material_id].add_mesh(Mesh::new(mesh_vertices, mesh_indices));
+                let mesh_entity = world.create_entity();
+                meshes.push(mesh_entity);
+
+                let material = materials[material_id];
+                let mesh = Mesh::new(mesh_vertices, mesh_indices, material);
+                world.add_component(mesh_entity, mesh);
+                world.add_component(mesh_entity, mesh_transform_component);
             }
         }
 
-        Ok(materials)
+        Ok(meshes)
     }
 }

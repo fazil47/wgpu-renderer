@@ -1,108 +1,132 @@
-use crate::rendering::wgpu::{RGBA, Vertex};
+use crate::{
+    material::{Material, RGBA},
+    transform::Transform,
+};
+use ecs::{Entity, World};
+use maths::{Vec3, Vec4};
 
-use super::{Material, Mesh};
+use super::{Mesh, Vertex};
 
 pub trait StaticMeshExt {
-    fn triangle() -> Material;
-    fn pentagon() -> Material;
-    fn cube() -> Material;
-    fn octahedron() -> Material;
-    fn cornell_box() -> Vec<Material>;
-    fn sphere() -> Material;
+    fn triangle(world: &mut World) -> Entity;
+    fn pentagon(world: &mut World) -> Entity;
+    fn cube(world: &mut World) -> Entity;
+    fn octahedron(world: &mut World) -> Entity;
+    fn cornell_box(world: &mut World) -> Vec<Entity>;
+    fn sphere(world: &mut World) -> Entity;
 }
 
-impl StaticMeshExt for Material {
-    fn triangle() -> Material {
-        let mut material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
-        material.add_mesh(Mesh::new(
+impl StaticMeshExt for Mesh {
+    fn triangle(world: &mut World) -> Entity {
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
+        let material_entity = world.create_entity();
+        world.add_component(material_entity, material.clone());
+
+        let mesh = Mesh::new(
             vec![
                 Vertex {
-                    position: [0.0, 1.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [-1.0, -1.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-1.0, -1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [1.0, -1.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(1.0, -1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
             ],
             vec![0, 1, 2],
-        ));
+            material_entity,
+        );
 
-        material
+        let mesh_entity = world.create_entity();
+        world.add_component(mesh_entity, mesh);
+        world.add_component(mesh_entity, Transform::default());
+
+        mesh_entity
     }
 
-    fn pentagon() -> Material {
-        let mut material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
-        material.add_mesh(Mesh::new(
+    fn pentagon(world: &mut World) -> Entity {
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
+        let material_entity = world.create_entity();
+        world.add_component(material_entity, material.clone());
+
+        let mesh = Mesh::new(
             vec![
                 Vertex {
-                    position: [-0.0868241, 0.49240386, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.0868241, 0.49240386, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // A
                 Vertex {
-                    position: [-0.49513406, 0.06958647, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.49513406, 0.06958647, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // B
                 Vertex {
-                    position: [-0.21918549, -0.44939706, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.21918549, -0.44939706, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // C
                 Vertex {
-                    position: [0.35966998, -0.3473291, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.35966998, -0.3473291, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // D
                 Vertex {
-                    position: [0.44147372, 0.2347359, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.44147372, 0.2347359, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // E
             ],
             vec![0, 1, 4, 1, 2, 4, 2, 3, 4],
-        ));
+            material_entity,
+        );
 
-        material
+        let mesh_entity = world.create_entity();
+        world.add_component(mesh_entity, mesh);
+        world.add_component(mesh_entity, Transform::default());
+
+        mesh_entity
     }
 
-    fn cube() -> Material {
-        let mut material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
-        material.add_mesh(Mesh::new(
+    fn cube(world: &mut World) -> Entity {
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
+        let material_entity = world.create_entity();
+        world.add_component(material_entity, material.clone());
+
+        let mesh = Mesh::new(
             vec![
                 // Front face
                 Vertex {
-                    position: [-0.5, -0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.5, -0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, -0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.5, -0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, 0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.5, 0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [-0.5, 0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.5, 0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 // Back face
                 Vertex {
-                    position: [-0.5, -0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(-0.5, -0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, -0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(0.5, -0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, 0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(0.5, 0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
                 Vertex {
-                    position: [-0.5, 0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(-0.5, 0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
             ],
             vec![
@@ -113,38 +137,46 @@ impl StaticMeshExt for Material {
                 3, 2, 6, 6, 7, 3, // Top face
                 4, 5, 1, 1, 0, 4, // Bottom face
             ],
-        ));
+            material_entity,
+        );
 
-        material
+        let mesh_entity = world.create_entity();
+        world.add_component(mesh_entity, mesh);
+        world.add_component(mesh_entity, Transform::default());
+
+        mesh_entity
     }
 
-    fn octahedron() -> Material {
-        let mut material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
-        material.add_mesh(Mesh::new(
+    fn octahedron(world: &mut World) -> Entity {
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
+        let material_entity = world.create_entity();
+        world.add_component(material_entity, material.clone());
+
+        let mesh = Mesh::new(
             vec![
                 Vertex {
-                    position: [0.0, 1.0, 0.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 }, // 0: Top
                 Vertex {
-                    position: [0.0, -1.0, 0.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(0.0, -1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 }, // 1: Bottom
                 Vertex {
-                    position: [1.0, 0.0, 0.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(1.0, 0.0, 0.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 }, // 2: Right
                 Vertex {
-                    position: [-1.0, 0.0, 0.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-1.0, 0.0, 0.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 }, // 3: Left
                 Vertex {
-                    position: [0.0, 0.0, 1.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.0, 0.0, 1.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // 4: Front
                 Vertex {
-                    position: [0.0, 0.0, -1.0, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(0.0, 0.0, -1.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 }, // 5: Back
             ],
             vec![
@@ -157,111 +189,127 @@ impl StaticMeshExt for Material {
                 1, 3, 5, // Bottom-Left-Back
                 1, 5, 2, // Bottom-Back-Right
             ],
-        ));
+            material_entity,
+        );
 
-        material
+        let mesh_entity = world.create_entity();
+        world.add_component(mesh_entity, mesh);
+        world.add_component(mesh_entity, Transform::default());
+
+        mesh_entity
     }
 
-    fn cornell_box() -> Vec<Material> {
-        let mut left_material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
-        left_material.add_mesh(Mesh::new(
+    fn cornell_box(world: &mut World) -> Vec<Entity> {
+        let left_material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]));
+        let left_material_entity = world.create_entity();
+        world.add_component(left_material_entity, left_material.clone());
+
+        let left_mesh = Mesh::new(
             vec![
                 Vertex {
-                    position: [-2.0, -2.0, -2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, -2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, 2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, -2.0, 2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
             ],
             vec![0, 1, 2, 2, 3, 0],
-        ));
+            left_material_entity,
+        );
 
-        let mut right_material = Material::new(RGBA::new([0.0, 1.0, 0.0, 1.0]));
-        right_material.add_mesh(Mesh::new(
+        let right_material = Material::new(RGBA::new([0.0, 1.0, 0.0, 1.0]));
+        let right_material_entity = world.create_entity();
+        world.add_component(right_material_entity, right_material.clone());
+
+        let right_mesh = Mesh::new(
             vec![
                 Vertex {
-                    position: [2.0, -2.0, -2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, 2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, 2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, -2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
             ],
             vec![0, 1, 2, 2, 3, 0],
-        ));
+            right_material_entity,
+        );
 
-        let mut other_material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]));
-        other_material.add_mesh(Mesh::new(
+        let other_material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]));
+        let other_material_entity = world.create_entity();
+        world.add_component(other_material_entity, other_material.clone());
+
+        let other_mesh = Mesh::new(
             vec![
                 // Back wall
                 Vertex {
-                    position: [-2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 // Top wall
                 Vertex {
-                    position: [-2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, 2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, 2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 // Bottom wall
                 Vertex {
-                    position: [-2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, -2.0, 2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, 2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
             ],
             vec![
@@ -269,15 +317,28 @@ impl StaticMeshExt for Material {
                 4, 5, 6, 6, 7, 4, // Top wall
                 8, 9, 10, 10, 11, 8, // Bottom wall
             ],
-        ));
+            other_material_entity,
+        );
 
-        vec![left_material, right_material, other_material]
-        // vec![other_material, right_material, left_material]
-        // vec![right_material, left_material, other_material]
+        let left_mesh_entity = world.create_entity();
+        world.add_component(left_mesh_entity, left_mesh);
+        world.add_component(left_mesh_entity, Transform::new(Vec3::new(-2.0, 0.0, 0.0)));
+
+        let right_mesh_entity = world.create_entity();
+        world.add_component(right_mesh_entity, right_mesh);
+        world.add_component(right_mesh_entity, Transform::new(Vec3::new(2.0, 0.0, 0.0)));
+
+        let other_mesh_entity = world.create_entity();
+        world.add_component(other_mesh_entity, other_mesh);
+        world.add_component(other_mesh_entity, Transform::default());
+
+        vec![left_mesh_entity, right_mesh_entity, other_mesh_entity]
     }
 
-    fn sphere() -> Material {
-        let mut material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]));
+    fn sphere(world: &mut World) -> Entity {
+        let material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]));
+        let material_entity = world.create_entity();
+        world.add_component(material_entity, material.clone());
 
         let radius = 1.0;
         let sectors = 36; // longitude divisions
@@ -306,8 +367,8 @@ impl StaticMeshExt for Material {
                 let nz = z / radius;
 
                 vertices.push(Vertex {
-                    position: [x, y, z, 1.0],
-                    normal: [nx, ny, nz, 0.0],
+                    position: Vec4::new(x, y, z, 1.0),
+                    normal: Vec4::new(nx, ny, nz, 0.0),
                 });
             }
         }
@@ -335,7 +396,11 @@ impl StaticMeshExt for Material {
             }
         }
 
-        material.add_mesh(Mesh::new(vertices, indices));
-        material
+        let mesh = Mesh::new(vertices, indices, material_entity);
+        let mesh_entity = world.create_entity();
+        world.add_component(mesh_entity, mesh);
+        world.add_component(mesh_entity, Transform::default());
+
+        mesh_entity
     }
 }

@@ -3,9 +3,10 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
-use maths::{Vec3, Quat};
+use maths::{Quat, Vec3};
 
-use crate::ecs::scene::EcsScene;
+use crate::camera::Camera;
+use ecs::{Entity, World};
 
 /// ECS-compatible camera controller for handling input and updating camera position
 pub struct CameraController {
@@ -102,10 +103,21 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, scene: &mut EcsScene, dt: f32) {
-        if let Some(camera_component) = scene.get_camera_component() {
+    pub fn has_camera_moved(&self) -> bool {
+        self.amount_forward != 0.0
+            || self.amount_backward != 0.0
+            || self.amount_left != 0.0
+            || self.amount_right != 0.0
+            || self.amount_up != 0.0
+            || self.amount_down != 0.0
+            || self.rotate_horizontal != 0.0
+            || self.rotate_vertical != 0.0
+    }
+
+    pub fn update_camera(&mut self, world: &mut World, camera_entity: Entity, dt: f32) {
+        if let Some(camera_component) = world.get_component::<Camera>(camera_entity) {
             let mut camera = camera_component.borrow_mut();
-            
+
             // Move the camera based on input
             let (forward, right, up) = {
                 let forward = camera.forward.normalized();
@@ -124,23 +136,26 @@ impl CameraController {
             }
 
             // Rotate the camera based on mouse input
-            if self.cursor_locked && (self.rotate_horizontal != 0.0 || self.rotate_vertical != 0.0) {
+            if self.cursor_locked && (self.rotate_horizontal != 0.0 || self.rotate_vertical != 0.0)
+            {
                 // Horizontal rotation around world Y axis
-                let yaw_rotation = Quat::from_rotation_y(-self.rotate_horizontal * self.sensitivity);
-                
+                let yaw_rotation =
+                    Quat::from_rotation_y(-self.rotate_horizontal * self.sensitivity);
+
                 // Vertical rotation around the camera's right axis
                 let right_axis = camera.forward.cross(Vec3::Y).normalized();
-                let pitch_rotation = Quat::from_axis_angle(right_axis, -self.rotate_vertical * self.sensitivity);
-                
+                let pitch_rotation =
+                    Quat::from_axis_angle(right_axis, -self.rotate_vertical * self.sensitivity);
+
                 // Apply rotations to forward vector
                 camera.forward = yaw_rotation * camera.forward;
                 let new_forward = pitch_rotation * camera.forward;
-                
+
                 // Prevent camera from flipping upside down (clamp pitch)
                 if new_forward.dot(Vec3::Y).abs() < 0.95 {
                     camera.forward = new_forward.normalized();
                 }
-                
+
                 // Update the camera's up vector to maintain orthogonality
                 let right = camera.forward.cross(Vec3::Y).normalized();
                 camera.up = right.cross(camera.forward).normalized();

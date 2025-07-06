@@ -1,4 +1,6 @@
+use std::{collections::HashMap, mem::size_of};
 use wesl::include_wesl;
+use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, RenderPipeline};
 
 use crate::{
     lighting::probe_lighting::{
@@ -6,29 +8,70 @@ use crate::{
         updater::ProbeUpdatePipeline,
         visualization::{ProbeUIResult, ProbeVisualization},
     },
-    rendering::raytracer::Raytracer,
-    ecs::EcsScene,
-    utils::buffer_utils::{CameraBuffers, LightingBuffers, create_vertex_buffer, create_index_buffer},
-    rendering::wgpu::{RendererWgpu, Vertex},
-    wgpu_utils::{WgpuExt, render_pass},
+    mesh::Vertex,
+    rendering::{
+        WorldExtractExt,
+        extract::{Extract, ExtractionError},
+        raytracer::Raytracer,
+        wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources, render_pass},
+    },
 };
+use ecs::{Entity, World};
+
+pub struct GpuMesh {
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
+    index_count: u32,
+    material_entity: Entity,
+}
+
+// Rasterizer vertex type
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuVertex {
+    pub position: [f32; 4],
+    pub normal: [f32; 4],
+}
+
+impl GpuVertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+impl From<Vertex> for GpuVertex {
+    fn from(val: Vertex) -> Self {
+        GpuVertex {
+            position: val.position.to_array(),
+            normal: val.normal.to_array(),
+        }
+    }
+}
 
 pub struct Rasterizer {
+    gpu_meshes: Vec<GpuMesh>,
     camera_buffers: CameraBuffers,
     lighting_buffers: LightingBuffers,
-    other_bind_group: wgpu::BindGroup,
-    depth_texture: crate::wgpu::Texture,
-    render_pipeline: wgpu::RenderPipeline,
-    material_bind_groups: Vec<wgpu::BindGroup>,
+    depth_texture: crate::rendering::wgpu::Texture,
+    material_bgl: BindGroupLayout,
+    material_bind_groups: HashMap<Entity, BindGroup>,
+    other_bind_group: BindGroup,
+    render_pipeline: RenderPipeline,
     probe_grid: ProbeGrid,
-    probe_visualization: ProbeVisualization,
     probe_updater: ProbeUpdatePipeline,
-    lights_bind_group_layout: wgpu::BindGroupLayout,
-    config_sun_bind_group_layout: wgpu::BindGroupLayout,
+    probe_visualization: ProbeVisualization,
+    probe_updater_light_bgl: BindGroupLayout,
 }
 
 impl Rasterizer {
-    pub fn new(wgpu: &RendererWgpu, scene: &EcsScene) -> Self {
+    pub fn new(wgpu: &WgpuResources) -> Self {
         let rasterizer_shader = wgpu
             .device
             .shader()
@@ -42,7 +85,7 @@ impl Rasterizer {
             .uniform(0, wgpu::ShaderStages::VERTEX)
             .uniform(1, wgpu::ShaderStages::FRAGMENT)
             .build();
-        let material_bind_group_layout = wgpu
+        let material_bgl = wgpu
             .device
             .bind_group_layout()
             .label("Rasterizer Material Bind Group Layout")
@@ -59,7 +102,7 @@ impl Rasterizer {
             .bind_group_layouts(&[
                 &other_bind_group_layout,
                 probe_grid.bind_group_layout(),
-                &material_bind_group_layout,
+                &material_bgl,
             ])
             .build();
 
@@ -73,7 +116,7 @@ impl Rasterizer {
             .layout(&render_pipeline_layout)
             .vertex_shader(&rasterizer_shader, "vs_main")
             .fragment_shader(&rasterizer_shader, "fs_main")
-            .vertex_buffer(Vertex::desc())
+            .vertex_buffer(GpuVertex::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
             .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
@@ -86,9 +129,9 @@ impl Rasterizer {
             "rasterizer_depth_texture",
         );
 
-        let camera_buffers = CameraBuffers::new(&wgpu.device, scene, "Rasterizer");
-        let lighting_buffers = LightingBuffers::new(&wgpu.device, scene, "Rasterizer");
-        println!("Creating rasterizer other bind group");
+        let camera_buffers = CameraBuffers::new(&wgpu.device, "Rasterizer");
+        let lighting_buffers = LightingBuffers::new(&wgpu.device, "Rasterizer");
+
         let other_bind_group = wgpu
             .device
             .bind_group(&other_bind_group_layout)
@@ -97,22 +140,13 @@ impl Rasterizer {
             .buffer(1, &lighting_buffers.sun_direction)
             .build();
 
-        let material_bind_groups = scene.create_material_bind_groups(&wgpu.device, &material_bind_group_layout);
-
         let probe_visualization =
             ProbeVisualization::new(wgpu, &probe_grid, &camera_buffers.view_projection);
 
-        let config_sun_bind_group_layout = wgpu
+        let probe_updater_material_bgl = Raytracer::create_material_bind_group_layout(&wgpu.device);
+        let probe_updater_mesh_bgl = Raytracer::create_mesh_bind_group_layout(&wgpu.device);
+        let probe_updater_light_bgl = wgpu
             .device
-            .bind_group_layout()
-            .label("Probe Update Config Sun Bind Group Layout")
-            .uniform(0, wgpu::ShaderStages::COMPUTE)
-            .uniform(1, wgpu::ShaderStages::COMPUTE)
-            .build();
-
-        let material_bind_group_layout = Raytracer::create_material_bind_group_layout(&wgpu.device);
-        let mesh_bind_group_layout = Raytracer::create_mesh_bind_group_layout(&wgpu.device);
-        let lights_bind_group_layout = wgpu.device
             .bind_group_layout()
             .label("Lights Bind Group Layout")
             .uniform(0, wgpu::ShaderStages::COMPUTE)
@@ -120,32 +154,45 @@ impl Rasterizer {
 
         let probe_updater = ProbeUpdatePipeline::new(
             &wgpu.device,
-            probe_grid.get_l0_brick_atlas_view(),
-            probe_grid.get_l1x_brick_atlas_view(),
-            probe_grid.get_l1y_brick_atlas_view(),
-            probe_grid.get_l1z_brick_atlas_view(),
-            &material_bind_group_layout,
-            &mesh_bind_group_layout,
-            &lights_bind_group_layout,
-            &config_sun_bind_group_layout,
+            &probe_updater_material_bgl,
+            &probe_updater_mesh_bgl,
+            &probe_updater_light_bgl,
         );
 
         Self {
+            gpu_meshes: Vec::new(),
             camera_buffers,
             lighting_buffers,
-            other_bind_group,
             depth_texture,
+            material_bgl,
+            material_bind_groups: HashMap::new(),
+            other_bind_group,
             render_pipeline,
-            material_bind_groups,
             probe_grid,
             probe_visualization,
             probe_updater,
-            lights_bind_group_layout,
-            config_sun_bind_group_layout,
+            probe_updater_light_bgl,
         }
     }
 
-    pub fn resize(&mut self, wgpu: &RendererWgpu) {
+    pub fn update_render_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &World,
+        camera_entity: Entity,
+        sun_light_entity: Entity,
+    ) -> Result<(), ExtractionError> {
+        self.camera_buffers
+            .update_from_world(queue, world, camera_entity);
+        self.lighting_buffers
+            .update_from_world(queue, world, sun_light_entity);
+        (self.gpu_meshes, self.material_bind_groups) = self.extract(device, world)?;
+
+        Ok(())
+    }
+
+    pub fn resize(&mut self, wgpu: &WgpuResources) {
         self.depth_texture = crate::rendering::wgpu::Texture::create_depth_texture(
             &wgpu.device,
             &wgpu.surface_config,
@@ -153,12 +200,14 @@ impl Rasterizer {
         );
     }
 
-    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.camera_buffers.update_from_scene(queue, scene);
+    pub fn update_camera(&self, queue: &wgpu::Queue, world: &World, camera_entity: Entity) {
+        self.camera_buffers
+            .update_from_world(queue, world, camera_entity);
     }
 
-    pub fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.lighting_buffers.update_from_scene(queue, scene);
+    pub fn update_light(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
+        self.lighting_buffers
+            .update_from_world(queue, world, sun_light_entity);
     }
 
     pub fn get_depth_texture_view(&self) -> &wgpu::TextureView {
@@ -167,86 +216,41 @@ impl Rasterizer {
 
     pub fn render(
         &self,
-        device: &wgpu::Device,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        scene: &EcsScene,
+        _camera_entity: Entity,
     ) {
-        // Get renderable entities for direct ECS rendering
-        let renderable_entities = scene.get_renderable_entities();
-        
-        // Create a mapping from material entity to material bind group index
-        let mut material_entities = scene.get_material_entities();
-        material_entities.sort_by_key(|entity| entity.0); // Same ordering as create_material_bind_groups
-        let material_entity_to_index: std::collections::HashMap<_, _> = 
-            material_entities.iter().enumerate().map(|(i, &entity)| (entity, i)).collect();
-
-        let mut rasterizer_rpass = render_pass(render_encoder)
+        let mut rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")
             .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
             .depth_attachment(&self.depth_texture.view, Some(1.0))
             .begin();
 
-        rasterizer_rpass.set_pipeline(&self.render_pipeline);
-        rasterizer_rpass.set_bind_group(0, &self.other_bind_group, &[]);
-        rasterizer_rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
+        rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_bind_group(0, &self.other_bind_group, &[]);
+        rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
 
-        // Group renderable entities by material for efficient rendering
-        let mut material_to_entities: std::collections::HashMap<crate::ecs::EntityId, Vec<crate::ecs::EntityId>> = std::collections::HashMap::new();
-        
-        for entity_id in renderable_entities {
-            if let Some(material_ref) = scene.world.get_component::<crate::ecs::MaterialRef>(entity_id) {
-                let mat_ref = material_ref.borrow();
-                material_to_entities.entry(mat_ref.material_entity)
-                    .or_insert_with(Vec::new)
-                    .push(entity_id);
-            }
-        }
+        for mesh in &self.gpu_meshes {
+            let material_bind_group = self
+                .material_bind_groups
+                .get(&mesh.material_entity)
+                .expect("Material bind group not found for mesh material entity");
 
-        // Render each material group
-        for (material_entity, entity_ids) in material_to_entities {
-            // Set the appropriate material bind group
-            if let Some(&bind_group_index) = material_entity_to_index.get(&material_entity) {
-                rasterizer_rpass.set_bind_group(2, &self.material_bind_groups[bind_group_index], &[]);
-                
-                // Render each mesh with this material
-                for entity_id in entity_ids {
-                    if let Some(mesh_comp) = scene.world.get_component::<crate::ecs::MeshComponent>(entity_id) {
-                        let mesh = mesh_comp.borrow();
-                        
-                        // Create vertex and index buffers for this specific mesh
-                        let vertex_buffer = create_vertex_buffer(
-                            device,
-                            "Rasterizer Mesh Vertex Buffer",
-                            &mesh.vertices,
-                        );
-                        let index_buffer = create_index_buffer(
-                            device,
-                            "Rasterizer Mesh Index Buffer",
-                            &mesh.indices,
-                        );
-                        
-                        rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                        rasterizer_rpass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
-                    }
-                }
-            }
+            rpass.set_bind_group(2, material_bind_group, &[]);
+            rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
         }
     }
 
-    /// Update probe positions based on grid configuration
     pub fn update_probes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        let textures_recreated = self.probe_grid.recreate_textures_if_needed(device);
-
-        // Texture views are now created dynamically during dispatch
+        self.probe_grid.recreate_textures_if_needed(device);
 
         self.probe_grid.update_config_buffer(queue);
         self.probe_visualization
             .update_probes(device, queue, &self.probe_grid);
     }
 
-    /// Render probe visualization spheres
     pub fn render_probe_visualization(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
@@ -260,22 +264,19 @@ impl Rasterizer {
         );
     }
 
-    /// Run UI for probe grid configuration and visualization
+    // EGUI setup for probes
     pub fn run_probe_ui(&mut self, ui: &mut egui::Ui) -> ProbeUIResult {
         self.probe_visualization.run_ui(ui, &mut self.probe_grid)
     }
 
-    /// Check if probe grid is dirty and needs updates
     pub fn is_probe_dirty(&self) -> bool {
         self.probe_grid.is_dirty()
     }
 
-    /// Clear probe dirty flag
     pub fn clear_probe_dirty(&mut self) {
         self.probe_grid.clear_dirty();
     }
 
-    /// Check if probe visualization should be rendered
     pub fn should_render_probe_visualization(&self) -> bool {
         self.probe_visualization.show_probes
     }
@@ -299,14 +300,12 @@ impl Rasterizer {
             label: Some("Probe Baking Command Encoder"),
         });
 
-        // Create lights bind group
         let lights_bind_group = device
-            .bind_group(&self.lights_bind_group_layout)
+            .bind_group(&self.probe_updater_light_bgl)
             .label("Probe Update Lights Bind Group")
             .buffer(0, &self.lighting_buffers.sun_direction)
             .build();
 
-        // Create probe bind group with textures and config
         let probe_bind_group = device
             .bind_group(&self.probe_updater.probe_bind_group_layout)
             .label("Probe Update Probe Bind Group")
@@ -331,10 +330,80 @@ impl Rasterizer {
 
         queue.submit(Some(encoder.finish()));
     }
-
-    // Removed get_material_bind_groups - now using scene.create_material_bind_groups() directly
 }
 
-// Removed RasterizerMaterialBuffers and RasterizerOtherBuffers - now using unified buffer utilities
+impl Extract for Rasterizer {
+    type ExtractedData = (Vec<GpuMesh>, HashMap<Entity, BindGroup>);
 
-// Removed create_material_bind_group - now using ECS material bind groups
+    fn extract(
+        &self,
+        device: &Device,
+        world: &World,
+    ) -> Result<Self::ExtractedData, ExtractionError> {
+        let materials: Vec<Entity> = world.get_materials();
+        let mut material_bind_groups: HashMap<Entity, BindGroup> = HashMap::new();
+
+        for entity in materials {
+            let material = world.extract_material_component(entity)?;
+            let color_array = material.color.to_array();
+
+            let material_buffer = device
+                .buffer()
+                .label("Material Buffer")
+                .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
+                .uniform(&color_array);
+            let material_bind_group = device
+                .bind_group(&self.material_bgl)
+                .label("Material Bind Group")
+                .buffer(0, &material_buffer)
+                .build();
+
+            material_bind_groups
+                .entry(entity)
+                .or_insert(material_bind_group);
+        }
+
+        let renderables: Vec<Entity> = world.get_renderables();
+        let mut gpu_meshes: Vec<GpuMesh> = Vec::new();
+
+        for entity in renderables {
+            let transform = world.extract_transform_component(entity)?;
+            let mesh = world.extract_mesh_component(entity)?;
+
+            let vertices: Vec<GpuVertex> = mesh
+                .vertices()
+                .iter()
+                .map(|v| {
+                    let transform = transform.get_matrix();
+                    let position = transform * v.position;
+                    let normal = transform * v.normal;
+
+                    GpuVertex {
+                        position: position.to_array(),
+                        normal: normal.to_array(),
+                    }
+                })
+                .collect();
+
+            let vertex_buffer: Buffer = device
+                .buffer()
+                .label("Entity Mesh Vertex Buffer")
+                .usage(wgpu::BufferUsages::VERTEX)
+                .vertex(&vertices);
+            let index_buffer: Buffer = device
+                .buffer()
+                .label("Entity Mesh Index Buffer")
+                .usage(wgpu::BufferUsages::INDEX)
+                .index(mesh.indices());
+
+            gpu_meshes.push(GpuMesh {
+                vertex_buffer,
+                index_buffer,
+                index_count: mesh.indices().len() as u32,
+                material_entity: mesh.material_entity,
+            });
+        }
+
+        Ok((gpu_meshes, material_bind_groups))
+    }
+}

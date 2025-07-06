@@ -1,4 +1,6 @@
-const MAX_BOUNCES: u32 = 8;
+const MAX_BOUNCES: u32 = 8u;
+const MAX_LOW_FRAME_BOUNCES: u32 = 2u;
+const LOW_BOUNCE_FRAMES: u32 = 4u;
 const CLEAR_COLOR: vec4f = vec4f(0.0, 0.0, 0.0, 1.0);
 const FLT_MAX: f32 = 1e12;
 const K_EPSILON: f32 = 1e-6;
@@ -211,7 +213,7 @@ fn get_interpolated_color_from_hit(hit_info: HitInfo) -> vec4f {
     return vec4f(get_interpolated_color(hit_info, triangle), 1.0);
 }
 
-fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, bounce_seed: f32) -> vec3f {
+fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u32, bounce_seed: f32) -> vec4f {
     let scene_params = SceneParams(
         material_stride,
         vertex_stride,
@@ -224,32 +226,35 @@ fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, bounce_seed: f
     var ray_color = vec4f(0.0);
     var ray_throughput = vec4f(1.0);
 
-    for (var bounce = 0u; bounce < 3u; bounce++) {
-        let hit_info = trace_triangles(ray);
+    for (var bounce = 0u; bounce <= max_bounces; bounce += 1u) {
+        if bounce == max_bounces {
+            // Set ray color as black if the ray has bounced too many times
+            ray_color = vec4f(0.0);
+            break;
+        }
 
+        let hit_info: HitInfo = trace_triangles(ray);
         if hit_info.did_hit {
-            let surface_color = get_interpolated_color_from_hit(hit_info);
+            let tri_color = get_interpolated_color_from_hit(hit_info);
+            ray_color += tri_color * ray_throughput;
+            ray_throughput *= tri_color;
 
-            ray_color += surface_color * ray_throughput;
-            ray_throughput *= surface_color;
-
-            // Generate next bounce ray
-            let seed = origin + vec3f(bounce_seed, f32(bounce), 0.0);
             ray = create_ray(
-                hit_info.p + hit_info.normal * 0.001,
-                random_in_hemisphere(hit_info.normal, seed)
+                hit_info.p + hit_info.normal * 0.001, // Move the origin slightly to avoid self-intersection
+                random_in_hemisphere(hit_info.normal, hit_info.p + bounce_seed)
             );
         } else {
-            // Hit sky - add sun and ambient lighting
             if bounce == 0u {
+                // If ray misses all triangles, return the sky color
                 ray_color = get_sky_color(ray, scene_params);
             } else {
                 let ray_sun_intensity = max(0.0, dot(scene_params.sun_direction, ray.direction)) * SUN_INTENSITY;
                 ray_color *= ray_sun_intensity * ray_throughput;
             }
+
             break;
         }
     }
 
-    return clamp(ray_color.rgb, vec3f(0.0), vec3f(1.0));
+    return clamp(ray_color, vec4f(0.0), vec4f(1.0));
 }

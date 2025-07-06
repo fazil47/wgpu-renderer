@@ -1,10 +1,71 @@
+use std::{
+    collections::HashMap,
+    mem::{offset_of, size_of},
+};
 use wesl::include_wesl;
+use wgpu::Device;
 
 use crate::{
-    ecs::EcsScene,
-    utils::buffer_utils::{CameraBuffers, LightingBuffers, create_uniform_constant_buffer},
-    wgpu_utils::{QueueExt, WgpuExt},
+    material::Material,
+    mesh::Vertex,
+    rendering::{
+        extract::{Extract, ExtractionError, WorldExtractExt},
+        wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
+    },
+    transform::Transform,
 };
+use ecs::{Entity, World};
+
+// Raytracer-specific vertex and material types
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerVertex {
+    pub position: [f32; 4],
+    pub normal: [f32; 4],
+    pub material_index: f32,
+}
+
+impl RaytracerVertex {
+    pub fn from_vertex(vertex: &Vertex, material_index: usize, transform: &Transform) -> Self {
+        let transformation_matrix = transform.get_matrix();
+        let position = transformation_matrix * vertex.position;
+        let normal = transformation_matrix * vertex.normal;
+        Self {
+            position: position.to_array(),
+            normal: normal.to_array(),
+            material_index: material_index as f32,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerMaterial {
+    pub color: [f32; 4],
+}
+
+impl RaytracerMaterial {
+    pub fn from_material(material: &Material) -> Self {
+        Self {
+            color: material.color.to_array(),
+        }
+    }
+
+    pub fn from_mesh_material(material: &Material) -> Self {
+        Self {
+            color: material.color.to_array(),
+        }
+    }
+}
+
+// Raytracer vertex constants
+pub const RAYTRACE_MATERIAL_STRIDE: u32 =
+    (size_of::<RaytracerMaterial>() / size_of::<f32>()) as u32;
+pub const RAYTRACE_VERTEX_STRIDE: u32 = (size_of::<RaytracerVertex>() / size_of::<f32>()) as u32;
+pub const RAYTRACE_VERTEX_NORMAL_OFFSET: u32 =
+    (offset_of!(RaytracerVertex, normal) / size_of::<f32>()) as u32;
+pub const RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET: u32 =
+    (offset_of!(RaytracerVertex, material_index) / size_of::<f32>()) as u32;
 
 #[cfg(target_arch = "wasm32")]
 use wgpu::TextureFormat::R32Float as RaytracerTextureFormat;
@@ -54,16 +115,11 @@ impl Raytracer {
             .build()
     }
 
-    pub fn new(
-        wgpu: &crate::rendering::wgpu::RendererWgpu,
-        window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &EcsScene,
-    ) -> Self {
+    pub fn new(wgpu: &WgpuResources, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
         let shaders = RaytracerShaders::new(&wgpu.device);
-        let buffers = RaytracerBuffers::new(&wgpu.device, window_size, scene);
+        let buffers = RaytracerBuffers::new(&wgpu.device, window_size);
         let bind_group_layouts = RaytracerBindGroupLayouts::new(&wgpu.device);
 
-        // Use builder API for pipeline layouts
         let render_pipeline_layout = wgpu
             .device
             .pipeline_layout()
@@ -82,7 +138,6 @@ impl Raytracer {
             ])
             .build();
 
-        // Use builder API for render pipeline
         let swapchain_capabilities = wgpu.surface.get_capabilities(&wgpu.adapter);
         let swapchain_format = swapchain_capabilities.formats[0];
         let render = wgpu
@@ -115,11 +170,34 @@ impl Raytracer {
         }
     }
 
-    pub fn resize(
+    pub fn update_render_data(
         &mut self,
-        new_size: &winit::dpi::PhysicalSize<u32>,
-        wgpu: &crate::rendering::wgpu::RendererWgpu,
-    ) {
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &World,
+        camera_entity: Entity,
+        sun_light_entity: Entity,
+    ) -> Result<(), ExtractionError> {
+        (
+            self.buffers.materials,
+            self.buffers.vertices,
+            self.buffers.indices,
+        ) = self.extract(device, world)?;
+
+        self.buffers
+            .lighting
+            .update_from_world(queue, world, sun_light_entity);
+        self.buffers
+            .camera
+            .update_from_world(queue, world, camera_entity);
+
+        self.bind_groups =
+            RaytracerBindGroups::new(device, &self.bind_group_layouts, &self.buffers);
+
+        Ok(())
+    }
+
+    pub fn resize(&mut self, new_size: &winit::dpi::PhysicalSize<u32>, wgpu: &WgpuResources) {
         self.buffers.on_resize(wgpu, new_size);
         self.bind_groups
             .on_resize(&wgpu.device, &self.bind_group_layouts, &self.buffers);
@@ -129,12 +207,12 @@ impl Raytracer {
         self.buffers.update_frame_count(queue, frame_count);
     }
 
-    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.buffers.update_camera(queue, scene);
+    pub fn update_camera(&self, queue: &wgpu::Queue, world: &World, camera_entity: Entity) {
+        self.buffers.update_camera(queue, world, camera_entity);
     }
 
-    pub fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.buffers.update_light(queue, scene);
+    pub fn update_light(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
+        self.buffers.update_light(queue, world, sun_light_entity);
     }
 
     pub fn get_material_bind_group(&self) -> &wgpu::BindGroup {
@@ -150,7 +228,7 @@ impl Raytracer {
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
     ) {
-        let mut raytracer_rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Raytracer Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: surface_texture_view,
@@ -165,9 +243,9 @@ impl Raytracer {
             occlusion_query_set: None,
         });
 
-        raytracer_rpass.set_bind_group(0, &self.bind_groups.render, &[]);
-        raytracer_rpass.set_pipeline(&self.pipelines.render);
-        raytracer_rpass.draw(0..3, 0..1);
+        rpass.set_bind_group(0, &self.bind_groups.render, &[]);
+        rpass.set_pipeline(&self.pipelines.render);
+        rpass.draw(0..3, 0..1);
     }
 
     pub fn compute(
@@ -181,19 +259,18 @@ impl Raytracer {
         });
 
         {
-            let mut raytracer_cpass =
-                compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Raytracer Compute Pass"),
-                    timestamp_writes: None,
-                });
+            let mut cpass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Raytracer Compute Pass"),
+                timestamp_writes: None,
+            });
 
-            raytracer_cpass.set_bind_group(0, &self.bind_groups.compute_material, &[]);
-            raytracer_cpass.set_bind_group(1, &self.bind_groups.compute_mesh, &[]);
-            raytracer_cpass.set_bind_group(2, &self.bind_groups.compute_lights, &[]);
-            raytracer_cpass.set_bind_group(3, &self.bind_groups.compute_result_camera, &[]);
+            cpass.set_bind_group(0, &self.bind_groups.compute_material, &[]);
+            cpass.set_bind_group(1, &self.bind_groups.compute_mesh, &[]);
+            cpass.set_bind_group(2, &self.bind_groups.compute_lights, &[]);
+            cpass.set_bind_group(3, &self.bind_groups.compute_result_camera, &[]);
 
-            raytracer_cpass.set_pipeline(&self.pipelines.compute);
-            raytracer_cpass.dispatch_workgroups(window_size.width / 8, window_size.height / 8, 1);
+            cpass.set_pipeline(&self.pipelines.compute);
+            cpass.dispatch_workgroups(window_size.width / 8, window_size.height / 8, 1);
         }
 
         queue.submit(Some(compute_encoder.finish()));
@@ -220,135 +297,109 @@ impl RaytracerShaders {
     }
 }
 
-pub struct RaytracerMaterialBuffers {
+pub struct RaytracerBuffers {
+    // Material buffers
     pub materials: wgpu::Buffer,
     pub material_stride: wgpu::Buffer,
-}
 
-impl RaytracerMaterialBuffers {
-    fn new(device: &wgpu::Device, scene: &EcsScene) -> Self {
-        Self {
-            materials: scene.create_materials_buffer(device),
-            material_stride: create_uniform_constant_buffer(
-                device,
-                "Raytracer Material Stride Buffer",
-                &crate::rendering::wgpu::RAYTRACE_MATERIAL_STRIDE,
-            ),
-        }
-    }
-}
-
-pub struct RaytracerMeshBuffers {
+    // Mesh buffers
     pub vertices: wgpu::Buffer,
     pub vertex_stride: wgpu::Buffer,
     pub vertex_normal_offset: wgpu::Buffer,
     pub vertex_material_offset: wgpu::Buffer,
     pub indices: wgpu::Buffer,
-}
 
-impl RaytracerMeshBuffers {
-    fn new(device: &wgpu::Device, scene: &EcsScene) -> Self {
-        Self {
-            vertices: scene.create_vertices_buffer(device),
-            vertex_stride: create_uniform_constant_buffer(
-                device,
-                "Raytracer Vertex Stride Buffer",
-                &crate::rendering::wgpu::RAYTRACE_VERTEX_STRIDE,
-            ),
-            vertex_normal_offset: create_uniform_constant_buffer(
-                device,
-                "Raytracer Vertex Normal Offset Buffer",
-                &crate::rendering::wgpu::RAYTRACE_VERTEX_NORMAL_OFFSET,
-            ),
-            vertex_material_offset: create_uniform_constant_buffer(
-                device,
-                "Raytracer Vertex Material Offset Buffer",
-                &crate::rendering::wgpu::RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
-            ),
-            indices: scene.create_indices_buffer(device),
-        }
-    }
-}
-
-// Removed RaytracerCameraBuffers - now using unified CameraBuffers from buffer_utils
-
-pub struct RaytracerOtherBuffers {
-    lighting: LightingBuffers,
-    camera: CameraBuffers,
-    frame_count: wgpu::Buffer,
-}
-
-impl RaytracerOtherBuffers {
-    fn new(device: &wgpu::Device, scene: &EcsScene) -> Self {
-        let lighting = LightingBuffers::new(device, scene, "Raytracer");
-        let camera = CameraBuffers::new(device, scene, "Raytracer");
-        
-        let frame_count = create_uniform_constant_buffer(
-            device,
-            "Raytracer Frame Count Buffer",
-            &0u32,
-        );
-        
-        Self {
-            lighting,
-            camera,
-            frame_count,
-        }
-    }
-
-    fn update_frame_count(&self, queue: &wgpu::Queue, frame_count: u32) {
-        queue.write_buffer_data(&self.frame_count, 0, &frame_count);
-    }
-
-    fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.camera.update_from_scene(queue, scene);
-    }
-
-    fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.lighting.update_from_scene(queue, scene);
-    }
-}
-
-pub struct RaytracerBuffers {
-    pub materials: RaytracerMaterialBuffers,
-    pub meshes: RaytracerMeshBuffers,
+    // Other buffers
+    pub lighting: LightingBuffers,
+    pub camera: CameraBuffers,
+    pub frame_count: wgpu::Buffer,
     pub result: wgpu::TextureView,
-    pub other: RaytracerOtherBuffers,
 }
 
 impl RaytracerBuffers {
-    fn new(
-        device: &wgpu::Device,
-        window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &EcsScene,
-    ) -> Self {
-        let materials = RaytracerMaterialBuffers::new(device, scene);
-        let meshes = RaytracerMeshBuffers::new(device, scene);
+    fn new(device: &wgpu::Device, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
+        let initial_materials = vec![RaytracerMaterial {
+            color: [1.0, 1.0, 1.0, 1.0],
+        }];
+
+        let materials_buffer = device
+            .buffer()
+            .label("Raytracer Materials Buffer")
+            .storage(&initial_materials);
+
+        let material_stride = device
+            .buffer()
+            .label("Raytracer Material Stride Buffer")
+            .uniform(&RAYTRACE_MATERIAL_STRIDE);
+
+        let initial_vertices = vec![RaytracerVertex {
+            position: [0.0, 0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0, 0.0],
+            material_index: 0.0,
+        }];
+        let initial_indices = vec![0u32];
+
+        let vertices = device
+            .buffer()
+            .label("Raytracer Vertices Buffer")
+            .storage(&initial_vertices);
+
+        let vertex_stride = device
+            .buffer()
+            .label("Raytracer Vertex Stride Buffer")
+            .uniform(&RAYTRACE_VERTEX_STRIDE);
+
+        let vertex_normal_offset = device
+            .buffer()
+            .label("Raytracer Vertex Normal Offset Buffer")
+            .uniform(&RAYTRACE_VERTEX_NORMAL_OFFSET);
+
+        let vertex_material_offset = device
+            .buffer()
+            .label("Raytracer Vertex Material Offset Buffer")
+            .uniform(&RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET);
+
+        let indices = device
+            .buffer()
+            .label("Raytracer Indices Buffer")
+            .storage(&initial_indices);
+
+        let lighting = LightingBuffers::new(device, "Raytracer");
+        let camera = CameraBuffers::new(device, "Raytracer");
+        let frame_count = device
+            .buffer()
+            .label("Raytracer Frame Count Buffer")
+            .uniform(&0u32);
+
         let result = Self::create_result_texture(device, window_size);
-        let other = RaytracerOtherBuffers::new(device, scene);
+
         Self {
-            materials,
-            meshes,
+            materials: materials_buffer,
+            material_stride,
+            vertices,
+            vertex_stride,
+            vertex_normal_offset,
+            vertex_material_offset,
+            indices,
+            lighting,
+            camera,
+            frame_count,
             result,
-            other,
         }
     }
-    fn on_resize(
-        &mut self,
-        wgpu: &crate::rendering::wgpu::RendererWgpu,
-        new_size: &winit::dpi::PhysicalSize<u32>,
-    ) {
+    fn on_resize(&mut self, wgpu: &WgpuResources, new_size: &winit::dpi::PhysicalSize<u32>) {
         self.update_frame_count(&wgpu.queue, 0);
         self.result = Self::create_result_texture(&wgpu.device, new_size);
     }
     fn update_frame_count(&self, queue: &wgpu::Queue, frame_count: u32) {
-        self.other.update_frame_count(queue, frame_count);
+        queue.write_buffer(&self.frame_count, 0, bytemuck::cast_slice(&[frame_count]));
     }
-    fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.other.update_camera(queue, scene);
+    fn update_camera(&self, queue: &wgpu::Queue, world: &World, camera_entity: Entity) {
+        self.camera.update_from_world(queue, world, camera_entity);
     }
-    fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
-        self.other.update_light(queue, scene);
+    fn update_light(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
+        self.lighting
+            .update_from_world(queue, world, sun_light_entity);
     }
     fn create_result_texture(
         device: &wgpu::Device,
@@ -369,7 +420,7 @@ impl RaytracerBuffers {
     }
 }
 
-struct RaytracerBindGroupLayouts {
+pub struct RaytracerBindGroupLayouts {
     render: wgpu::BindGroupLayout,
     compute_materials: wgpu::BindGroupLayout,
     compute_meshes: wgpu::BindGroupLayout,
@@ -441,30 +492,30 @@ impl RaytracerBindGroups {
         let compute_material = device
             .bind_group(&bgl.compute_materials)
             .label("Raytracer Compute Material Bind Group")
-            .buffer(0, &buffers.materials.materials)
-            .buffer(1, &buffers.materials.material_stride)
+            .buffer(0, &buffers.materials)
+            .buffer(1, &buffers.material_stride)
             .build();
         let compute_mesh = device
             .bind_group(&bgl.compute_meshes)
             .label("Raytracer Compute Mesh Bind Group")
-            .buffer(0, &buffers.meshes.vertices)
-            .buffer(1, &buffers.meshes.vertex_stride)
-            .buffer(2, &buffers.meshes.vertex_normal_offset)
-            .buffer(3, &buffers.meshes.vertex_material_offset)
-            .buffer(4, &buffers.meshes.indices)
+            .buffer(0, &buffers.vertices)
+            .buffer(1, &buffers.vertex_stride)
+            .buffer(2, &buffers.vertex_normal_offset)
+            .buffer(3, &buffers.vertex_material_offset)
+            .buffer(4, &buffers.indices)
             .build();
         let compute_lights = device
             .bind_group(&bgl.compute_lights)
             .label("Raytracer Compute Lights Bind Group")
-            .buffer(0, &buffers.other.lighting.sun_direction)
+            .buffer(0, &buffers.lighting.sun_direction)
             .build();
         let compute_result_camera = device
             .bind_group(&bgl.compute_result_camera)
             .label("Raytracer Compute Result Camera Bind Group")
             .texture(0, &buffers.result)
-            .buffer(1, &buffers.other.camera.camera_to_world)
-            .buffer(2, &buffers.other.camera.camera_inverse_projection)
-            .buffer(3, &buffers.other.frame_count)
+            .buffer(1, &buffers.camera.camera_to_world)
+            .buffer(2, &buffers.camera.camera_inverse_projection)
+            .buffer(3, &buffers.frame_count)
             .build();
         Self {
             render,
@@ -489,15 +540,85 @@ impl RaytracerBindGroups {
             .bind_group(&bgl.compute_result_camera)
             .label("Raytracer Compute Result Camera Bind Group")
             .texture(0, &buffers.result)
-            .buffer(1, &buffers.other.camera.camera_to_world)
-            .buffer(2, &buffers.other.camera.camera_inverse_projection)
-            .buffer(3, &buffers.other.frame_count)
+            .buffer(1, &buffers.camera.camera_to_world)
+            .buffer(2, &buffers.camera.camera_inverse_projection)
+            .buffer(3, &buffers.frame_count)
             .build();
     }
 }
 
-// Add RaytracerPipelines struct
 struct RaytracerPipelines {
     render: wgpu::RenderPipeline,
     compute: wgpu::ComputePipeline,
+}
+
+pub struct RaytracerExtractedData {
+    pub vertices: Vec<RaytracerVertex>,
+    pub materials: Vec<RaytracerMaterial>,
+    pub indices: Vec<u32>,
+    pub vertex_count: u32,
+    pub material_count: u32,
+    pub index_count: u32,
+}
+
+impl Extract for Raytracer {
+    type ExtractedData = (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer); // (materials, vertices, indices)
+
+    fn extract(
+        &self,
+        device: &Device,
+        world: &World,
+    ) -> Result<Self::ExtractedData, ExtractionError> {
+        let material_entities = world.get_materials();
+        let mut materials = Vec::new();
+        let mut material_entity_to_index = HashMap::new();
+
+        for entity in material_entities {
+            let material = world.extract_material_component(entity)?;
+            let material_index = materials.len();
+            materials.push(RaytracerMaterial::from_material(&material));
+            material_entity_to_index.insert(entity, material_index);
+        }
+
+        let renderables = world.get_renderables();
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut vertex_offset = 0u32;
+
+        // Extract and combine all mesh data
+        for entity in renderables {
+            let transform = world.extract_transform_component(entity)?;
+            let mesh = world.extract_mesh_component(entity)?;
+            let material_index = *material_entity_to_index
+                .get(&mesh.material_entity)
+                .expect("Material entity not found for mesh");
+
+            for vertex in mesh.vertices() {
+                let raytracer_vertex =
+                    RaytracerVertex::from_vertex(vertex, material_index, &transform);
+                vertices.push(raytracer_vertex);
+            }
+
+            for &index in mesh.indices() {
+                indices.push(index + vertex_offset);
+            }
+
+            vertex_offset += mesh.vertices().len() as u32;
+        }
+
+        let material_buffer = device
+            .buffer()
+            .label("Raytracer Materials Buffer")
+            .storage(&materials);
+        let vertices_buffer = device
+            .buffer()
+            .label("Raytracer Vertices Buffer")
+            .storage(&vertices);
+        let indices_buffer = device
+            .buffer()
+            .label("Raytracer Indices Buffer")
+            .storage(&indices);
+
+        Ok((material_buffer, vertices_buffer, indices_buffer))
+    }
 }

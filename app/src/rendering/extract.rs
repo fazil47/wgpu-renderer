@@ -1,0 +1,110 @@
+use crate::{material::Material, mesh::Mesh, transform::Transform};
+use ecs::{Entity, World};
+use wgpu::Device;
+
+/// Trait for extracting renderable data from ECS World
+pub trait Extract {
+    type ExtractedData;
+
+    fn extract(
+        &self,
+        device: &Device,
+        world: &World,
+    ) -> Result<Self::ExtractedData, ExtractionError>;
+}
+
+#[derive(Debug)]
+pub enum ExtractionError {
+    BorrowConflict(String),
+    MissingComponent(Entity, String),
+    InvalidMaterialReference(Entity),
+    Misc(String),
+}
+
+impl std::fmt::Display for ExtractionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExtractionError::BorrowConflict(msg) => write!(f, "Borrow conflict: {msg}"),
+            ExtractionError::MissingComponent(entity, component) => {
+                write!(f, "Entity {entity:?} missing component: {component}")
+            }
+            ExtractionError::InvalidMaterialReference(entity) => {
+                write!(f, "Entity {entity:?} has invalid material reference")
+            }
+            ExtractionError::Misc(msg) => write!(f, "Extraction error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for ExtractionError {}
+
+pub trait WorldExtractExt {
+    fn get_materials(&self) -> Vec<Entity>;
+    fn get_renderables(&self) -> Vec<Entity>;
+
+    fn extract_material_component(&self, entity: Entity) -> Result<Material, ExtractionError>;
+    fn extract_transform_component(&self, entity: Entity) -> Result<Transform, ExtractionError>;
+    fn extract_mesh_component(&self, entity: Entity) -> Result<Mesh, ExtractionError>;
+    fn extract_mesh_material(&self, mesh: &Mesh) -> Result<Material, ExtractionError>;
+}
+
+impl WorldExtractExt for World {
+    fn get_materials(&self) -> Vec<Entity> {
+        self.get_entities_with::<Material>().into_iter().collect()
+    }
+
+    fn extract_material_component(&self, entity: Entity) -> Result<Material, ExtractionError> {
+        let material = self
+            .get_component::<Material>(entity)
+            .ok_or_else(|| ExtractionError::MissingComponent(entity, "Material".to_string()))?;
+        let material: Material = material
+            .try_borrow()
+            .map_err(|_| ExtractionError::BorrowConflict("Material".to_string()))?
+            .clone();
+
+        Ok(material)
+    }
+
+    fn get_renderables(&self) -> Vec<Entity> {
+        self.get_entities_with_2::<Transform, Mesh>()
+            .into_iter()
+            .collect()
+    }
+
+    fn extract_transform_component(&self, entity: Entity) -> Result<Transform, ExtractionError> {
+        let transform = self
+            .get_component::<Transform>(entity)
+            .ok_or_else(|| ExtractionError::MissingComponent(entity, "Transform".to_string()))?;
+        let transform: Transform = *transform
+            .try_borrow()
+            .map_err(|_| ExtractionError::BorrowConflict("Transform".to_string()))?;
+
+        Ok(transform)
+    }
+
+    fn extract_mesh_component(&self, entity: Entity) -> Result<Mesh, ExtractionError> {
+        let mesh = self
+            .get_component::<Mesh>(entity)
+            .ok_or_else(|| ExtractionError::MissingComponent(entity, "Mesh".to_string()))?;
+        let mesh: Mesh = mesh
+            .try_borrow()
+            .map_err(|_| ExtractionError::BorrowConflict("Mesh".to_string()))?
+            .clone();
+
+        Ok(mesh)
+    }
+
+    fn extract_mesh_material(&self, mesh: &Mesh) -> Result<Material, ExtractionError> {
+        let material = self
+            .get_component::<Material>(mesh.material_entity)
+            .ok_or_else(|| {
+                ExtractionError::MissingComponent(mesh.material_entity, "Material".to_string())
+            })?;
+        let material: Material = material
+            .try_borrow()
+            .map_err(|_| ExtractionError::BorrowConflict("Material".to_string()))?
+            .clone();
+
+        Ok(material)
+    }
+}

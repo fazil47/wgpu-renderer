@@ -1,11 +1,11 @@
 use std::borrow::Cow;
-use wgpu::util::DeviceExt;
+use wgpu::{Texture, util::DeviceExt};
 
 // Re-export commonly used types
 pub use wgpu::{
     AddressMode, BindGroup, BindGroupLayout, Buffer, CommandEncoder, CompareFunction, ComputePass,
     ComputePipeline, Device, Face, FilterMode, Queue, RenderPass, RenderPipeline, Sampler,
-    ShaderModule, ShaderStages, Texture, TextureFormat, TextureView,
+    ShaderModule, ShaderStages, TextureFormat, TextureView,
 };
 
 /// Core trait that extends wgpu::Device with fluent builders

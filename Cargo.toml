@@ -1,3 +1,6 @@
 [workspace]
-members = ["app", "xtask", "maths"]
+members = ["app", "xtask", "maths", "ecs"]
 resolver = "2"
+
+[workspace.dependencies]
+transform-gizmo-egui = { git = "https://github.com/fazil47/transform-gizmo", package = "transform-gizmo-egui" }

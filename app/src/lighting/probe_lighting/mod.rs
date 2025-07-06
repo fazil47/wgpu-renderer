@@ -1,7 +1,7 @@
 pub mod updater;
 pub mod visualization;
 
-use crate::wgpu_utils::{QueueExt, WgpuExt};
+use crate::rendering::wgpu::{QueueExt, WgpuExt};
 use maths::Vec3;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -243,9 +243,7 @@ impl ProbeGrid {
             return false; // No change needed
         }
 
-        log::info!(
-            "Recreating probe atlas textures with dimensions {width}x{height}x{depth}"
-        );
+        log::info!("Recreating probe atlas textures with dimensions {width}x{height}x{depth}");
 
         let atlas_size = wgpu::Extent3d {
             width,

@@ -1,7 +1,7 @@
 use crate::{
     lighting::probe_lighting::{Dimensions, ProbeGrid, ProbeLightingState},
-    rendering::wgpu::{RendererWgpu, Vertex},
-    wgpu_utils::{QueueExt, WgpuExt},
+    rendering::wgpu::{QueueExt, WgpuExt},
+    rendering::{rasterizer::GpuVertex, wgpu::WgpuResources},
 };
 use maths::Vec3;
 use wesl::include_wesl;
@@ -47,7 +47,7 @@ pub struct ProbeVisualization {
 }
 
 impl ProbeVisualization {
-    pub fn new(wgpu: &RendererWgpu, probe_grid: &ProbeGrid, camera_buffer: &wgpu::Buffer) -> Self {
+    pub fn new(wgpu: &WgpuResources, probe_grid: &ProbeGrid, camera_buffer: &wgpu::Buffer) -> Self {
         let (sphere_vertices, sphere_indices) = Self::generate_sphere_mesh(16, 16, 0.075);
 
         let vertex_buffer = wgpu
@@ -102,7 +102,7 @@ impl ProbeVisualization {
             .layout(&render_pipeline_layout)
             .vertex_shader(&shader, "vs_main")
             .fragment_shader(&shader, "fs_main")
-            .vertex_buffer(Vertex::desc())
+            .vertex_buffer(GpuVertex::desc())
             .vertex_buffer(Self::instance_desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
@@ -126,7 +126,7 @@ impl ProbeVisualization {
         lat_segments: u32,
         lon_segments: u32,
         radius: f32,
-    ) -> (Vec<Vertex>, Vec<u32>) {
+    ) -> (Vec<GpuVertex>, Vec<u32>) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
@@ -148,7 +148,7 @@ impl ProbeVisualization {
                 let position = [x * radius, y * radius, z * radius, 1.0];
                 let normal = [x, y, z, 0.0];
 
-                vertices.push(Vertex { position, normal });
+                vertices.push(GpuVertex { position, normal });
             }
         }
 

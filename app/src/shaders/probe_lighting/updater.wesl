@@ -3,28 +3,10 @@ import super::util::{
     ProbeGridConfig,
     probe_index_to_world_pos,
     probe_index_to_tex_coords,
-    world_to_texture_coords,
 };
 import super::super::raytracer::util::{
     sample_radiance_with_lighting,
-    trace_triangles,
-    get_interpolated_color_from_hit,
-    get_triangle_data,
-    get_interpolated_color,
-    Ray,
-    HitInfo,
-    Material,
-    Vertex,
-    Triangle,
-    FLT_MAX,
-    SUN_INTENSITY,
-    materials,
-    material_stride,
-    vertices,
-    vertex_stride,
-    vertex_normal_offset,
-    vertex_material_offset,
-    indices,
+    MAX_BOUNCES
 };
 
 @group(3) @binding(0) var probe_atlas_l0: texture_storage_3d<rgba32float, write>;
@@ -87,7 +69,7 @@ fn project_to_sh(probe_pos: vec3f, probe_index: u32) -> SHCoefficients {
 
         // Use probe position and sample index for unique bounce seeds
         let bounce_seed = f32(probe_index) * 0.1 + fi * 0.01;
-        let radiance = sample_radiance_with_lighting(probe_pos, direction, bounce_seed);
+        let radiance = sample_radiance_with_lighting(probe_pos, direction, MAX_BOUNCES, bounce_seed).rgb;
 
         // L0 basis function (constant)
         let y00 = SH_C0;
@@ -109,7 +91,7 @@ fn project_to_sh(probe_pos: vec3f, probe_index: u32) -> SHCoefficients {
     }
 
     // Apply a small normalization factor to prevent excessive brightness
-    let normalization_factor = 0.5;
+    let normalization_factor = 1.0;
     coeffs.l0 *= normalization_factor;
     coeffs.l1x *= normalization_factor;
     coeffs.l1y *= normalization_factor;

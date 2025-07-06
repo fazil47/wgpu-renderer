@@ -1,8 +1,15 @@
+use std::{cell::RefCell, rc::Rc};
+
+use ecs::{Entity, World};
+use transform_gizmo_egui::{Gizmo, GizmoConfig, GizmoExt, GizmoMode, GizmoOrientation};
 use winit::window::Window;
+
+use crate::{camera::Camera, transform::Transform};
 
 pub struct RendererEgui {
     pub renderer: egui_wgpu::Renderer,
     pub state: egui_winit::State,
+    pub gizmo: Rc<RefCell<Gizmo>>,
 }
 
 impl RendererEgui {
@@ -29,6 +36,7 @@ impl RendererEgui {
         Self {
             renderer: egui_renderer,
             state: egui_state,
+            gizmo: Rc::new(RefCell::new(Gizmo::default())),
         }
     }
 
@@ -69,5 +77,42 @@ impl RendererEgui {
             egui_primitives,
             egui_screen_descriptor,
         );
+    }
+
+    pub fn update_camera(&self, world: &World, camera_entity: Entity) {
+        if let Some(camera_component) = world.get_component::<Camera>(camera_entity) {
+            let camera = camera_component.borrow();
+            self.gizmo.borrow_mut().update_config(GizmoConfig {
+                view_matrix: camera.view_matrix().into(),
+                projection_matrix: camera.projection_matrix().into(),
+                modes: GizmoMode::all(),
+                orientation: GizmoOrientation::Local,
+                ..Default::default()
+            });
+        }
+    }
+
+    pub fn select_entity(&self, world: &World, ui: &egui::Ui, entity: Entity) -> bool {
+        let mut has_changed = false;
+        let transform = world.get_component::<Transform>(entity);
+
+        if transform.is_none() {
+            return has_changed;
+        }
+
+        let transform = transform.unwrap();
+        let transform_read = transform.clone();
+        let transform_read = *transform_read.borrow();
+        if let Some((_, new_transforms)) = self
+            .gizmo
+            .borrow_mut()
+            .interact(ui, &[transform_read.into()])
+        {
+            let transform = transform.clone();
+            *transform.borrow_mut() = new_transforms[0].into();
+            has_changed = true;
+        }
+
+        has_changed
     }
 }

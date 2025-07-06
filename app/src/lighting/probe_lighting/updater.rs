@@ -1,6 +1,6 @@
 use wesl::include_wesl;
 
-use crate::wgpu_utils::WgpuExt;
+use crate::rendering::wgpu::WgpuExt;
 
 /// Compute pipeline for updating probe coefficients
 pub struct ProbeUpdatePipeline {
@@ -11,14 +11,9 @@ pub struct ProbeUpdatePipeline {
 impl ProbeUpdatePipeline {
     pub fn new(
         device: &wgpu::Device,
-        l0_brick_atlas_view: &wgpu::TextureView,
-        l1x_brick_atlas_view: &wgpu::TextureView,
-        l1y_brick_atlas_view: &wgpu::TextureView,
-        l1z_brick_atlas_view: &wgpu::TextureView,
-        material_bind_group_layout: &wgpu::BindGroupLayout,
-        mesh_bind_group_layout: &wgpu::BindGroupLayout,
-        lights_bind_group_layout: &wgpu::BindGroupLayout,
-        config_sun_bind_group_layout: &wgpu::BindGroupLayout,
+        material_bgl: &wgpu::BindGroupLayout,
+        mesh_bgl: &wgpu::BindGroupLayout,
+        lights_bgl: &wgpu::BindGroupLayout,
     ) -> Self {
         let shader = device
             .shader()
@@ -58,12 +53,7 @@ impl ProbeUpdatePipeline {
         let pipeline_layout = device
             .pipeline_layout()
             .label("Probe Update Pipeline Layout")
-            .bind_group_layouts(&[
-                material_bind_group_layout,
-                mesh_bind_group_layout,
-                lights_bind_group_layout,
-                &probe_bind_group_layout,
-            ])
+            .bind_group_layouts(&[material_bgl, mesh_bgl, lights_bgl, &probe_bind_group_layout])
             .build();
 
         let compute_pipeline = device
@@ -89,9 +79,7 @@ impl ProbeUpdatePipeline {
         probe_bind_group: &wgpu::BindGroup,
         probe_count: u32,
     ) {
-        log::debug!(
-            "ProbeUpdatePipeline::dispatch called with {probe_count} probes"
-        );
+        log::debug!("ProbeUpdatePipeline::dispatch called with {probe_count} probes");
 
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("Probe Update Compute Pass"),
@@ -106,11 +94,8 @@ impl ProbeUpdatePipeline {
 
         let workgroup_size = 64;
         let num_workgroups = probe_count.div_ceil(workgroup_size);
-        log::debug!(
-            "Dispatching {num_workgroups} workgroups (workgroup_size={workgroup_size})"
-        );
+        log::debug!("Dispatching {num_workgroups} workgroups (workgroup_size={workgroup_size})");
         compute_pass.dispatch_workgroups(num_workgroups, 1, 1);
         log::debug!("Compute workgroups dispatched successfully");
     }
-
 }

@@ -1,13 +1,11 @@
-use std::{
-    mem::{offset_of, size_of},
-    sync::Arc,
-};
-
+use std::sync::Arc;
 use winit::window::Window;
 
-use crate::{mesh::Material, wgpu_utils::WgpuExt};
+use crate::material::RGBA;
 
-pub struct RendererWgpu {
+use super::WgpuExt;
+
+pub struct WgpuResources {
     pub instance: wgpu::Instance,
     pub surface: wgpu::Surface<'static>,
     pub adapter: wgpu::Adapter,
@@ -16,7 +14,7 @@ pub struct RendererWgpu {
     pub surface_config: wgpu::SurfaceConfiguration,
 }
 
-impl RendererWgpu {
+impl WgpuResources {
     pub async fn new(window: Arc<Window>, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).unwrap();
@@ -32,17 +30,15 @@ impl RendererWgpu {
 
         // Create the logical device and command queue
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("Device"),
-                    required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                        | wgpu::Features::FLOAT32_FILTERABLE,
-                    // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                    required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Device"),
+                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                    | wgpu::Features::FLOAT32_FILTERABLE,
+                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
+                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
             .await
             .expect("Failed to create device");
 
@@ -72,84 +68,20 @@ pub type Index = u32;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pub position: [f32; 4],
-    pub normal: [f32; 4],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-// Raytracer vertex field offsets are calculated based on the following assumptions:
-// The field are aligned to 4 bytes.
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RaytracerVertex {
-    pub position: [f32; 4],
-    pub normal: [f32; 4],
-    pub material_id: f32,
-}
-
-impl RaytracerVertex {
-    pub fn from_vertex(vertex: &Vertex, material_id: usize) -> Self {
-        Self {
-            position: vertex.position,
-            normal: vertex.normal,
-            material_id: material_id as f32,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RaytracerMaterial {
-    pub color: [f32; 4],
-}
-
-impl RaytracerMaterial {
-    pub fn from_material(material: &Material) -> Self {
-        Self {
-            color: material.color.to_array(),
-        }
-    }
-}
-
-pub const RAYTRACE_MATERIAL_STRIDE: u32 =
-    (size_of::<RaytracerMaterial>() / size_of::<f32>()) as u32;
-
-pub const RAYTRACE_VERTEX_STRIDE: u32 = (size_of::<RaytracerVertex>() / size_of::<f32>()) as u32;
-pub const RAYTRACE_VERTEX_NORMAL_OFFSET: u32 =
-    (offset_of!(RaytracerVertex, normal) / size_of::<f32>()) as u32;
-pub const RAYTRACE_VERTEX_MATERIAL_ID_OFFSET: u32 =
-    (offset_of!(RaytracerVertex, material_id) / size_of::<f32>()) as u32;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
-pub struct RGBA {
+pub struct GpuRGBA {
     r: f32,
     g: f32,
     b: f32,
     a: f32,
 }
 
-impl RGBA {
-    pub fn new(rgba: [f32; 4]) -> Self {
+impl GpuRGBA {
+    pub fn new(rgba: RGBA) -> Self {
         Self {
-            r: rgba[0],
-            g: rgba[1],
-            b: rgba[2],
-            a: rgba[3],
+            r: rgba.r,
+            g: rgba.g,
+            b: rgba.b,
+            a: rgba.a,
         }
     }
 

@@ -1,7 +1,8 @@
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::ops::Div;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,
@@ -17,7 +18,7 @@ impl Vec3 {
         Self { x, y, z }
     }
 
-    pub const fn from_array(arr: [f32; 3]) -> Self {
+    pub const fn from_array(arr: &[f32; 3]) -> Self {
         Self::new(arr[0], arr[1], arr[2])
     }
 
@@ -102,6 +103,14 @@ impl Mul<f32> for Vec3 {
     }
 }
 
+impl Div<f32> for Vec3 {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Self::new(self.x / rhs, self.y / rhs, self.z / rhs)
+    }
+}
+
 impl Mul<Vec3> for Vec3 {
     type Output = Self;
 
@@ -149,6 +158,14 @@ impl Vec4 {
         Self::new(arr[0], arr[1], arr[2], arr[3])
     }
 
+    pub const fn from_point(point: Vec3) -> Self {
+        Self::new(point.x, point.y, point.z, 1.0)
+    }
+
+    pub const fn from_direction(vector: Vec3) -> Self {
+        Self::new(vector.x, vector.y, vector.z, 0.0)
+    }
+
     pub const fn to_array(&self) -> [f32; 4] {
         [self.x, self.y, self.z, self.w]
     }
@@ -193,6 +210,14 @@ impl Mul<f32> for Vec4 {
 
     fn mul(self, rhs: f32) -> Self::Output {
         Self::new(self.x * rhs, self.y * rhs, self.z * rhs, self.w * rhs)
+    }
+}
+
+impl Div<f32> for Vec4 {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Self::new(self.x / rhs, self.y / rhs, self.z / rhs, self.w / rhs)
     }
 }
 
@@ -374,6 +399,71 @@ impl Mat4 {
         self.adjugate() * (1.0 / det)
     }
 
+    pub fn from_translation(translation: Vec3) -> Self {
+        Self::from_cols(
+            Vec4::new(1.0, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, 1.0, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, 1.0, 0.0),
+            Vec4::new(translation.x, translation.y, translation.z, 1.0),
+        )
+    }
+
+    pub fn from_rotation(quat: Quat) -> Self {
+        let (x, y, z, w) = (quat.x, quat.y, quat.z, quat.w);
+        let (x2, y2, z2) = (x + x, y + y, z + z);
+
+        let xx2 = x * x2;
+        let yy2 = y * y2;
+        let zz2 = z * z2;
+        let xy2 = x * y2;
+        let xz2 = x * z2;
+        let yz2 = y * z2;
+        let wx2 = w * x2;
+        let wy2 = w * y2;
+        let wz2 = w * z2;
+
+        Self::from_cols(
+            Vec4::new(1.0 - (yy2 + zz2), xy2 + wz2, xz2 - wy2, 0.0),
+            Vec4::new(xy2 - wz2, 1.0 - (xx2 + zz2), yz2 + wx2, 0.0),
+            Vec4::new(xz2 + wy2, yz2 - wx2, 1.0 - (xx2 + yy2), 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        )
+    }
+
+    pub fn from_scale(scale: Vec3) -> Self {
+        Self::from_cols(
+            Vec4::new(scale.x, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, scale.y, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, scale.z, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        )
+    }
+
+    pub fn extract_translation(&self) -> Vec3 {
+        Vec3::new(self.w_axis.x, self.w_axis.y, self.w_axis.z)
+    }
+
+    pub fn extract_scale(&self) -> Vec3 {
+        let scale_x = Vec3::new(self.x_axis.x, self.x_axis.y, self.x_axis.z).length();
+        let scale_y = Vec3::new(self.y_axis.x, self.y_axis.y, self.y_axis.z).length();
+        let scale_z = Vec3::new(self.z_axis.x, self.z_axis.y, self.z_axis.z).length();
+        Vec3::new(scale_x, scale_y, scale_z)
+    }
+
+    pub fn extract_rotation(&self) -> Quat {
+        let scale = self.extract_scale();
+
+        let rotation_matrix = Self::from_cols(
+            self.x_axis / scale.x,
+            self.y_axis / scale.y,
+            self.z_axis / scale.z,
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        );
+
+        Quat::from_rotation_matrix(&rotation_matrix)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     const fn det3(
         a1: f32,
         a2: f32,
@@ -512,7 +602,7 @@ impl Mul<Vec4> for Mat4 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Quat {
     pub x: f32,
     pub y: f32,
@@ -565,6 +655,36 @@ impl Quat {
         // The inverse of a unit quaternion is its conjugate
         Self::new(-self.x, -self.y, -self.z, self.w)
     }
+
+    pub fn from_rotation_matrix(mat: &Mat4) -> Self {
+        let m11 = mat.x_axis.x;
+        let m12 = mat.y_axis.x;
+        let m13 = mat.z_axis.x;
+        let m21 = mat.x_axis.y;
+        let m22 = mat.y_axis.y;
+        let m23 = mat.z_axis.y;
+        let m31 = mat.x_axis.z;
+        let m32 = mat.y_axis.z;
+        let m33 = mat.z_axis.z;
+
+        let trace = m11 + m22 + m33;
+
+        let quat = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            Self::new((m32 - m23) / s, (m13 - m31) / s, (m21 - m12) / s, 0.25 * s)
+        } else if m11 > m22 && m11 > m33 {
+            let s = (1.0 + m11 - m22 - m33).sqrt() * 2.0;
+            Self::new(0.25 * s, (m12 + m21) / s, (m13 + m31) / s, (m32 - m23) / s)
+        } else if m22 > m33 {
+            let s = (1.0 + m22 - m11 - m33).sqrt() * 2.0;
+            Self::new((m12 + m21) / s, 0.25 * s, (m23 + m32) / s, (m13 - m31) / s)
+        } else {
+            let s = (1.0 + m33 - m11 - m22).sqrt() * 2.0;
+            Self::new((m13 + m31) / s, (m23 + m32) / s, 0.25 * s, (m21 - m12) / s)
+        };
+
+        quat.normalize()
+    }
 }
 
 impl Mul<Vec3> for Quat {
@@ -589,5 +709,74 @@ impl Mul<Vec3> for Quat {
             qv.w * q_inv.y + qv.y * q_inv.w + qv.z * q_inv.x - qv.x * q_inv.z,
             qv.w * q_inv.z + qv.z * q_inv.w + qv.x * q_inv.y - qv.y * q_inv.x,
         )
+    }
+}
+
+/// Transform Gizmo integration
+
+impl Into<transform_gizmo_egui::mint::Vector3<f64>> for Vec3 {
+    fn into(self) -> transform_gizmo_egui::mint::Vector3<f64> {
+        transform_gizmo_egui::mint::Vector3 {
+            x: self.x as f64,
+            y: self.y as f64,
+            z: self.z as f64,
+        }
+    }
+}
+
+impl From<transform_gizmo_egui::mint::Vector3<f64>> for Vec3 {
+    fn from(value: transform_gizmo_egui::mint::Vector3<f64>) -> Self {
+        Self::new(value.x as f32, value.y as f32, value.z as f32)
+    }
+}
+
+impl Into<transform_gizmo_egui::mint::Quaternion<f64>> for Quat {
+    fn into(self) -> transform_gizmo_egui::mint::Quaternion<f64> {
+        transform_gizmo_egui::mint::Quaternion {
+            v: transform_gizmo_egui::mint::Vector3 {
+                x: self.x as f64,
+                y: self.y as f64,
+                z: self.z as f64,
+            },
+            s: self.w as f64,
+        }
+    }
+}
+
+impl From<transform_gizmo_egui::mint::Quaternion<f64>> for Quat {
+    fn from(value: transform_gizmo_egui::mint::Quaternion<f64>) -> Self {
+        Self::new(
+            value.v.x as f32,
+            value.v.y as f32,
+            value.v.z as f32,
+            value.s as f32,
+        )
+    }
+}
+
+impl Into<transform_gizmo_egui::mint::Vector4<f64>> for Vec4 {
+    fn into(self) -> transform_gizmo_egui::mint::Vector4<f64> {
+        transform_gizmo_egui::mint::Vector4 {
+            x: self.x as f64,
+            y: self.y as f64,
+            z: self.z as f64,
+            w: self.w as f64,
+        }
+    }
+}
+
+impl Into<transform_gizmo_egui::mint::RowMatrix4<f64>> for Mat4 {
+    fn into(self) -> transform_gizmo_egui::mint::RowMatrix4<f64> {
+        let x = Vec4::new(self.a1(), self.b1(), self.c1(), self.d1());
+        let y = Vec4::new(self.a2(), self.b2(), self.c2(), self.d2());
+        let z = Vec4::new(self.a3(), self.b3(), self.c3(), self.d3());
+        let w = Vec4::new(self.a4(), self.b4(), self.c4(), self.d4());
+
+        transform_gizmo_egui::mint::RowMatrix4 {
+            x: x.into(),
+            y: y.into(),
+            z: z.into(),
+            w: w.into(),
+        }
     }
 }

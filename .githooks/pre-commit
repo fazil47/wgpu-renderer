@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# Pre-commit hook to run cargo fmt on all Rust files
+
+# Check if cargo fmt is available
+if ! command -v cargo fmt >/dev/null 2>&1; then
+    echo "Error: cargo fmt is not available. Please install rustfmt."
+    exit 1
+fi
+
+# Run cargo fmt on the entire workspace
+echo "Running cargo fmt..."
+cargo fmt --all
+
+echo "Code formatting check passed."
+exit 0
