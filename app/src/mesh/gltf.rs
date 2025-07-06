@@ -1,5 +1,5 @@
 use super::{Material, Mesh};
-use crate::wgpu::{RGBA, Vertex};
+use crate::rendering::wgpu::{RGBA, Vertex};
 use gltf::material::AlphaMode;
 use maths::{Mat4, Vec3};
 use std::{collections::HashMap, path::Path};

@@ -6,9 +6,9 @@ use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use winit::{event::WindowEvent, window::Window};
+use winit::{event::{DeviceEvent, WindowEvent}, window::Window};
 
-use crate::{camera::CameraController, renderer::Renderer, scene::Scene};
+use crate::{ecs::{EcsScene}, input::CameraController, core::renderer::Renderer};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mesh::gltf::GltfMeshExt;
@@ -21,7 +21,7 @@ pub struct Engine {
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub camera_controller: CameraController,
     pub renderer: Renderer,
-    scene: Scene,
+    scene: EcsScene,
     stat: EngineStatistics,
     config: EngineConfiguration,
 }
@@ -34,13 +34,14 @@ impl Engine {
         window_size.height = window_size.height.max(1);
 
         #[allow(unused_mut)]
-        let mut scene = Scene::new(&window_size);
+        let mut scene = EcsScene::new(&window_size);
         let camera_controller = CameraController::new(0.8);
 
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Ok(materials) = crate::mesh::Material::from_gltf("assets/cornell-box.glb") {
-                scene.materials = materials;
+                // Load materials into ECS
+                EcsScene::create_mesh_entities_from_materials(&mut scene.world, materials);
             } else {
                 log::warn!("Failed to load GLTF mesh");
             }
@@ -177,6 +178,21 @@ impl Engine {
             self.stat.frame_count = 0;
             self.camera_controller
                 .update_camera(&mut self.scene, self.stat.delta_time);
+        }
+    }
+
+    pub fn process_device_events(&mut self, event: &DeviceEvent) {
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                self.camera_controller.process_mouse(delta.0, delta.1);
+                
+                if self.camera_controller.is_cursor_locked() {
+                    self.stat.frame_count = 0;
+                    self.camera_controller
+                        .update_camera(&mut self.scene, self.stat.delta_time);
+                }
+            }
+            _ => {}
         }
     }
 }

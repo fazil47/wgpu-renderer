@@ -1,6 +1,6 @@
 use crate::{
-    probe_lighting::{Dimensions, ProbeGrid, ProbeLightingState},
-    wgpu::{RendererWgpu, Vertex},
+    lighting::probe_lighting::{Dimensions, ProbeGrid, ProbeLightingState},
+    rendering::wgpu::{RendererWgpu, Vertex},
     wgpu_utils::{QueueExt, WgpuExt},
 };
 use maths::Vec3;
@@ -106,7 +106,7 @@ impl ProbeVisualization {
             .vertex_buffer(Self::instance_desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
-            .depth_test_less(crate::wgpu::Texture::DEPTH_FORMAT)
+            .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
             .build()
             .expect("Failed to create probe visualization render pipeline");
 

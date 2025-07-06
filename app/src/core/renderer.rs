@@ -2,8 +2,8 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use winit::window::Window;
 
 use crate::{
-    egui::RendererEgui, engine::EngineConfiguration, rasterizer::Rasterizer, raytracer::Raytracer,
-    scene::Scene, wgpu::RendererWgpu,
+    ui::egui::RendererEgui, core::engine::EngineConfiguration, rendering::rasterizer::Rasterizer, rendering::raytracer::Raytracer,
+    ecs::EcsScene, rendering::wgpu::RendererWgpu,
 };
 
 pub struct Renderer {
@@ -17,7 +17,7 @@ impl Renderer {
     pub async fn new(
         window: Arc<Window>,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &mut Scene,
+        scene: &mut EcsScene,
     ) -> Self {
         let wgpu = RendererWgpu::new(window.clone(), window_size).await;
         let egui = RendererEgui::new(
@@ -38,7 +38,7 @@ impl Renderer {
         }
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, scene: &Scene) {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, scene: &EcsScene) {
         self.update_camera(scene);
 
         // Reconfigure the surface with the new size
@@ -65,7 +65,7 @@ impl Renderer {
         window: &winit::window::Window,
         window_size: &winit::dpi::PhysicalSize<u32>,
         config: &EngineConfiguration,
-        scene: &mut Scene,
+        scene: &mut EcsScene,
         frame_count: u32,
         egui_output: egui::FullOutput,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -132,7 +132,7 @@ impl Renderer {
                     &self.wgpu.device,
                     &mut render_encoder,
                     &surface_texture_view,
-                    &scene.materials,
+                    scene,
                 );
 
                 // Render probe visualization if enabled
@@ -163,14 +163,14 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn update_camera(&self, scene: &Scene) {
+    pub fn update_camera(&self, scene: &EcsScene) {
         self.rasterizer
             .borrow()
             .update_camera(&self.wgpu.queue, scene);
         self.raytracer.update_camera(&self.wgpu.queue, scene);
     }
 
-    pub fn update_light(&self, scene: &Scene) {
+    pub fn update_light(&self, scene: &EcsScene) {
         self.rasterizer
             .borrow()
             .update_light(&self.wgpu.queue, scene);

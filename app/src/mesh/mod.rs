@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::wgpu::{
+use crate::rendering::wgpu::{
     Index, RAYTRACE_MATERIAL_STRIDE, RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
     RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE, RGBA, RaytracerMaterial,
     RaytracerVertex, Vertex,
@@ -20,7 +20,7 @@ impl Material {
         }
     }
 
-    fn add_mesh(&mut self, mesh: Mesh) {
+    pub fn add_mesh(&mut self, mesh: Mesh) {
         self.meshes.push(mesh);
     }
 
@@ -187,8 +187,20 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    fn new(vertices: Vec<Vertex>, indices: Vec<Index>) -> Self {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<Index>) -> Self {
         Self { vertices, indices }
+    }
+
+    pub fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+
+    pub fn indices(&self) -> &[Index] {
+        &self.indices
+    }
+
+    pub fn into_parts(self) -> (Vec<Vertex>, Vec<Index>) {
+        (self.vertices, self.indices)
     }
 }
 

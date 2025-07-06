@@ -135,7 +135,7 @@ pub const RAYTRACE_VERTEX_MATERIAL_ID_OFFSET: u32 =
     (offset_of!(RaytracerVertex, material_id) / size_of::<f32>()) as u32;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct RGBA {
     r: f32,
     g: f32,

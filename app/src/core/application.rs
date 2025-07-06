@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{DeviceEvent, DeviceId, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
 };
@@ -15,7 +15,7 @@ use winit::platform::web::WindowExtWebSys;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utils::load_icon;
 
-use crate::engine::Engine;
+use crate::core::engine::Engine;
 
 pub struct StateInitializationEvent(Engine);
 
@@ -140,5 +140,18 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
 
             _ => {}
         };
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        let State::Initialized(ref mut engine) = self.application_state else {
+            return;
+        };
+
+        engine.process_device_events(&event);
     }
 }

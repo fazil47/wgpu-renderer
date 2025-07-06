@@ -1,20 +1,21 @@
 use wesl::include_wesl;
 
 use crate::{
-    mesh::Material,
-    probe_lighting::{
+    lighting::probe_lighting::{
         Dimensions, ProbeGrid, ProbeGridConfig,
         updater::ProbeUpdatePipeline,
         visualization::{ProbeUIResult, ProbeVisualization},
     },
-    raytracer::Raytracer,
-    scene::Scene,
-    wgpu::{RendererWgpu, Vertex},
-    wgpu_utils::{QueueExt, WgpuExt, render_pass},
+    rendering::raytracer::Raytracer,
+    ecs::EcsScene,
+    utils::buffer_utils::{CameraBuffers, LightingBuffers, create_vertex_buffer, create_index_buffer},
+    rendering::wgpu::{RendererWgpu, Vertex},
+    wgpu_utils::{WgpuExt, render_pass},
 };
 
 pub struct Rasterizer {
-    other_buffers: RasterizerOtherBuffers,
+    camera_buffers: CameraBuffers,
+    lighting_buffers: LightingBuffers,
     other_bind_group: wgpu::BindGroup,
     depth_texture: crate::wgpu::Texture,
     render_pipeline: wgpu::RenderPipeline,
@@ -27,7 +28,7 @@ pub struct Rasterizer {
 }
 
 impl Rasterizer {
-    pub fn new(wgpu: &RendererWgpu, scene: &Scene) -> Self {
+    pub fn new(wgpu: &RendererWgpu, scene: &EcsScene) -> Self {
         let rasterizer_shader = wgpu
             .device
             .shader()
@@ -75,31 +76,31 @@ impl Rasterizer {
             .vertex_buffer(Vertex::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
-            .depth_test_less(crate::wgpu::Texture::DEPTH_FORMAT)
+            .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
             .build()
             .unwrap();
 
-        let depth_texture = crate::wgpu::Texture::create_depth_texture(
+        let depth_texture = crate::rendering::wgpu::Texture::create_depth_texture(
             &wgpu.device,
             &wgpu.surface_config,
             "rasterizer_depth_texture",
         );
 
-        let other_buffers = RasterizerOtherBuffers::new(&wgpu.device, scene);
+        let camera_buffers = CameraBuffers::new(&wgpu.device, scene, "Rasterizer");
+        let lighting_buffers = LightingBuffers::new(&wgpu.device, scene, "Rasterizer");
         println!("Creating rasterizer other bind group");
         let other_bind_group = wgpu
             .device
             .bind_group(&other_bind_group_layout)
             .label("Rasterizer Other Bind Group")
-            .buffer(0, &other_buffers.camera_view_proj)
-            .buffer(1, &other_buffers.sun_direction)
+            .buffer(0, &camera_buffers.view_projection)
+            .buffer(1, &lighting_buffers.sun_direction)
             .build();
 
-        let material_bind_groups =
-            Rasterizer::get_material_bind_groups(&wgpu.device, &material_bind_group_layout, scene);
+        let material_bind_groups = scene.create_material_bind_groups(&wgpu.device, &material_bind_group_layout);
 
         let probe_visualization =
-            ProbeVisualization::new(wgpu, &probe_grid, &other_buffers.camera_view_proj);
+            ProbeVisualization::new(wgpu, &probe_grid, &camera_buffers.view_projection);
 
         let config_sun_bind_group_layout = wgpu
             .device
@@ -130,7 +131,8 @@ impl Rasterizer {
         );
 
         Self {
-            other_buffers,
+            camera_buffers,
+            lighting_buffers,
             other_bind_group,
             depth_texture,
             render_pipeline,
@@ -144,19 +146,19 @@ impl Rasterizer {
     }
 
     pub fn resize(&mut self, wgpu: &RendererWgpu) {
-        self.depth_texture = crate::wgpu::Texture::create_depth_texture(
+        self.depth_texture = crate::rendering::wgpu::Texture::create_depth_texture(
             &wgpu.device,
             &wgpu.surface_config,
             "rasterizer_depth_texture",
         );
     }
 
-    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
-        self.other_buffers.update_camera(queue, scene);
+    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
+        self.camera_buffers.update_from_scene(queue, scene);
     }
 
-    pub fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
-        self.other_buffers.update_light(queue, scene);
+    pub fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
+        self.lighting_buffers.update_from_scene(queue, scene);
     }
 
     pub fn get_depth_texture_view(&self) -> &wgpu::TextureView {
@@ -168,8 +170,17 @@ impl Rasterizer {
         device: &wgpu::Device,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        materials: &[Material],
+        scene: &EcsScene,
     ) {
+        // Get renderable entities for direct ECS rendering
+        let renderable_entities = scene.get_renderable_entities();
+        
+        // Create a mapping from material entity to material bind group index
+        let mut material_entities = scene.get_material_entities();
+        material_entities.sort_by_key(|entity| entity.0); // Same ordering as create_material_bind_groups
+        let material_entity_to_index: std::collections::HashMap<_, _> = 
+            material_entities.iter().enumerate().map(|(i, &entity)| (entity, i)).collect();
+
         let mut rasterizer_rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")
             .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
@@ -180,16 +191,47 @@ impl Rasterizer {
         rasterizer_rpass.set_bind_group(0, &self.other_bind_group, &[]);
         rasterizer_rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
 
-        for (i, material) in materials.iter().enumerate() {
-            rasterizer_rpass.set_bind_group(2, &self.material_bind_groups[i], &[]);
+        // Group renderable entities by material for efficient rendering
+        let mut material_to_entities: std::collections::HashMap<crate::ecs::EntityId, Vec<crate::ecs::EntityId>> = std::collections::HashMap::new();
+        
+        for entity_id in renderable_entities {
+            if let Some(material_ref) = scene.world.get_component::<crate::ecs::MaterialRef>(entity_id) {
+                let mat_ref = material_ref.borrow();
+                material_to_entities.entry(mat_ref.material_entity)
+                    .or_insert_with(Vec::new)
+                    .push(entity_id);
+            }
+        }
 
-            let vertex_buffer = material.create_vertex_buffer(device);
-            let index_buffer = material.create_index_buffer(device);
-            let num_indices = material.get_index_count();
-
-            rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            rasterizer_rpass.draw_indexed(0..num_indices, 0, 0..1);
+        // Render each material group
+        for (material_entity, entity_ids) in material_to_entities {
+            // Set the appropriate material bind group
+            if let Some(&bind_group_index) = material_entity_to_index.get(&material_entity) {
+                rasterizer_rpass.set_bind_group(2, &self.material_bind_groups[bind_group_index], &[]);
+                
+                // Render each mesh with this material
+                for entity_id in entity_ids {
+                    if let Some(mesh_comp) = scene.world.get_component::<crate::ecs::MeshComponent>(entity_id) {
+                        let mesh = mesh_comp.borrow();
+                        
+                        // Create vertex and index buffers for this specific mesh
+                        let vertex_buffer = create_vertex_buffer(
+                            device,
+                            "Rasterizer Mesh Vertex Buffer",
+                            &mesh.vertices,
+                        );
+                        let index_buffer = create_index_buffer(
+                            device,
+                            "Rasterizer Mesh Index Buffer",
+                            &mesh.indices,
+                        );
+                        
+                        rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                        rasterizer_rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        rasterizer_rpass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
+                    }
+                }
+            }
         }
     }
 
@@ -239,11 +281,11 @@ impl Rasterizer {
     }
 
     pub fn get_camera_buffer(&self) -> &wgpu::Buffer {
-        &self.other_buffers.camera_view_proj
+        &self.camera_buffers.view_projection
     }
 
     pub fn get_sun_direction_buffer(&self) -> &wgpu::Buffer {
-        &self.other_buffers.sun_direction
+        &self.lighting_buffers.sun_direction
     }
 
     pub fn bake_probes(
@@ -261,7 +303,7 @@ impl Rasterizer {
         let lights_bind_group = device
             .bind_group(&self.lights_bind_group_layout)
             .label("Probe Update Lights Bind Group")
-            .buffer(0, &self.other_buffers.sun_direction)
+            .buffer(0, &self.lighting_buffers.sun_direction)
             .build();
 
         // Create probe bind group with textures and config
@@ -290,81 +332,9 @@ impl Rasterizer {
         queue.submit(Some(encoder.finish()));
     }
 
-    fn get_material_bind_groups(
-        device: &wgpu::Device,
-        bind_group_layout: &wgpu::BindGroupLayout,
-        scene: &Scene,
-    ) -> Vec<wgpu::BindGroup> {
-        scene
-            .materials
-            .iter()
-            .map(|material| create_material_bind_group(device, bind_group_layout, material))
-            .collect()
-    }
+    // Removed get_material_bind_groups - now using scene.create_material_bind_groups() directly
 }
 
-struct RasterizerMaterialBuffers {
-    color: wgpu::Buffer,
-}
+// Removed RasterizerMaterialBuffers and RasterizerOtherBuffers - now using unified buffer utilities
 
-impl RasterizerMaterialBuffers {
-    fn new(device: &wgpu::Device, material: &Material) -> Self {
-        let color = device
-            .buffer()
-            .label("Rasterizer Material Color Buffer")
-            .uniform(&material.color.to_array());
-        Self { color }
-    }
-}
-
-struct RasterizerOtherBuffers {
-    camera_view_proj: wgpu::Buffer,
-    sun_direction: wgpu::Buffer,
-}
-
-impl RasterizerOtherBuffers {
-    fn new(device: &wgpu::Device, scene: &Scene) -> Self {
-        let camera_view_proj = device
-            .buffer()
-            .label("Rasterizer Camera View Projection Uniform Buffer")
-            .uniform(&scene.camera.view_projection().to_cols_array_2d());
-        let sun_direction = device
-            .buffer()
-            .label("Rasterizer Sun Direction Uniform Buffer")
-            .uniform(&scene.sun_light.direction.to_array());
-
-        Self {
-            camera_view_proj,
-            sun_direction,
-        }
-    }
-
-    fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
-        queue.write_buffer_data(
-            &self.camera_view_proj,
-            0,
-            &scene.camera.view_projection().to_cols_array_2d(),
-        );
-    }
-
-    fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
-        queue.write_buffer_data(
-            &self.sun_direction,
-            0,
-            &scene.sun_light.direction.to_array(),
-        );
-    }
-}
-
-fn create_material_bind_group(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    material: &Material,
-) -> wgpu::BindGroup {
-    let buffers = RasterizerMaterialBuffers::new(device, material);
-    device
-        .bind_group(layout)
-        .label("Rasterizer Material Bind Group")
-        .buffer(0, &buffers.color)
-        .build()
-}
+// Removed create_material_bind_group - now using ECS material bind groups

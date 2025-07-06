@@ -1,10 +1,8 @@
 use wesl::include_wesl;
-use wgpu::util::DeviceExt;
 
 use crate::{
-    camera,
-    mesh::{Material, RaytracerExt},
-    scene::Scene,
+    ecs::EcsScene,
+    utils::buffer_utils::{CameraBuffers, LightingBuffers, create_uniform_constant_buffer},
     wgpu_utils::{QueueExt, WgpuExt},
 };
 
@@ -57,9 +55,9 @@ impl Raytracer {
     }
 
     pub fn new(
-        wgpu: &crate::wgpu::RendererWgpu,
+        wgpu: &crate::rendering::wgpu::RendererWgpu,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &Scene,
+        scene: &EcsScene,
     ) -> Self {
         let shaders = RaytracerShaders::new(&wgpu.device);
         let buffers = RaytracerBuffers::new(&wgpu.device, window_size, scene);
@@ -120,7 +118,7 @@ impl Raytracer {
     pub fn resize(
         &mut self,
         new_size: &winit::dpi::PhysicalSize<u32>,
-        wgpu: &crate::wgpu::RendererWgpu,
+        wgpu: &crate::rendering::wgpu::RendererWgpu,
     ) {
         self.buffers.on_resize(wgpu, new_size);
         self.bind_groups
@@ -131,11 +129,11 @@ impl Raytracer {
         self.buffers.update_frame_count(queue, frame_count);
     }
 
-    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
+    pub fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
         self.buffers.update_camera(queue, scene);
     }
 
-    pub fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
+    pub fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
         self.buffers.update_light(queue, scene);
     }
 
@@ -228,10 +226,14 @@ pub struct RaytracerMaterialBuffers {
 }
 
 impl RaytracerMaterialBuffers {
-    fn new(device: &wgpu::Device, materials: &Vec<Material>) -> Self {
+    fn new(device: &wgpu::Device, scene: &EcsScene) -> Self {
         Self {
-            materials: materials.create_materials_buffer(device),
-            material_stride: materials.create_material_stride_buffer(device),
+            materials: scene.create_materials_buffer(device),
+            material_stride: create_uniform_constant_buffer(
+                device,
+                "Raytracer Material Stride Buffer",
+                &crate::rendering::wgpu::RAYTRACE_MATERIAL_STRIDE,
+            ),
         }
     }
 }
@@ -245,65 +247,50 @@ pub struct RaytracerMeshBuffers {
 }
 
 impl RaytracerMeshBuffers {
-    fn new(device: &wgpu::Device, materials: &Vec<Material>) -> Self {
+    fn new(device: &wgpu::Device, scene: &EcsScene) -> Self {
         Self {
-            vertices: materials.create_vertices_buffer(device),
-            vertex_stride: materials.create_vertex_stride_buffer(device),
-            vertex_normal_offset: materials.create_vertex_normal_buffer(device),
-            vertex_material_offset: materials.create_vertex_material_buffer(device),
-            indices: materials.create_indices_buffer(device),
+            vertices: scene.create_vertices_buffer(device),
+            vertex_stride: create_uniform_constant_buffer(
+                device,
+                "Raytracer Vertex Stride Buffer",
+                &crate::rendering::wgpu::RAYTRACE_VERTEX_STRIDE,
+            ),
+            vertex_normal_offset: create_uniform_constant_buffer(
+                device,
+                "Raytracer Vertex Normal Offset Buffer",
+                &crate::rendering::wgpu::RAYTRACE_VERTEX_NORMAL_OFFSET,
+            ),
+            vertex_material_offset: create_uniform_constant_buffer(
+                device,
+                "Raytracer Vertex Material Offset Buffer",
+                &crate::rendering::wgpu::RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
+            ),
+            indices: scene.create_indices_buffer(device),
         }
     }
 }
 
-struct RaytracerCameraBuffers {
-    camera_to_world: wgpu::Buffer,
-    camera_inverse_projection: wgpu::Buffer,
-}
-
-impl RaytracerCameraBuffers {
-    fn new(device: &wgpu::Device, camera: &camera::Camera) -> Self {
-        let camera_to_world = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Raytracer Camera to World Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[camera.camera_to_world().to_cols_array_2d()]),
-        });
-        let camera_inverse_projection =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Raytracer Camera Inverse Projection Uniform Buffer"),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                contents: bytemuck::cast_slice(&[camera
-                    .camera_inverse_projection()
-                    .to_cols_array_2d()]),
-            });
-        Self {
-            camera_to_world,
-            camera_inverse_projection,
-        }
-    }
-}
+// Removed RaytracerCameraBuffers - now using unified CameraBuffers from buffer_utils
 
 pub struct RaytracerOtherBuffers {
-    sun_direction: wgpu::Buffer,
-    camera: RaytracerCameraBuffers,
+    lighting: LightingBuffers,
+    camera: CameraBuffers,
     frame_count: wgpu::Buffer,
 }
 
 impl RaytracerOtherBuffers {
-    fn new(device: &wgpu::Device, scene: &Scene) -> Self {
-        let camera = RaytracerCameraBuffers::new(device, &scene.camera);
-        let sun_direction = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Raytracer Sun Direction Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[scene.sun_light.direction.to_array()]),
-        });
-        let frame_count = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Raytracer Frame Count Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[0]),
-        });
+    fn new(device: &wgpu::Device, scene: &EcsScene) -> Self {
+        let lighting = LightingBuffers::new(device, scene, "Raytracer");
+        let camera = CameraBuffers::new(device, scene, "Raytracer");
+        
+        let frame_count = create_uniform_constant_buffer(
+            device,
+            "Raytracer Frame Count Buffer",
+            &0u32,
+        );
+        
         Self {
-            sun_direction,
+            lighting,
             camera,
             frame_count,
         }
@@ -313,25 +300,12 @@ impl RaytracerOtherBuffers {
         queue.write_buffer_data(&self.frame_count, 0, &frame_count);
     }
 
-    fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
-        queue.write_buffer_data(
-            &self.camera.camera_to_world,
-            0,
-            &scene.camera.camera_to_world().to_cols_array_2d(),
-        );
-        queue.write_buffer_data(
-            &self.camera.camera_inverse_projection,
-            0,
-            &scene.camera.camera_inverse_projection().to_cols_array_2d(),
-        );
+    fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
+        self.camera.update_from_scene(queue, scene);
     }
 
-    fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
-        queue.write_buffer_data(
-            &self.sun_direction,
-            0,
-            &scene.sun_light.direction.to_array(),
-        );
+    fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
+        self.lighting.update_from_scene(queue, scene);
     }
 }
 
@@ -346,10 +320,10 @@ impl RaytracerBuffers {
     fn new(
         device: &wgpu::Device,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &Scene,
+        scene: &EcsScene,
     ) -> Self {
-        let materials = RaytracerMaterialBuffers::new(device, &scene.materials);
-        let meshes = RaytracerMeshBuffers::new(device, &scene.materials);
+        let materials = RaytracerMaterialBuffers::new(device, scene);
+        let meshes = RaytracerMeshBuffers::new(device, scene);
         let result = Self::create_result_texture(device, window_size);
         let other = RaytracerOtherBuffers::new(device, scene);
         Self {
@@ -361,7 +335,7 @@ impl RaytracerBuffers {
     }
     fn on_resize(
         &mut self,
-        wgpu: &crate::wgpu::RendererWgpu,
+        wgpu: &crate::rendering::wgpu::RendererWgpu,
         new_size: &winit::dpi::PhysicalSize<u32>,
     ) {
         self.update_frame_count(&wgpu.queue, 0);
@@ -370,32 +344,27 @@ impl RaytracerBuffers {
     fn update_frame_count(&self, queue: &wgpu::Queue, frame_count: u32) {
         self.other.update_frame_count(queue, frame_count);
     }
-    fn update_camera(&self, queue: &wgpu::Queue, scene: &Scene) {
+    fn update_camera(&self, queue: &wgpu::Queue, scene: &EcsScene) {
         self.other.update_camera(queue, scene);
     }
-    fn update_light(&self, queue: &wgpu::Queue, scene: &Scene) {
+    fn update_light(&self, queue: &wgpu::Queue, scene: &EcsScene) {
         self.other.update_light(queue, scene);
     }
     fn create_result_texture(
         device: &wgpu::Device,
         window_size: &winit::dpi::PhysicalSize<u32>,
     ) -> wgpu::TextureView {
-        let result_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: window_size.width,
-                height: window_size.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: RaytracerTextureFormat,
-            usage: wgpu::TextureUsages::STORAGE_BINDING
-                | wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
+        let result_texture = device
+            .texture()
+            .label("Raytracer Result Texture")
+            .size_2d(window_size.width, window_size.height)
+            .format(RaytracerTextureFormat)
+            .usage(
+                wgpu::TextureUsages::STORAGE_BINDING
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
+            )
+            .build();
         result_texture.create_view(&wgpu::TextureViewDescriptor::default())
     }
 }
@@ -487,7 +456,7 @@ impl RaytracerBindGroups {
         let compute_lights = device
             .bind_group(&bgl.compute_lights)
             .label("Raytracer Compute Lights Bind Group")
-            .buffer(0, &buffers.other.sun_direction)
+            .buffer(0, &buffers.other.lighting.sun_direction)
             .build();
         let compute_result_camera = device
             .bind_group(&bgl.compute_result_camera)

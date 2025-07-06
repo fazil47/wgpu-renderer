@@ -1,4 +1,4 @@
-use app::application::{Application, StateInitializationEvent};
+use app::core::{Application, StateInitializationEvent};
 
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::EventLoopExtWebSys;
