@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "postToolUse": [
+      {
+        "matcher": {
+          "toolName": ["Write", "Edit", "MultiEdit"]
+        },
+        "commands": [
+          {
+            "command": "bash",
+            "args": ["-c", "if echo '$FILE_PATH' | grep -q '\\.rs$'; then cargo fmt --quiet -- '$FILE_PATH'; fi"],
+            "env": {
+              "FILE_PATH": "{{tool_input.file_path}}"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

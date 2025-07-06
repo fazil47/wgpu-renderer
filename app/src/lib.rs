@@ -1,9 +1,8 @@
 pub mod core;
-pub mod ecs;
-pub mod rendering;
-pub mod ui;
 pub mod input;
-pub mod mesh;
 pub mod lighting;
+pub mod mesh;
+pub mod rendering;
+pub mod scene;
+pub mod ui;
 pub mod utils;
-pub mod wgpu_utils;

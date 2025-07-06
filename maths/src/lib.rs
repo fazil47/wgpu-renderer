@@ -17,7 +17,7 @@ impl Vec3 {
         Self { x, y, z }
     }
 
-    pub const fn from_array(arr: [f32; 3]) -> Self {
+    pub const fn from_array(arr: &[f32; 3]) -> Self {
         Self::new(arr[0], arr[1], arr[2])
     }
 
@@ -374,6 +374,7 @@ impl Mat4 {
         self.adjugate() * (1.0 / det)
     }
 
+    #[allow(clippy::too_many_arguments)]
     const fn det3(
         a1: f32,
         a2: f32,

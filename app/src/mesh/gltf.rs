@@ -1,5 +1,5 @@
 use super::{Material, Mesh};
-use crate::rendering::wgpu::{RGBA, Vertex};
+use crate::rendering::{rasterizer::Vertex, wgpu_utils::RGBA};
 use gltf::material::AlphaMode;
 use maths::{Mat4, Vec3};
 use std::{collections::HashMap, path::Path};
@@ -70,15 +70,15 @@ impl GltfMeshExt for Material {
                         let positions_vec: Vec<_> = positions.collect();
                         let vertex_count = positions_vec.len();
 
-                        for i in 0..vertex_count {
-                            let position = Vec3::from_array(positions_vec[i]);
+                        for (i, position) in positions_vec.iter().enumerate().take(vertex_count) {
+                            let position = Vec3::from_array(position);
 
                             // Transform position by mesh_transform
                             let transformed_pos = mesh_transform * position;
 
                             let normal_raw = normals.as_ref().and_then(|n| n.get(i)).copied();
                             let normal = if let Some(n) = normal_raw {
-                                Vec3::from_array(n)
+                                Vec3::from_array(&n)
                             } else {
                                 return Err(format!("Missing normal for vertex {i}"));
                             };

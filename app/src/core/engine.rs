@@ -6,9 +6,20 @@ use web_time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use winit::{event::{DeviceEvent, WindowEvent}, window::Window};
+use winit::{
+    event::{DeviceEvent, WindowEvent},
+    window::Window,
+};
 
-use crate::{ecs::{EcsScene}, input::CameraController, core::renderer::Renderer};
+use crate::{
+    input::CameraController,
+    lighting::DirectionalLight,
+    mesh::Mesh as RenderMesh,
+    rendering::{Camera, MaterialRef, Renderable, Renderer, Transform},
+    scene::Scene,
+};
+use ecs::{EntityId, World};
+use maths::Vec3;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::mesh::gltf::GltfMeshExt;
@@ -21,40 +32,76 @@ pub struct Engine {
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub camera_controller: CameraController,
     pub renderer: Renderer,
-    scene: EcsScene,
+    pub world: World,
+    pub scene: Scene,
+    pub camera_entity: EntityId,
+    pub sun_light_entity: EntityId,
+    is_light_dirty: bool,
     stat: EngineStatistics,
     config: EngineConfiguration,
 }
 
 impl Engine {
-    // Creating some of the wgpu types requires async code
     pub async fn new(window: Arc<Window>) -> Engine {
         let mut window_size = window.inner_size();
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
 
-        #[allow(unused_mut)]
-        let mut scene = EcsScene::new(&window_size);
+        let mut world = World::new();
+        let mut scene = Scene::new();
         let camera_controller = CameraController::new(0.8);
+
+        // Create camera entity
+        let camera_entity = world.create_entity();
+        let camera_position = Vec3::new(0.0, 0.0, 4.0);
+        world.add_component(camera_entity, Transform::new(camera_position));
+        world.add_component(
+            camera_entity,
+            Camera::new(
+                camera_position,
+                -camera_position.normalized(), // look at origin
+                window_size.width as f32 / window_size.height as f32,
+                45.0,
+                0.1,
+                100.0,
+            ),
+        );
+
+        // Create sun light entity
+        let sun_light_entity = world.create_entity();
+        world.add_component(sun_light_entity, Transform::new(Vec3::ZERO));
+        world.add_component(sun_light_entity, DirectionalLight::new(45.0, 45.0));
 
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Ok(materials) = crate::mesh::Material::from_gltf("assets/cornell-box.glb") {
-                // Load materials into ECS
-                EcsScene::create_mesh_entities_from_materials(&mut scene.world, materials);
+                // Load materials into Scene and create ECS entities
+                scene.load_from_materials(materials, &mut world);
             } else {
                 log::warn!("Failed to load GLTF mesh");
             }
         }
 
-        let renderer = Renderer::new(window.clone(), &window_size, &mut scene).await;
+        let renderer = Renderer::new(
+            window.clone(),
+            &window_size,
+            &scene,
+            &world,
+            camera_entity,
+            sun_light_entity,
+        )
+        .await;
 
         Self {
             window,
             window_size,
             camera_controller,
             renderer,
+            world,
             scene,
+            camera_entity,
+            sun_light_entity,
+            is_light_dirty: false,
             stat: EngineStatistics::default(),
             config: EngineConfiguration::default(),
         }
@@ -64,10 +111,12 @@ impl Engine {
         self.window_size = new_size;
         self.stat.frame_count = 0;
 
-        // Update camera
-        self.scene
-            .set_aspect(new_size.width as f32 / new_size.height as f32);
-        self.renderer.resize(new_size, &self.scene);
+        // Update camera aspect ratio
+        if let Some(camera) = self.world.get_component::<Camera>(self.camera_entity) {
+            camera.borrow_mut().aspect = new_size.width as f32 / new_size.height as f32;
+        }
+
+        self.renderer.resize(new_size, &self.world);
 
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
@@ -90,11 +139,19 @@ impl Engine {
             .as_secs_f32();
         self.stat.last_frame_time = current_time;
 
+        // Extract values needed in closure to avoid borrow conflicts
+        let delta_time_ms = self.stat.delta_time * 1000.0;
+        let fps = 1.0 / self.stat.delta_time;
+        let frame_count = self.stat.frame_count;
+        let is_raytracer_enabled = self.config.is_raytracer_enabled;
+
         // Clone the Rc to avoid borrow conflicts in the closure
         let rasterizer = self.renderer.rasterizer.clone();
 
-        // Store probe baking request outside the closure
+        // Store probe baking request and UI change outside the closure
         let mut bake_requested = false;
+        let mut ui_changed = false;
+        let mut raytracer_enabled = is_raytracer_enabled;
 
         let egui_output = self
             .renderer
@@ -105,23 +162,44 @@ impl Engine {
                     .resizable(false)
                     .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                     .show(egui_ctx, |ui| {
-                        ui.label(format!(
-                            "Frame Time: {:.2}ms",
-                            self.stat.delta_time * 1000.0
-                        ));
-                        ui.label(format!("FPS: {:.1}", 1.0 / self.stat.delta_time));
+                        ui.label(format!("Frame Time: {delta_time_ms:.2}ms"));
+                        ui.label(format!("FPS: {fps:.1}"));
 
-                        if self.config.is_raytracer_enabled {
-                            ui.label(format!("Frame Count: {}", self.stat.frame_count));
+                        if raytracer_enabled {
+                            ui.label(format!("Frame Count: {frame_count}"));
                         }
                     });
 
                 egui::CentralPanel::default()
                     .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                     .show(egui_ctx, |ui| {
-                        if self.scene.run_ui(ui) {
-                            self.stat.frame_count = 0;
-                        }
+                        // Lighting controls
+                        ui.collapsing("Lighting", |ui| {
+                            if let Some(light) = self
+                                .world
+                                .get_component::<DirectionalLight>(self.sun_light_entity)
+                            {
+                                let mut light_ref = light.borrow_mut();
+
+                                let sun_azi_changed = ui
+                                    .add(
+                                        egui::Slider::new(&mut light_ref.azimuth, 0.0..=360.0)
+                                            .text("Sun Azimuth"),
+                                    )
+                                    .changed();
+                                let sun_alt_changed = ui
+                                    .add(
+                                        egui::Slider::new(&mut light_ref.altitude, 0.0..=90.0)
+                                            .text("Sun Altitude"),
+                                    )
+                                    .changed();
+
+                                if sun_azi_changed || sun_alt_changed {
+                                    light_ref.recalculate();
+                                    self.is_light_dirty = true;
+                                }
+                            }
+                        });
 
                         // Run probe UI and capture baking requests
                         let probe_ui_result = rasterizer.borrow_mut().run_probe_ui(ui);
@@ -130,9 +208,18 @@ impl Engine {
                         }
 
                         // Run the raytracer when the checkbox is toggled on
-                        ui.checkbox(&mut self.config.is_raytracer_enabled, "Raytracing");
+                        if ui.checkbox(&mut raytracer_enabled, "Raytracing").changed() {
+                            ui_changed = true;
+                        }
                     });
             });
+
+        // Handle UI changes outside the closure
+        if raytracer_enabled != self.config.is_raytracer_enabled {
+            self.config.is_raytracer_enabled = raytracer_enabled;
+        }
+
+        // Light dirty handling is now done in the main UI above
 
         // Handle probe baking outside the closure
         if bake_requested {
@@ -154,12 +241,15 @@ impl Engine {
             &self.window,
             &self.window_size,
             &self.config,
-            &mut self.scene,
+            &self.scene,
+            &mut self.world,
+            self.camera_entity,
+            self.sun_light_entity,
             self.stat.frame_count,
             egui_output,
         )?;
         // Set the light dirty flag to false after rendering
-        self.scene.set_light_clean();
+        self.is_light_dirty = false;
 
         Ok(())
     }
@@ -176,24 +266,44 @@ impl Engine {
 
         if self.camera_controller.is_cursor_locked() {
             self.stat.frame_count = 0;
-            self.camera_controller
-                .update_camera(&mut self.scene, self.stat.delta_time);
+            self.camera_controller.update_camera(
+                &mut self.world,
+                self.camera_entity,
+                self.stat.delta_time,
+            );
         }
     }
 
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
-        match event {
-            DeviceEvent::MouseMotion { delta } => {
-                self.camera_controller.process_mouse(delta.0, delta.1);
-                
-                if self.camera_controller.is_cursor_locked() {
-                    self.stat.frame_count = 0;
-                    self.camera_controller
-                        .update_camera(&mut self.scene, self.stat.delta_time);
-                }
+        if let DeviceEvent::MouseMotion { delta } = event {
+            self.camera_controller.process_mouse(delta.0, delta.1);
+
+            if self.camera_controller.is_cursor_locked() {
+                self.stat.frame_count = 0;
+                self.camera_controller.update_camera(
+                    &mut self.world,
+                    self.camera_entity,
+                    self.stat.delta_time,
+                );
             }
-            _ => {}
         }
+    }
+
+    pub fn is_light_dirty(&self) -> bool {
+        self.is_light_dirty
+    }
+
+    pub fn set_light_clean(&mut self) {
+        self.is_light_dirty = false;
+    }
+
+    /// Get all renderable entities (entities with Transform, RenderMesh, MaterialRef, Renderable)
+    pub fn get_renderable_entities(&self) -> Vec<EntityId> {
+        self.world
+            .get_entities_with_3::<Transform, RenderMesh, MaterialRef>()
+            .into_iter()
+            .filter(|&entity_id| self.world.has_component::<Renderable>(entity_id))
+            .collect()
     }
 }
 
@@ -213,6 +323,7 @@ impl Default for EngineStatistics {
     }
 }
 
+#[derive(Clone)]
 pub struct EngineConfiguration {
     pub target_frame_time: f32,
     pub raytracer_max_frames: u32,

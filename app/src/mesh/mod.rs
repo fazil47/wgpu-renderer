@@ -1,12 +1,17 @@
+use ecs::Component;
 use wgpu::util::DeviceExt;
 
-use crate::rendering::wgpu::{
-    Index, RAYTRACE_MATERIAL_STRIDE, RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
-    RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE, RGBA, RaytracerMaterial,
-    RaytracerVertex, Vertex,
+use crate::rendering::wgpu_utils::WgpuExt;
+use crate::rendering::{
+    rasterizer::Vertex,
+    raytracer::{
+        RAYTRACE_MATERIAL_STRIDE, RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
+        RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE, RaytracerMaterial, RaytracerVertex,
+    },
+    wgpu_utils::{Index, RGBA},
 };
-use crate::wgpu_utils::WgpuExt;
 
+#[derive(Clone)]
 pub struct Material {
     pub color: RGBA,
     pub meshes: Vec<Mesh>,
@@ -112,8 +117,10 @@ pub trait RaytracerExt {
 
 impl RaytracerExt for Vec<Material> {
     fn create_materials_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let raytracer_materials: Vec<RaytracerMaterial> =
-            self.iter().map(RaytracerMaterial::from_material).collect();
+        let raytracer_materials: Vec<RaytracerMaterial> = self
+            .iter()
+            .map(RaytracerMaterial::from_mesh_material)
+            .collect();
 
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Materials Buffer"),
@@ -181,6 +188,7 @@ impl RaytracerExt for Vec<Material> {
     }
 }
 
+#[derive(Clone)]
 pub struct Mesh {
     vertices: Vec<Vertex>,
     indices: Vec<Index>,
@@ -203,6 +211,8 @@ impl Mesh {
         (self.vertices, self.indices)
     }
 }
+
+impl Component for Mesh {}
 
 pub mod gltf;
 pub mod static_mesh;

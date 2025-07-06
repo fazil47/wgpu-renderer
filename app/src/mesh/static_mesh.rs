@@ -1,4 +1,4 @@
-use crate::rendering::wgpu::{RGBA, Vertex};
+use crate::rendering::{rasterizer::Vertex, wgpu_utils::RGBA};
 
 use super::{Material, Mesh};
 

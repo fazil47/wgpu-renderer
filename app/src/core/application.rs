@@ -19,6 +19,7 @@ use crate::core::engine::Engine;
 
 pub struct StateInitializationEvent(Engine);
 
+#[allow(clippy::large_enum_variant)]
 pub enum State {
     Uninitialized,
     Initializing,

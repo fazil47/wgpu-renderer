@@ -1,7 +1,7 @@
 use crate::{
     lighting::probe_lighting::{Dimensions, ProbeGrid, ProbeLightingState},
-    rendering::wgpu::{RendererWgpu, Vertex},
-    wgpu_utils::{QueueExt, WgpuExt},
+    rendering::wgpu_utils::{QueueExt, WgpuExt},
+    rendering::{rasterizer::Vertex, wgpu_utils::WgpuResources},
 };
 use maths::Vec3;
 use wesl::include_wesl;
@@ -47,7 +47,7 @@ pub struct ProbeVisualization {
 }
 
 impl ProbeVisualization {
-    pub fn new(wgpu: &RendererWgpu, probe_grid: &ProbeGrid, camera_buffer: &wgpu::Buffer) -> Self {
+    pub fn new(wgpu: &WgpuResources, probe_grid: &ProbeGrid, camera_buffer: &wgpu::Buffer) -> Self {
         let (sphere_vertices, sphere_indices) = Self::generate_sphere_mesh(16, 16, 0.075);
 
         let vertex_buffer = wgpu
@@ -106,7 +106,7 @@ impl ProbeVisualization {
             .vertex_buffer(Self::instance_desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
-            .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
+            .depth_test_less(crate::rendering::wgpu_utils::Texture::DEPTH_FORMAT)
             .build()
             .expect("Failed to create probe visualization render pipeline");
 

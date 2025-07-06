@@ -2,24 +2,28 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use winit::window::Window;
 
 use crate::{
-    ui::egui::RendererEgui, core::engine::EngineConfiguration, rendering::rasterizer::Rasterizer, rendering::raytracer::Raytracer,
-    ecs::EcsScene, rendering::wgpu::RendererWgpu,
+    core::engine::EngineConfiguration, rendering::rasterizer::Rasterizer,
+    rendering::raytracer::Raytracer, rendering::wgpu_utils::WgpuResources, ui::egui::RendererEgui,
 };
+use ecs::{EntityId, World};
 
 pub struct Renderer {
     pub rasterizer: Rc<RefCell<Rasterizer>>,
     pub raytracer: Raytracer,
     pub egui: RendererEgui,
-    pub wgpu: RendererWgpu,
+    pub wgpu: WgpuResources,
 }
 
 impl Renderer {
     pub async fn new(
         window: Arc<Window>,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &mut EcsScene,
+        scene: &crate::scene::Scene,
+        world: &World,
+        camera_entity: EntityId,
+        sun_light_entity: EntityId,
     ) -> Self {
-        let wgpu = RendererWgpu::new(window.clone(), window_size).await;
+        let wgpu = WgpuResources::new(window.clone(), window_size).await;
         let egui = RendererEgui::new(
             &window,
             &wgpu.device,
@@ -27,8 +31,21 @@ impl Renderer {
             window.scale_factor() as f32,
         );
 
-        let rasterizer = Rc::new(RefCell::new(Rasterizer::new(&wgpu, scene)));
-        let raytracer = Raytracer::new(&wgpu, window_size, scene);
+        let rasterizer = Rc::new(RefCell::new(Rasterizer::new(
+            &wgpu,
+            scene,
+            world,
+            camera_entity,
+            sun_light_entity,
+        )));
+        let raytracer = Raytracer::new(
+            &wgpu,
+            window_size,
+            scene,
+            world,
+            camera_entity,
+            sun_light_entity,
+        );
 
         Self {
             wgpu,
@@ -38,8 +55,9 @@ impl Renderer {
         }
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, scene: &EcsScene) {
-        self.update_camera(scene);
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, _world: &World) {
+        // We'll need camera_entity to be passed in, for now skip the camera update
+        // self.update_camera(world, camera_entity);
 
         // Reconfigure the surface with the new size
         self.wgpu.resize(&new_size);
@@ -60,20 +78,23 @@ impl Renderer {
         self.egui.state.egui_ctx().run(egui_raw_input, run_ui)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         window: &winit::window::Window,
         window_size: &winit::dpi::PhysicalSize<u32>,
         config: &EngineConfiguration,
-        scene: &mut EcsScene,
+        scene: &crate::scene::Scene,
+        world: &mut World,
+        camera_entity: EntityId,
+        sun_light_entity: EntityId,
         frame_count: u32,
         egui_output: egui::FullOutput,
     ) -> Result<(), wgpu::SurfaceError> {
-        self.update_camera(scene);
+        self.update_camera(world, camera_entity);
 
-        if scene.is_light_dirty() {
-            self.update_light(scene);
-        }
+        // Light dirty check is now handled by Engine
+        self.update_light(world, sun_light_entity);
 
         // Check if probe grid configuration changed
         if self.rasterizer.borrow().is_probe_dirty() {
@@ -133,6 +154,8 @@ impl Renderer {
                     &mut render_encoder,
                     &surface_texture_view,
                     scene,
+                    world,
+                    camera_entity,
                 );
 
                 // Render probe visualization if enabled
@@ -163,21 +186,19 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn update_camera(&self, scene: &EcsScene) {
+    pub fn update_camera(&self, world: &World, camera_entity: EntityId) {
         self.rasterizer
             .borrow()
-            .update_camera(&self.wgpu.queue, scene);
-        self.raytracer.update_camera(&self.wgpu.queue, scene);
+            .update_camera(&self.wgpu.queue, world, camera_entity);
+        self.raytracer
+            .update_camera(&self.wgpu.queue, world, camera_entity);
     }
 
-    pub fn update_light(&self, scene: &EcsScene) {
+    pub fn update_light(&self, world: &World, sun_light_entity: EntityId) {
         self.rasterizer
             .borrow()
-            .update_light(&self.wgpu.queue, scene);
-        self.raytracer.update_light(&self.wgpu.queue, scene);
+            .update_light(&self.wgpu.queue, world, sun_light_entity);
+        self.raytracer
+            .update_light(&self.wgpu.queue, world, sun_light_entity);
     }
-
-    // pub fn update_probe_grid(&self, scene: &mut Scene) {
-    //     scene.update_probe_grid(&self.wgpu.device, &self.wgpu.queue);
-    // }
 }
