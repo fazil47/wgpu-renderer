@@ -3,10 +3,12 @@ use wesl::include_wesl;
 
 use crate::{
     rendering::{
+        extract::{Extract, ExtractionError, extract_entity_components, query_renderable_entities},
         material::Material,
         rasterizer::Vertex,
         wgpu_utils::{CameraBuffers, LightingBuffers, WgpuExt},
     },
+    scene::Scene,
     // scene::crate::scene::Scene, // Removed - using World directly
 };
 use ecs::{EntityId, World};
@@ -110,20 +112,9 @@ impl Raytracer {
     pub fn new(
         wgpu: &crate::rendering::wgpu_utils::WgpuResources,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &crate::scene::Scene,
-        world: &World,
-        camera_entity: EntityId,
-        sun_light_entity: EntityId,
     ) -> Self {
         let shaders = RaytracerShaders::new(&wgpu.device);
-        let buffers = RaytracerBuffers::new(
-            &wgpu.device,
-            window_size,
-            scene,
-            world,
-            camera_entity,
-            sun_light_entity,
-        );
+        let buffers = RaytracerBuffers::new(&wgpu.device, window_size);
         let bind_group_layouts = RaytracerBindGroupLayouts::new(&wgpu.device);
 
         // Use builder API for pipeline layouts
@@ -176,6 +167,45 @@ impl Raytracer {
             bind_groups,
             pipelines,
         }
+    }
+
+    pub fn update_scene_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &World,
+        scene: &Scene,
+        camera_entity: EntityId,
+        sun_light_entity: EntityId,
+    ) -> Result<(), ExtractionError> {
+        let extracted_data = self.extract(world, scene)?;
+
+        self.buffers.materials = device
+            .buffer()
+            .label("Raytracer Materials Buffer")
+            .storage(&extracted_data.materials);
+
+        self.buffers.vertices = device
+            .buffer()
+            .label("Raytracer Vertices Buffer")
+            .storage(&extracted_data.vertices);
+
+        self.buffers.indices = device
+            .buffer()
+            .label("Raytracer Indices Buffer")
+            .storage(&extracted_data.indices);
+
+        self.buffers
+            .lighting
+            .update_from_world(queue, world, sun_light_entity);
+        self.buffers
+            .camera
+            .update_from_world(queue, world, camera_entity);
+
+        self.bind_groups =
+            RaytracerBindGroups::new(device, &self.bind_group_layouts, &self.buffers);
+
+        Ok(())
     }
 
     pub fn resize(
@@ -305,35 +335,15 @@ pub struct RaytracerBuffers {
 }
 
 impl RaytracerBuffers {
-    fn new(
-        device: &wgpu::Device,
-        window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &crate::scene::Scene,
-        world: &World,
-        camera_entity: EntityId,
-        sun_light_entity: EntityId,
-    ) -> Self {
-        // Create material buffers - sort by ID to ensure consistent ordering
-        let mut sorted_materials: Vec<_> = scene.materials().iter().collect();
-        sorted_materials.sort_by_key(|(id, _)| id.0);
-
-        let materials: Vec<RaytracerMaterial> = sorted_materials
-            .iter()
-            .map(|(_, material)| RaytracerMaterial::from_material(material))
-            .collect();
-
-        let materials_data = if materials.is_empty() {
-            vec![RaytracerMaterial {
-                color: [1.0, 1.0, 1.0, 1.0],
-            }]
-        } else {
-            materials
-        };
+    fn new(device: &wgpu::Device, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
+        let initial_materials = vec![RaytracerMaterial {
+            color: [1.0, 1.0, 1.0, 1.0],
+        }];
 
         let materials_buffer = device
             .buffer()
             .label("Raytracer Materials Buffer")
-            .storage(&materials_data);
+            .storage(&initial_materials);
 
         let material_stride = device
             .buffer()
@@ -341,59 +351,17 @@ impl RaytracerBuffers {
             .uniform(&RAYTRACE_MATERIAL_STRIDE);
 
         // Create mesh buffers
-        let mut all_vertices = Vec::new();
-        let mut all_indices = Vec::new();
-
-        // Get mesh data from ECS entities
-        let renderable_entities = world.get_entities_with_3::<crate::rendering::Transform, crate::mesh::Mesh, crate::rendering::MaterialRef>()
-            .into_iter()
-            .filter(|&entity_id| world.has_component::<crate::rendering::Renderable>(entity_id))
-            .collect::<Vec<_>>();
-
-        // Use centralized Scene material indexing for consistency with rasterizer
-
-        let mut vertex_offset = 0u32;
-        for entity_id in &renderable_entities {
-            if let (Some(mesh_component), Some(material_ref_component)) = (
-                world.get_component::<crate::mesh::Mesh>(*entity_id),
-                world.get_component::<crate::rendering::MaterialRef>(*entity_id),
-            ) {
-                let mesh = mesh_component.borrow();
-                let material_ref = material_ref_component.borrow();
-
-                // Get material index using centralized Scene indexing for consistency
-                let material_index = scene
-                    .get_material_index_for_entity(material_ref.material_entity)
-                    .unwrap_or(0);
-
-                // Convert mesh vertices to raytracer format
-                for vertex in mesh.vertices() {
-                    all_vertices.push(RaytracerVertex::from_vertex(vertex, material_index));
-                }
-
-                // Add indices with vertex offset
-                for &index in mesh.indices() {
-                    all_indices.push(index + vertex_offset);
-                }
-
-                vertex_offset += mesh.vertices().len() as u32;
-            }
-        }
-
-        // Fallback if no entities found
-        if all_vertices.is_empty() {
-            all_vertices.push(RaytracerVertex {
-                position: [0.0, 0.0, 0.0, 1.0],
-                normal: [0.0, 1.0, 0.0, 0.0],
-                material_id: 0.0,
-            });
-            all_indices.push(0);
-        }
+        let initial_vertices = vec![RaytracerVertex {
+            position: [0.0, 0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0, 0.0],
+            material_id: 0.0,
+        }];
+        let initial_indices = vec![0u32];
 
         let vertices = device
             .buffer()
             .label("Raytracer Vertices Buffer")
-            .storage(&all_vertices);
+            .storage(&initial_vertices);
 
         let vertex_stride = device
             .buffer()
@@ -413,11 +381,11 @@ impl RaytracerBuffers {
         let indices = device
             .buffer()
             .label("Raytracer Indices Buffer")
-            .storage(&all_indices);
+            .storage(&initial_indices);
 
         // Create other buffers
-        let lighting = LightingBuffers::new(device, world, sun_light_entity, "Raytracer");
-        let camera = CameraBuffers::new(device, world, camera_entity, "Raytracer");
+        let lighting = LightingBuffers::new(device, "Raytracer");
+        let camera = CameraBuffers::new(device, "Raytracer");
         let frame_count = device
             .buffer()
             .label("Raytracer Frame Count Buffer")
@@ -607,4 +575,64 @@ impl RaytracerBindGroups {
 struct RaytracerPipelines {
     render: wgpu::RenderPipeline,
     compute: wgpu::ComputePipeline,
+}
+
+pub struct RaytracerExtractedData {
+    pub vertices: Vec<RaytracerVertex>,
+    pub materials: Vec<RaytracerMaterial>,
+    pub indices: Vec<u32>,
+    pub vertex_count: u32,
+    pub material_count: u32,
+    pub index_count: u32,
+}
+
+impl Extract for Raytracer {
+    type ExtractedData = RaytracerExtractedData;
+
+    fn extract(
+        &self,
+        world: &World,
+        scene: &Scene,
+    ) -> Result<Self::ExtractedData, ExtractionError> {
+        let entity_ids = query_renderable_entities(world);
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut materials = Vec::new();
+        let mut vertex_offset = 0u32;
+
+        // Extract and combine all mesh data
+        for entity_id in entity_ids {
+            let (_transform, mesh, material_entity) = extract_entity_components(world, entity_id)?;
+
+            // Get material index from scene
+            let material_index = scene
+                .get_material_index_for_entity(material_entity)
+                .ok_or(ExtractionError::InvalidMaterialReference(entity_id))?;
+
+            for vertex in mesh.vertices() {
+                let raytracer_vertex = RaytracerVertex::from_vertex(vertex, material_index);
+                vertices.push(raytracer_vertex);
+            }
+
+            for &index in mesh.indices() {
+                indices.push(index + vertex_offset);
+            }
+
+            vertex_offset += mesh.vertices().len() as u32;
+        }
+
+        // Extract materials from scene using centralized sorting method
+        for (_material_id, scene_material) in scene.sorted_materials() {
+            materials.push(RaytracerMaterial::from_material(scene_material));
+        }
+
+        Ok(RaytracerExtractedData {
+            vertex_count: vertices.len() as u32,
+            material_count: materials.len() as u32,
+            index_count: indices.len() as u32,
+            vertices,
+            materials,
+            indices,
+        })
+    }
 }

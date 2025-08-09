@@ -18,7 +18,7 @@ pub struct Scene {
     entity_to_material_id: HashMap<EntityId, MaterialId>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MaterialId(pub u32);
 
 impl Scene {
@@ -42,11 +42,6 @@ impl Scene {
     /// Get a material by ID
     pub fn get_material(&self, id: MaterialId) -> Option<&Material> {
         self.materials.get(&id)
-    }
-
-    /// Get all materials
-    pub fn materials(&self) -> &HashMap<MaterialId, Material> {
-        &self.materials
     }
 
     /// Load materials from GLTF and create ECS entities with consistent indexing
@@ -144,15 +139,12 @@ impl Scene {
     /// This is the single source of truth for material indexing used by both renderers
     pub fn get_material_index_for_entity(&self, material_entity: EntityId) -> Option<usize> {
         let material_id = self.entity_to_material_id.get(&material_entity)?;
-
-        // Create sorted materials to ensure consistent ordering (same as create_material_bind_groups)
-        let mut sorted_materials: Vec<_> = self.materials.iter().collect();
-        sorted_materials.sort_by_key(|(id, _)| id.0);
+        let sorted_materials = self.sorted_materials();
 
         // Find the index of this material in the sorted list
         sorted_materials
             .iter()
-            .position(|(id, _)| *id == material_id)
+            .position(|(id, _)| **id == *material_id)
     }
 
     /// Get the material entity for a given MaterialId
@@ -163,6 +155,13 @@ impl Scene {
     /// Get the MaterialId for a given material entity
     pub fn get_material_id_for_entity(&self, entity_id: EntityId) -> Option<MaterialId> {
         self.entity_to_material_id.get(&entity_id).copied()
+    }
+
+    /// Get materials in sorted order (consistent ordering for both renderers)
+    pub fn sorted_materials(&self) -> Vec<(&MaterialId, &Material)> {
+        let mut sorted_materials: Vec<_> = self.materials.iter().collect();
+        sorted_materials.sort_by_key(|(id, _)| *id);
+        sorted_materials
     }
 }
 

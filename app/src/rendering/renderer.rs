@@ -31,21 +31,32 @@ impl Renderer {
             window.scale_factor() as f32,
         );
 
-        let rasterizer = Rc::new(RefCell::new(Rasterizer::new(
-            &wgpu,
-            scene,
+        let mut rasterizer_inner = Rasterizer::new(&wgpu);
+
+        if let Err(err) = rasterizer_inner.update_scene_data(
+            &wgpu.device,
+            &wgpu.queue,
             world,
+            scene,
             camera_entity,
             sun_light_entity,
-        )));
-        let raytracer = Raytracer::new(
-            &wgpu,
-            window_size,
-            scene,
+        ) {
+            eprintln!("Failed to update rasterizer scene data: {err}");
+        }
+
+        let rasterizer = Rc::new(RefCell::new(rasterizer_inner));
+        let mut raytracer = Raytracer::new(&wgpu, window_size);
+
+        if let Err(err) = raytracer.update_scene_data(
+            &wgpu.device,
+            &wgpu.queue,
             world,
+            scene,
             camera_entity,
             sun_light_entity,
-        );
+        ) {
+            eprintln!("Failed to update raytracer scene data: {err}");
+        }
 
         Self {
             wgpu,
@@ -84,7 +95,6 @@ impl Renderer {
         window: &winit::window::Window,
         window_size: &winit::dpi::PhysicalSize<u32>,
         config: &EngineConfiguration,
-        scene: &crate::scene::Scene,
         world: &mut World,
         camera_entity: EntityId,
         sun_light_entity: EntityId,
@@ -150,11 +160,8 @@ impl Renderer {
                     .render(&mut render_encoder, &surface_texture_view);
             } else {
                 self.rasterizer.borrow().render(
-                    &self.wgpu.device,
                     &mut render_encoder,
                     &surface_texture_view,
-                    scene,
-                    world,
                     camera_entity,
                 );
 

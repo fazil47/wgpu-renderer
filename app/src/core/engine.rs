@@ -241,7 +241,6 @@ impl Engine {
             &self.window,
             &self.window_size,
             &self.config,
-            &self.scene,
             &mut self.world,
             self.camera_entity,
             self.sun_light_entity,

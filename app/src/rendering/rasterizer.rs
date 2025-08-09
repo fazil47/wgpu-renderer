@@ -28,12 +28,25 @@ use crate::{
         updater::ProbeUpdatePipeline,
         visualization::{ProbeUIResult, ProbeVisualization},
     },
-    rendering::raytracer::Raytracer,
-    rendering::wgpu_utils::{CameraBuffers, LightingBuffers, WgpuResources},
-    rendering::wgpu_utils::{WgpuExt, render_pass},
-    // scene::EcsScene, // Removed - using World directly
+    rendering::{
+        extract::{
+            Extract, ExtractionError, RenderableEntity, extract_entity_components,
+            query_renderable_entities,
+        },
+        raytracer::Raytracer,
+        wgpu_utils::{CameraBuffers, LightingBuffers, WgpuResources},
+        wgpu_utils::{WgpuExt, render_pass},
+    },
+    scene::Scene,
 };
 use ecs::{EntityId, World};
+
+struct EntityRenderData {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+    material_index: usize,
+}
 
 pub struct Rasterizer {
     camera_buffers: CameraBuffers,
@@ -42,6 +55,7 @@ pub struct Rasterizer {
     depth_texture: crate::rendering::wgpu_utils::Texture,
     render_pipeline: wgpu::RenderPipeline,
     material_bind_groups: Vec<wgpu::BindGroup>,
+    entity_render_data: Vec<EntityRenderData>,
     probe_grid: ProbeGrid,
     probe_visualization: ProbeVisualization,
     probe_updater: ProbeUpdatePipeline,
@@ -49,13 +63,7 @@ pub struct Rasterizer {
 }
 
 impl Rasterizer {
-    pub fn new(
-        wgpu: &WgpuResources,
-        scene: &crate::scene::Scene,
-        world: &World,
-        camera_entity: EntityId,
-        sun_light_entity: EntityId,
-    ) -> Self {
+    pub fn new(wgpu: &WgpuResources) -> Self {
         let rasterizer_shader = wgpu
             .device
             .shader()
@@ -113,9 +121,9 @@ impl Rasterizer {
             "rasterizer_depth_texture",
         );
 
-        let camera_buffers = CameraBuffers::new(&wgpu.device, world, camera_entity, "Rasterizer");
-        let lighting_buffers =
-            LightingBuffers::new(&wgpu.device, world, sun_light_entity, "Rasterizer");
+        let camera_buffers = CameraBuffers::new(&wgpu.device, "Rasterizer");
+        let lighting_buffers = LightingBuffers::new(&wgpu.device, "Rasterizer");
+
         println!("Creating rasterizer other bind group");
         let other_bind_group = wgpu
             .device
@@ -125,8 +133,34 @@ impl Rasterizer {
             .buffer(1, &lighting_buffers.sun_direction)
             .build();
 
-        let material_bind_groups =
-            scene.create_material_bind_groups(&wgpu.device, &material_bind_group_layout);
+        let material_bind_groups = Vec::new(); // Empty until scene data loaded
+
+        let dummy_vertices = vec![Vertex {
+            position: [0.0, 0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0, 0.0],
+        }];
+        let dummy_indices = vec![0u32];
+
+        let dummy_vertex_buffer = wgpu
+            .device
+            .buffer()
+            .label("Dummy Entity Vertex Buffer")
+            .usage(wgpu::BufferUsages::VERTEX)
+            .vertex(&dummy_vertices);
+
+        let dummy_index_buffer = wgpu
+            .device
+            .buffer()
+            .label("Dummy Entity Index Buffer")
+            .usage(wgpu::BufferUsages::INDEX)
+            .index(&dummy_indices);
+
+        let entity_render_data = vec![EntityRenderData {
+            vertex_buffer: dummy_vertex_buffer,
+            index_buffer: dummy_index_buffer,
+            index_count: dummy_indices.len() as u32,
+            material_index: 0,
+        }];
 
         let probe_visualization =
             ProbeVisualization::new(wgpu, &probe_grid, &camera_buffers.view_projection);
@@ -154,11 +188,76 @@ impl Rasterizer {
             depth_texture,
             render_pipeline,
             material_bind_groups,
+            entity_render_data,
             probe_grid,
             probe_visualization,
             probe_updater,
             lights_bind_group_layout,
         }
+    }
+
+    pub fn update_scene_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &World,
+        scene: &Scene,
+        camera_entity: EntityId,
+        sun_light_entity: EntityId,
+    ) -> Result<(), ExtractionError> {
+        // Update camera and lighting buffers
+        self.camera_buffers
+            .update_from_world(queue, world, camera_entity);
+        self.lighting_buffers
+            .update_from_world(queue, world, sun_light_entity);
+
+        // Create material bind groups
+        let material_bind_group_layout = device
+            .bind_group_layout()
+            .label("Rasterizer Material Bind Group Layout")
+            .uniform(0, wgpu::ShaderStages::FRAGMENT)
+            .build();
+        self.material_bind_groups =
+            scene.create_material_bind_groups(device, &material_bind_group_layout);
+
+        let extracted_entities = self.extract(world, scene)?;
+        let mut entity_render_data = Vec::new();
+
+        for renderable_entity in extracted_entities {
+            // Convert mesh data to rasterizer vertex format
+            let vertices: Vec<Vertex> = renderable_entity
+                .mesh
+                .vertices()
+                .iter()
+                .map(|v| Vertex {
+                    position: [v.position[0], v.position[1], v.position[2], 1.0],
+                    normal: [v.normal[0], v.normal[1], v.normal[2], 0.0],
+                })
+                .collect();
+
+            // Create vertex and index buffers for this entity's mesh
+            let vertex_buffer = device
+                .buffer()
+                .label("Entity Mesh Vertex Buffer")
+                .usage(wgpu::BufferUsages::VERTEX)
+                .vertex(&vertices);
+
+            let index_buffer = device
+                .buffer()
+                .label("Entity Mesh Index Buffer")
+                .usage(wgpu::BufferUsages::INDEX)
+                .index(renderable_entity.mesh.indices());
+
+            entity_render_data.push(EntityRenderData {
+                vertex_buffer,
+                index_buffer,
+                index_count: renderable_entity.mesh.indices().len() as u32,
+                material_index: renderable_entity.material_index,
+            });
+        }
+
+        self.entity_render_data = entity_render_data;
+        Ok(())
     }
 
     pub fn resize(&mut self, wgpu: &WgpuResources) {
@@ -185,11 +284,8 @@ impl Rasterizer {
 
     pub fn render(
         &self,
-        device: &wgpu::Device,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        scene: &crate::scene::Scene,
-        world: &World,
         _camera_entity: EntityId,
     ) {
         let mut rasterizer_rpass = render_pass(render_encoder)
@@ -202,78 +298,35 @@ impl Rasterizer {
         rasterizer_rpass.set_bind_group(0, &self.other_bind_group, &[]);
         rasterizer_rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
 
-        // Query ECS for renderable entities
-        let renderable_entities = world.get_entities_with_3::<crate::rendering::Transform, crate::mesh::Mesh, crate::rendering::MaterialRef>()
-            .into_iter()
-            .filter(|&entity_id| world.has_component::<crate::rendering::Renderable>(entity_id))
-            .collect::<Vec<_>>();
-
-        // No more hacky material entity mapping - use centralized Scene indexing
-
-        // Render each ECS entity
-        for entity_id in renderable_entities.iter() {
-            // Get components
-            if let (Some(mesh_component), Some(material_ref_component)) = (
-                world.get_component::<crate::mesh::Mesh>(*entity_id),
-                world.get_component::<crate::rendering::MaterialRef>(*entity_id),
-            ) {
-                let mesh = mesh_component.borrow();
-                let material_ref = material_ref_component.borrow();
-
-                // Use centralized Scene material indexing for consistent colors
-                if let Some(material_index) =
-                    scene.get_material_index_for_entity(material_ref.material_entity)
-                {
-                    if material_index < self.material_bind_groups.len() {
-                        rasterizer_rpass.set_bind_group(
-                            2,
-                            &self.material_bind_groups[material_index],
-                            &[],
-                        );
-                    }
-                } else {
-                    // Fallback to first material if mapping fails
-                    if !self.material_bind_groups.is_empty() {
-                        rasterizer_rpass.set_bind_group(2, &self.material_bind_groups[0], &[]);
-                    }
+        // Render each cached entity
+        for entity_data in &self.entity_render_data {
+            // Set material bind group using pre-calculated material index
+            if entity_data.material_index < self.material_bind_groups.len() {
+                rasterizer_rpass.set_bind_group(
+                    2,
+                    &self.material_bind_groups[entity_data.material_index],
+                    &[],
+                );
+            } else {
+                // Fallback to first material if index is invalid
+                if !self.material_bind_groups.is_empty() {
+                    rasterizer_rpass.set_bind_group(2, &self.material_bind_groups[0], &[]);
                 }
-
-                // Convert mesh data to rasterizer vertex format
-                let vertices: Vec<Vertex> = mesh
-                    .vertices()
-                    .iter()
-                    .map(|v| Vertex {
-                        position: [v.position[0], v.position[1], v.position[2], 1.0],
-                        normal: [v.normal[0], v.normal[1], v.normal[2], 0.0],
-                    })
-                    .collect();
-
-                // Create vertex and index buffers for this entity's mesh
-                let vertex_buffer = device
-                    .buffer()
-                    .label("Entity Mesh Vertex Buffer")
-                    .usage(wgpu::BufferUsages::VERTEX)
-                    .vertex(&vertices);
-
-                let index_buffer = device
-                    .buffer()
-                    .label("Entity Mesh Index Buffer")
-                    .usage(wgpu::BufferUsages::INDEX)
-                    .index(mesh.indices());
-
-                rasterizer_rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                rasterizer_rpass
-                    .set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                rasterizer_rpass.draw_indexed(0..mesh.indices().len() as u32, 0, 0..1);
             }
+
+            // Use pre-created buffers
+            rasterizer_rpass.set_vertex_buffer(0, entity_data.vertex_buffer.slice(..));
+            rasterizer_rpass.set_index_buffer(
+                entity_data.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+            rasterizer_rpass.draw_indexed(0..entity_data.index_count, 0, 0..1);
         }
     }
 
     /// Update probe positions based on grid configuration
     pub fn update_probes(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         self.probe_grid.recreate_textures_if_needed(device);
-
-        // Texture views are now created dynamically during dispatch
 
         self.probe_grid.update_config_buffer(queue);
         self.probe_visualization
@@ -365,10 +418,36 @@ impl Rasterizer {
 
         queue.submit(Some(encoder.finish()));
     }
-
-    // Removed get_material_bind_groups - now using scene.create_material_bind_groups() directly
 }
 
-// Removed RasterizerMaterialBuffers and RasterizerOtherBuffers - now using unified buffer utilities
+impl Extract for Rasterizer {
+    type ExtractedData = Vec<RenderableEntity>;
 
-// Removed create_material_bind_group - now using ECS material bind groups
+    fn extract(
+        &self,
+        world: &World,
+        scene: &Scene,
+    ) -> Result<Self::ExtractedData, ExtractionError> {
+        let entity_ids = query_renderable_entities(world);
+        let mut extracted_entities = Vec::new();
+
+        for entity_id in entity_ids {
+            let (transform, mesh, material_entity) = extract_entity_components(world, entity_id)?;
+
+            // Get material index from scene
+            let material_index = scene
+                .get_material_index_for_entity(material_entity)
+                .ok_or(ExtractionError::InvalidMaterialReference(entity_id))?;
+
+            extracted_entities.push(RenderableEntity {
+                entity_id,
+                transform,
+                mesh,
+                material_entity,
+                material_index,
+            });
+        }
+
+        Ok(extracted_entities)
+    }
+}

@@ -1,7 +1,6 @@
 use crate::rendering::wgpu_utils::WgpuExt;
 use ecs::{EntityId, World};
 
-/// Unified camera buffer creation for both raytracer and rasterizer
 pub struct CameraBuffers {
     pub view_projection: wgpu::Buffer,
     pub camera_to_world: wgpu::Buffer,
@@ -9,33 +8,15 @@ pub struct CameraBuffers {
 }
 
 impl CameraBuffers {
-    /// Create camera buffers from ECS World
-    pub fn new(
-        device: &wgpu::Device,
-        world: &World,
-        camera_entity: EntityId,
-        label_prefix: &str,
-    ) -> Self {
-        // Extract camera matrices from World
-        let (view_proj, camera_to_world, camera_inverse_proj) = if let Some(camera_component) =
-            world.get_component::<crate::rendering::Camera>(camera_entity)
-        {
-            let camera = camera_component.borrow();
-            (
-                camera.view_projection().to_cols_array_2d(),
-                camera.camera_to_world().to_cols_array_2d(),
-                camera.camera_inverse_projection().to_cols_array_2d(),
-            )
-        } else {
-            // Fallback to identity matrices
-            let identity = [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ];
-            (identity, identity, identity)
-        };
+    /// Create camera buffers with default identity matrices
+    pub fn new(device: &wgpu::Device, label_prefix: &str) -> Self {
+        let identity = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let (view_proj, camera_to_world, camera_inverse_proj) = (identity, identity, identity);
 
         let view_projection = device
             .buffer()
@@ -69,23 +50,9 @@ pub struct LightingBuffers {
 }
 
 impl LightingBuffers {
-    /// Create lighting buffers from ECS World
-    pub fn new(
-        device: &wgpu::Device,
-        world: &World,
-        sun_light_entity: EntityId,
-        label_prefix: &str,
-    ) -> Self {
-        // Extract light direction from World
-        let sun_direction_data = if let Some(light_component) =
-            world.get_component::<crate::lighting::DirectionalLight>(sun_light_entity)
-        {
-            let light = light_component.borrow();
-            let dir = light.direction.to_array();
-            [dir[0], dir[1], dir[2], 0.0] // Convert Vec3 to Vec4 with w=0
-        } else {
-            [0.0, -1.0, 0.0, 0.0] // Default downward direction
-        };
+    /// Create lighting buffers with default downward light direction
+    pub fn new(device: &wgpu::Device, label_prefix: &str) -> Self {
+        let sun_direction_data = [0.0, -1.0, 0.0, 0.0];
 
         let sun_direction = device
             .buffer()
