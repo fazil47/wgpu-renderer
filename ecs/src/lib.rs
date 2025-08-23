@@ -2,32 +2,45 @@ use std::{
     any::{Any, TypeId},
     cell::RefCell,
     collections::HashMap,
+    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
 /// Marker trait for ECS components
 pub trait Component: 'static {}
 
-/// Trait for ECS systems that operate on the World
-pub trait System {
-    /// Execute the system with the given World
-    fn execute(&mut self, world: &mut World);
-}
+/// Marker trait for ECS resources
+pub trait Resource: 'static {}
 
 /// A unique identifier for an entity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EntityId(pub u32);
 
+impl Deref for EntityId {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for EntityId {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// The main ECS world that holds all entities and their components
 pub struct World {
     entities: HashMap<EntityId, Entity>,
+    resources: HashMap<TypeId, Rc<RefCell<dyn Resource>>>,
     next_id: u32,
 }
 
 /// An entity is just a collection of components
 pub struct Entity {
     pub id: EntityId,
-    components: HashMap<TypeId, Rc<RefCell<dyn Any>>>,
+    components: HashMap<TypeId, Rc<RefCell<dyn Component>>>,
 }
 
 impl Default for World {
@@ -40,6 +53,7 @@ impl World {
     pub fn new() -> Self {
         Self {
             entities: HashMap::new(),
+            resources: HashMap::new(),
             next_id: 0,
         }
     }
@@ -127,5 +141,14 @@ impl World {
 
     pub fn get_all_entities(&self) -> Vec<EntityId> {
         self.entities.keys().copied().collect()
+    }
+
+    pub fn get_resource(&self, type_id: TypeId) -> Option<Rc<RefCell<dyn Resource>>> {
+        self.resources.get(&type_id).cloned()
+    }
+
+    pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+        self.resources
+            .insert(resource.type_id(), Rc::new(RefCell::new(resource)));
     }
 }
