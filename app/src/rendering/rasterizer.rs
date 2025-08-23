@@ -4,12 +4,12 @@ use wesl::include_wesl;
 // Rasterizer vertex type
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
+pub struct GpuVertex {
     pub position: [f32; 4],
     pub normal: [f32; 4],
 }
 
-impl Vertex {
+impl GpuVertex {
     const ATTRIBS: [wgpu::VertexAttribute; 2] =
         wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
 
@@ -34,8 +34,7 @@ use crate::{
             query_renderable_entities,
         },
         raytracer::Raytracer,
-        wgpu_utils::{CameraBuffers, LightingBuffers, WgpuResources},
-        wgpu_utils::{WgpuExt, render_pass},
+        wgpu_utils::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources, render_pass},
     },
     scene::Scene,
 };
@@ -108,7 +107,7 @@ impl Rasterizer {
             .layout(&render_pipeline_layout)
             .vertex_shader(&rasterizer_shader, "vs_main")
             .fragment_shader(&rasterizer_shader, "fs_main")
-            .vertex_buffer(Vertex::desc())
+            .vertex_buffer(GpuVertex::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
             .depth_test_less(crate::rendering::wgpu_utils::Texture::DEPTH_FORMAT)
@@ -135,7 +134,7 @@ impl Rasterizer {
 
         let material_bind_groups = Vec::new(); // Empty until scene data loaded
 
-        let dummy_vertices = vec![Vertex {
+        let dummy_vertices = vec![GpuVertex {
             position: [0.0, 0.0, 0.0, 1.0],
             normal: [0.0, 1.0, 0.0, 0.0],
         }];
@@ -201,10 +200,11 @@ impl Rasterizer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         world: &World,
-        scene: &Scene,
         camera_entity: EntityId,
         sun_light_entity: EntityId,
     ) -> Result<(), ExtractionError> {
+        let scene = world.get_resource::<Scene>().unwrap();
+
         // Update camera and lighting buffers
         self.camera_buffers
             .update_from_world(queue, world, camera_entity);
@@ -220,18 +220,23 @@ impl Rasterizer {
         self.material_bind_groups =
             scene.create_material_bind_groups(device, &material_bind_group_layout);
 
-        let extracted_entities = self.extract(world, scene)?;
+        let extracted_entities = self.extract(world)?;
         let mut entity_render_data = Vec::new();
 
         for renderable_entity in extracted_entities {
             // Convert mesh data to rasterizer vertex format
-            let vertices: Vec<Vertex> = renderable_entity
+            let vertices: Vec<GpuVertex> = renderable_entity
                 .mesh
                 .vertices()
                 .iter()
-                .map(|v| Vertex {
-                    position: [v.position[0], v.position[1], v.position[2], 1.0],
-                    normal: [v.normal[0], v.normal[1], v.normal[2], 0.0],
+                .map(|v| {
+                    let transform = renderable_entity.transform.get_matrix();
+                    let position = transform * v.position;
+                    let normal = transform * v.normal;
+                    GpuVertex {
+                        position: position.to_array(),
+                        normal: normal.to_array(),
+                    }
                 })
                 .collect();
 
@@ -423,11 +428,9 @@ impl Rasterizer {
 impl Extract for Rasterizer {
     type ExtractedData = Vec<RenderableEntity>;
 
-    fn extract(
-        &self,
-        world: &World,
-        scene: &Scene,
-    ) -> Result<Self::ExtractedData, ExtractionError> {
+    fn extract(&self, world: &World) -> Result<Self::ExtractedData, ExtractionError> {
+        let scene = world.get_resource::<Scene>().unwrap();
+
         let entity_ids = query_renderable_entities(world);
         let mut extracted_entities = Vec::new();
 

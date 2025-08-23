@@ -1,16 +1,16 @@
 use std::{
     any::{Any, TypeId},
-    cell::RefCell,
+    cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     ops::{Deref, DerefMut},
     rc::Rc,
 };
 
 /// Marker trait for ECS components
-pub trait Component: 'static {}
+pub trait Component: 'static + Any {}
 
 /// Marker trait for ECS resources
-pub trait Resource: 'static {}
+pub trait Resource: 'static + Any {}
 
 /// A unique identifier for an entity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -143,8 +143,27 @@ impl World {
         self.entities.keys().copied().collect()
     }
 
-    pub fn get_resource(&self, type_id: TypeId) -> Option<Rc<RefCell<dyn Resource>>> {
-        self.resources.get(&type_id).cloned()
+    pub fn get_resource<T: 'static + Resource>(&self) -> Option<Ref<T>> {
+        let type_id = TypeId::of::<T>();
+        let downcasted = Ref::map(self.resources.get(&type_id)?.borrow(), |r| {
+            let as_any = r as &dyn Any;
+            as_any.downcast_ref::<T>().unwrap()
+        });
+
+        Some(downcasted)
+    }
+
+    pub fn get_resource_mut_as_any<T: 'static + Resource>(&self) -> Option<Rc<RefCell<dyn Any>>> {
+        let type_id = TypeId::of::<T>();
+
+        Some(self.resources.get(&type_id)?.clone())
+    }
+
+    pub fn downcast_to_resource_mut<T: 'static + Resource>(resource: RefMut<dyn Any>) -> RefMut<T> {
+        RefMut::map(resource, |r| {
+            let as_any = r as &mut dyn Any;
+            as_any.downcast_mut::<T>().unwrap()
+        })
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) {

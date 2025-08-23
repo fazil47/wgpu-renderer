@@ -1,13 +1,9 @@
 use ecs::Component;
-use wgpu::util::DeviceExt;
+use maths::Vec4;
 
 use crate::rendering::wgpu_utils::WgpuExt;
 use crate::rendering::{
-    rasterizer::Vertex,
-    raytracer::{
-        RAYTRACE_MATERIAL_STRIDE, RAYTRACE_VERTEX_MATERIAL_ID_OFFSET,
-        RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE, RaytracerMaterial, RaytracerVertex,
-    },
+    rasterizer::GpuVertex,
     wgpu_utils::{Index, RGBA},
 };
 
@@ -29,11 +25,12 @@ impl Material {
         self.meshes.push(mesh);
     }
 
-    fn get_vertices(&self) -> Vec<Vertex> {
+    fn get_vertices(&self) -> Vec<GpuVertex> {
         self.meshes
             .iter()
             .flat_map(|mesh| &mesh.vertices)
             .copied()
+            .map(|v| v.into())
             .collect()
     }
 
@@ -49,33 +46,6 @@ impl Material {
 
             // Update vertices offset for the next mesh
             vertices_offset += mesh.vertices.len() as u32;
-        }
-
-        indices
-    }
-
-    fn get_raytracer_vertices(&self, material_id: usize) -> Vec<RaytracerVertex> {
-        self.meshes
-            .iter()
-            .flat_map(|mesh| {
-                mesh.vertices
-                    .iter()
-                    .map(|vertex| RaytracerVertex::from_vertex(vertex, material_id))
-            })
-            .collect()
-    }
-
-    fn get_raytracer_indices(&self, vertices_offset: &mut u32) -> Vec<Index> {
-        let mut indices = Vec::new();
-
-        for mesh in &self.meshes {
-            let mesh_indices = &mesh.indices;
-
-            // Add indices with the vertices offset
-            indices.extend(mesh_indices.iter().map(|&index| index + *vertices_offset));
-
-            // Update vertices offset for the next mesh
-            *vertices_offset += mesh.vertices.len() as u32;
         }
 
         indices
@@ -105,93 +75,25 @@ impl Material {
     }
 }
 
-pub trait RaytracerExt {
-    fn create_materials_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_material_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_vertex_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_vertex_normal_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_vertex_material_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
-    fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer;
+#[derive(Clone, Copy)]
+pub struct Vertex {
+    pub position: Vec4,
+    pub normal: Vec4,
 }
 
-impl RaytracerExt for Vec<Material> {
-    fn create_materials_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let raytracer_materials: Vec<RaytracerMaterial> = self
-            .iter()
-            .map(RaytracerMaterial::from_mesh_material)
-            .collect();
-
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Materials Buffer"),
-            contents: bytemuck::cast_slice(&raytracer_materials),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        })
-    }
-
-    fn create_material_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Material Stride Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[RAYTRACE_MATERIAL_STRIDE]),
-        })
-    }
-
-    fn create_vertices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let mut all_vertices: Vec<RaytracerVertex> = Vec::new();
-        for (material_id, material) in self.iter().enumerate() {
-            let vertices = material.get_raytracer_vertices(material_id);
-            all_vertices.extend(vertices);
+impl From<Vertex> for GpuVertex {
+    fn from(val: Vertex) -> Self {
+        GpuVertex {
+            position: val.position.to_array(),
+            normal: val.normal.to_array(),
         }
-
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Raytracer Vertices Buffer"),
-            contents: bytemuck::cast_slice(&all_vertices),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        })
-    }
-
-    fn create_vertex_stride_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Stride Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[RAYTRACE_VERTEX_STRIDE]),
-        })
-    }
-    fn create_vertex_normal_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Normal Offset Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[RAYTRACE_VERTEX_NORMAL_OFFSET]),
-        })
-    }
-    fn create_vertex_material_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Material Offset Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            contents: bytemuck::cast_slice(&[RAYTRACE_VERTEX_MATERIAL_ID_OFFSET]),
-        })
-    }
-
-    fn create_indices_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let mut all_indices: Vec<Index> = Vec::new();
-        let mut vertices_offset: u32 = 0;
-        for material in self {
-            all_indices.extend(material.get_raytracer_indices(&mut vertices_offset));
-        }
-
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Raytracer Indices Buffer"),
-            contents: bytemuck::cast_slice(&all_indices),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        })
     }
 }
 
 #[derive(Clone)]
 pub struct Mesh {
-    vertices: Vec<Vertex>,
-    indices: Vec<Index>,
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<Index>,
 }
 
 impl Mesh {
@@ -206,13 +108,33 @@ impl Mesh {
     pub fn indices(&self) -> &[Index] {
         &self.indices
     }
-
-    pub fn into_parts(self) -> (Vec<Vertex>, Vec<Index>) {
-        (self.vertices, self.indices)
-    }
 }
 
 impl Component for Mesh {}
+
+#[derive(Clone)]
+pub struct GpuMesh {
+    vertices: Vec<GpuVertex>,
+    indices: Vec<Index>,
+}
+
+impl GpuMesh {
+    pub fn new(vertices: Vec<GpuVertex>, indices: Vec<Index>) -> Self {
+        Self { vertices, indices }
+    }
+
+    pub fn vertices(&self) -> &[GpuVertex] {
+        &self.vertices
+    }
+
+    pub fn indices(&self) -> &[Index] {
+        &self.indices
+    }
+
+    pub fn into_parts(self) -> (Vec<GpuVertex>, Vec<Index>) {
+        (self.vertices, self.indices)
+    }
+}
 
 pub mod gltf;
 pub mod static_mesh;

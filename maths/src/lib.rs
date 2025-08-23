@@ -374,6 +374,46 @@ impl Mat4 {
         self.adjugate() * (1.0 / det)
     }
 
+    pub fn from_translation(translation: Vec3) -> Self {
+        Self::from_cols(
+            Vec4::new(1.0, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, 1.0, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, 1.0, 0.0),
+            Vec4::new(translation.x, translation.y, translation.z, 1.0),
+        )
+    }
+
+    pub fn from_rotation(quat: Quat) -> Self {
+        let (x, y, z, w) = (quat.x, quat.y, quat.z, quat.w);
+        let (x2, y2, z2) = (x + x, y + y, z + z);
+
+        let xx2 = x * x2;
+        let yy2 = y * y2;
+        let zz2 = z * z2;
+        let xy2 = x * y2;
+        let xz2 = x * z2;
+        let yz2 = y * z2;
+        let wx2 = w * x2;
+        let wy2 = w * y2;
+        let wz2 = w * z2;
+
+        Self::from_cols(
+            Vec4::new(1.0 - (yy2 + zz2), xy2 + wz2, xz2 - wy2, 0.0),
+            Vec4::new(xy2 - wz2, 1.0 - (xx2 + zz2), yz2 + wx2, 0.0),
+            Vec4::new(xz2 + wy2, yz2 - wx2, 1.0 - (xx2 + yy2), 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        )
+    }
+
+    pub fn from_scale(scale: Vec3) -> Self {
+        Self::from_cols(
+            Vec4::new(scale.x, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, scale.y, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, scale.z, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     const fn det3(
         a1: f32,
@@ -590,5 +630,74 @@ impl Mul<Vec3> for Quat {
             qv.w * q_inv.y + qv.y * q_inv.w + qv.z * q_inv.x - qv.x * q_inv.z,
             qv.w * q_inv.z + qv.z * q_inv.w + qv.x * q_inv.y - qv.y * q_inv.x,
         )
+    }
+}
+
+/// Transform Gizmo integration
+
+impl Into<transform_gizmo_egui::mint::Vector3<f64>> for Vec3 {
+    fn into(self) -> transform_gizmo_egui::mint::Vector3<f64> {
+        transform_gizmo_egui::mint::Vector3 {
+            x: self.x as f64,
+            y: self.y as f64,
+            z: self.z as f64,
+        }
+    }
+}
+
+impl From<transform_gizmo_egui::mint::Vector3<f64>> for Vec3 {
+    fn from(value: transform_gizmo_egui::mint::Vector3<f64>) -> Self {
+        Self::new(value.x as f32, value.y as f32, value.z as f32)
+    }
+}
+
+impl Into<transform_gizmo_egui::mint::Quaternion<f64>> for Quat {
+    fn into(self) -> transform_gizmo_egui::mint::Quaternion<f64> {
+        transform_gizmo_egui::mint::Quaternion {
+            v: transform_gizmo_egui::mint::Vector3 {
+                x: self.x as f64,
+                y: self.y as f64,
+                z: self.z as f64,
+            },
+            s: self.w as f64,
+        }
+    }
+}
+
+impl From<transform_gizmo_egui::mint::Quaternion<f64>> for Quat {
+    fn from(value: transform_gizmo_egui::mint::Quaternion<f64>) -> Self {
+        Self::new(
+            value.v.x as f32,
+            value.v.y as f32,
+            value.v.z as f32,
+            value.s as f32,
+        )
+    }
+}
+
+impl Into<transform_gizmo_egui::mint::Vector4<f64>> for Vec4 {
+    fn into(self) -> transform_gizmo_egui::mint::Vector4<f64> {
+        transform_gizmo_egui::mint::Vector4 {
+            x: self.x as f64,
+            y: self.y as f64,
+            z: self.z as f64,
+            w: self.w as f64,
+        }
+    }
+}
+
+impl Into<transform_gizmo_egui::mint::RowMatrix4<f64>> for Mat4 {
+    fn into(self) -> transform_gizmo_egui::mint::RowMatrix4<f64> {
+        let x = Vec4::new(self.a1(), self.b1(), self.c1(), self.d1());
+        let y = Vec4::new(self.a2(), self.b2(), self.c2(), self.d2());
+        let z = Vec4::new(self.a3(), self.b3(), self.c3(), self.d3());
+        let w = Vec4::new(self.a4(), self.b4(), self.c4(), self.d4());
+
+        transform_gizmo_egui::mint::RowMatrix4 {
+            x: x.into(),
+            y: y.into(),
+            z: z.into(),
+            w: w.into(),
+        }
     }
 }

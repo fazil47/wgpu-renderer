@@ -1,5 +1,5 @@
-use super::{Material, Mesh};
-use crate::rendering::{rasterizer::Vertex, wgpu_utils::RGBA};
+use super::{Material, Mesh, Vertex};
+use crate::rendering::wgpu_utils::RGBA;
 use gltf::material::AlphaMode;
 use maths::{Mat4, Vec3};
 use std::{collections::HashMap, path::Path};
@@ -88,8 +88,8 @@ impl GltfMeshExt for Material {
                             transformed_normal.normalize();
 
                             mesh_vertices.push(Vertex {
-                                position: transformed_pos.to_array(),
-                                normal: transformed_normal.to_array(),
+                                position: transformed_pos,
+                                normal: transformed_normal,
                             });
                         }
 

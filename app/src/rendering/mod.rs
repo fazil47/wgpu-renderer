@@ -14,7 +14,7 @@ pub use extract::{
     query_renderable_entities,
 };
 pub use material::{Material, MaterialIndex, MaterialRef};
-pub use rasterizer::{Rasterizer, Vertex};
+pub use rasterizer::{GpuVertex, Rasterizer};
 pub use raytracer::{Raytracer, RaytracerExtractedData, RaytracerMaterial, RaytracerVertex};
 pub use renderable::Renderable;
 pub use renderer::Renderer;

@@ -5,7 +5,7 @@ use crate::{
     core::engine::EngineConfiguration, rendering::rasterizer::Rasterizer,
     rendering::raytracer::Raytracer, rendering::wgpu_utils::WgpuResources, ui::egui::RendererEgui,
 };
-use ecs::{EntityId, World};
+use ecs::{EntityId, Resource, World};
 
 pub struct Renderer {
     pub rasterizer: Rc<RefCell<Rasterizer>>,
@@ -14,11 +14,12 @@ pub struct Renderer {
     pub wgpu: WgpuResources,
 }
 
+impl Resource for Renderer {}
+
 impl Renderer {
     pub async fn new(
         window: Arc<Window>,
         window_size: &winit::dpi::PhysicalSize<u32>,
-        scene: &crate::scene::Scene,
         world: &World,
         camera_entity: EntityId,
         sun_light_entity: EntityId,
@@ -31,27 +32,23 @@ impl Renderer {
             window.scale_factor() as f32,
         );
 
-        let mut rasterizer_inner = Rasterizer::new(&wgpu);
-
-        if let Err(err) = rasterizer_inner.update_scene_data(
+        let mut rasterizer = Rasterizer::new(&wgpu);
+        if let Err(err) = rasterizer.update_scene_data(
             &wgpu.device,
             &wgpu.queue,
             world,
-            scene,
             camera_entity,
             sun_light_entity,
         ) {
             eprintln!("Failed to update rasterizer scene data: {err}");
         }
+        let rasterizer = Rc::new(RefCell::new(rasterizer));
 
-        let rasterizer = Rc::new(RefCell::new(rasterizer_inner));
         let mut raytracer = Raytracer::new(&wgpu, window_size);
-
         if let Err(err) = raytracer.update_scene_data(
             &wgpu.device,
             &wgpu.queue,
             world,
-            scene,
             camera_entity,
             sun_light_entity,
         ) {
@@ -63,6 +60,50 @@ impl Renderer {
             rasterizer,
             raytracer,
             egui,
+        }
+    }
+
+    pub fn update_scene_data(&mut self, world: &World) {
+        let camera_entity = world
+            .get_entities_with::<crate::rendering::Camera>()
+            .into_iter()
+            .next();
+        let sun_light_entity = world
+            .get_entities_with::<crate::lighting::DirectionalLight>()
+            .into_iter()
+            .next();
+
+        if camera_entity.is_none() || sun_light_entity.is_none() {
+            eprintln!("Warning: No camera or sun light entity found in the world.");
+            return;
+        }
+
+        if sun_light_entity.is_none() {
+            eprintln!("Warning: No sun light entity found in the world.");
+            return;
+        }
+
+        let camera_entity = camera_entity.unwrap();
+        let sun_light_entity = sun_light_entity.unwrap();
+
+        if let Err(err) = self.rasterizer.borrow_mut().update_scene_data(
+            &self.wgpu.device,
+            &self.wgpu.queue,
+            world,
+            camera_entity,
+            sun_light_entity,
+        ) {
+            eprintln!("Error updating scene data: {err}");
+        }
+
+        if let Err(err) = self.raytracer.update_scene_data(
+            &self.wgpu.device,
+            &self.wgpu.queue,
+            world,
+            camera_entity,
+            sun_light_entity,
+        ) {
+            eprintln!("Error updating scene data: {err}");
         }
     }
 
@@ -83,10 +124,14 @@ impl Renderer {
     pub fn setup_egui(
         &mut self,
         window: &winit::window::Window,
-        run_ui: impl FnMut(&egui::Context),
+        run_ui: &mut impl FnMut(&egui::Context, &RendererEgui),
     ) -> egui::FullOutput {
         let egui_raw_input = self.egui.state.take_egui_input(window);
-        self.egui.state.egui_ctx().run(egui_raw_input, run_ui)
+        let egui_ref = &self.egui;
+        self.egui
+            .state
+            .egui_ctx()
+            .run(egui_raw_input, |ctx| run_ui(ctx, egui_ref))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -95,7 +140,7 @@ impl Renderer {
         window: &winit::window::Window,
         window_size: &winit::dpi::PhysicalSize<u32>,
         config: &EngineConfiguration,
-        world: &mut World,
+        world: &World,
         camera_entity: EntityId,
         sun_light_entity: EntityId,
         frame_count: u32,
@@ -199,6 +244,7 @@ impl Renderer {
             .update_camera(&self.wgpu.queue, world, camera_entity);
         self.raytracer
             .update_camera(&self.wgpu.queue, world, camera_entity);
+        self.egui.update_camera(world, camera_entity);
     }
 
     pub fn update_light(&self, world: &World, sun_light_entity: EntityId) {

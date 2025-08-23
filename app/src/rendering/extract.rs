@@ -1,7 +1,6 @@
 use crate::{
-    mesh::Mesh as RenderMesh,
+    mesh::Mesh,
     rendering::{MaterialRef, Renderable, Transform},
-    scene::Scene,
 };
 use ecs::{EntityId, World};
 
@@ -9,8 +8,7 @@ use ecs::{EntityId, World};
 pub trait Extract {
     type ExtractedData;
 
-    fn extract(&self, world: &World, scene: &Scene)
-    -> Result<Self::ExtractedData, ExtractionError>;
+    fn extract(&self, world: &World) -> Result<Self::ExtractedData, ExtractionError>;
 }
 
 #[derive(Debug)]
@@ -18,6 +16,7 @@ pub enum ExtractionError {
     BorrowConflict(String),
     MissingComponent(EntityId, String),
     InvalidMaterialReference(EntityId),
+    Misc(String),
 }
 
 impl std::fmt::Display for ExtractionError {
@@ -30,6 +29,7 @@ impl std::fmt::Display for ExtractionError {
             ExtractionError::InvalidMaterialReference(entity) => {
                 write!(f, "Entity {entity:?} has invalid material reference")
             }
+            ExtractionError::Misc(msg) => write!(f, "Extraction error: {msg}"),
         }
     }
 }
@@ -39,14 +39,14 @@ impl std::error::Error for ExtractionError {}
 pub struct RenderableEntity {
     pub entity_id: EntityId,
     pub transform: Transform,
-    pub mesh: RenderMesh,
+    pub mesh: Mesh,
     pub material_entity: EntityId,
     pub material_index: usize,
 }
 
 pub fn query_renderable_entities(world: &World) -> Vec<EntityId> {
     world
-        .get_entities_with_3::<Transform, RenderMesh, MaterialRef>()
+        .get_entities_with_3::<Transform, Mesh, MaterialRef>()
         .into_iter()
         .filter(|&entity_id| world.has_component::<Renderable>(entity_id))
         .collect()
@@ -55,23 +55,22 @@ pub fn query_renderable_entities(world: &World) -> Vec<EntityId> {
 pub fn extract_entity_components(
     world: &World,
     entity_id: EntityId,
-) -> Result<(Transform, RenderMesh, EntityId), ExtractionError> {
+) -> Result<(Transform, Mesh, EntityId), ExtractionError> {
     let transform_component = world
         .get_component::<Transform>(entity_id)
         .ok_or_else(|| ExtractionError::MissingComponent(entity_id, "Transform".to_string()))?;
 
     let mesh_component = world
-        .get_component::<RenderMesh>(entity_id)
+        .get_component::<Mesh>(entity_id)
         .ok_or_else(|| ExtractionError::MissingComponent(entity_id, "RenderMesh".to_string()))?;
 
     let material_ref_component = world
         .get_component::<MaterialRef>(entity_id)
         .ok_or_else(|| ExtractionError::MissingComponent(entity_id, "MaterialRef".to_string()))?;
 
-    let transform = transform_component
+    let transform = *transform_component
         .try_borrow()
-        .map_err(|_| ExtractionError::BorrowConflict("Transform".to_string()))?
-        .clone();
+        .map_err(|_| ExtractionError::BorrowConflict("Transform".to_string()))?;
 
     let mesh = mesh_component
         .try_borrow()

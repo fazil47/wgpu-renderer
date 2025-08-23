@@ -1,7 +1,7 @@
 use crate::{
     mesh::Material as MeshMaterial, rendering::material::Material, rendering::wgpu_utils::WgpuExt,
 };
-use ecs::EntityId;
+use ecs::{EntityId, Resource};
 /// CPU-side Scene for organizing Meshes and Materials
 /// Separates asset management from ECS components and GPU resources
 use std::collections::HashMap;
@@ -170,3 +170,5 @@ impl Default for Scene {
         Self::new()
     }
 }
+
+impl Resource for Scene {}

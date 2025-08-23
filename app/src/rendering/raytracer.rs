@@ -2,14 +2,14 @@ use std::mem::{offset_of, size_of};
 use wesl::include_wesl;
 
 use crate::{
+    mesh::Vertex,
     rendering::{
+        Transform,
         extract::{Extract, ExtractionError, extract_entity_components, query_renderable_entities},
         material::Material,
-        rasterizer::Vertex,
         wgpu_utils::{CameraBuffers, LightingBuffers, WgpuExt},
     },
     scene::Scene,
-    // scene::crate::scene::Scene, // Removed - using World directly
 };
 use ecs::{EntityId, World};
 
@@ -23,10 +23,13 @@ pub struct RaytracerVertex {
 }
 
 impl RaytracerVertex {
-    pub fn from_vertex(vertex: &Vertex, material_id: usize) -> Self {
+    pub fn from_vertex(vertex: &Vertex, material_id: usize, transform: &Transform) -> Self {
+        let transformation_matrix = transform.get_matrix();
+        let position = transformation_matrix * vertex.position;
+        let normal = transformation_matrix * vertex.normal;
         Self {
-            position: vertex.position,
-            normal: vertex.normal,
+            position: position.to_array(),
+            normal: normal.to_array(),
             material_id: material_id as f32,
         }
     }
@@ -174,11 +177,10 @@ impl Raytracer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         world: &World,
-        scene: &Scene,
         camera_entity: EntityId,
         sun_light_entity: EntityId,
     ) -> Result<(), ExtractionError> {
-        let extracted_data = self.extract(world, scene)?;
+        let extracted_data = self.extract(world)?;
 
         self.buffers.materials = device
             .buffer()
@@ -589,11 +591,9 @@ pub struct RaytracerExtractedData {
 impl Extract for Raytracer {
     type ExtractedData = RaytracerExtractedData;
 
-    fn extract(
-        &self,
-        world: &World,
-        scene: &Scene,
-    ) -> Result<Self::ExtractedData, ExtractionError> {
+    fn extract(&self, world: &World) -> Result<Self::ExtractedData, ExtractionError> {
+        let scene = world.get_resource::<Scene>().unwrap();
+
         let entity_ids = query_renderable_entities(world);
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -602,7 +602,7 @@ impl Extract for Raytracer {
 
         // Extract and combine all mesh data
         for entity_id in entity_ids {
-            let (_transform, mesh, material_entity) = extract_entity_components(world, entity_id)?;
+            let (transform, mesh, material_entity) = extract_entity_components(world, entity_id)?;
 
             // Get material index from scene
             let material_index = scene
@@ -610,7 +610,8 @@ impl Extract for Raytracer {
                 .ok_or(ExtractionError::InvalidMaterialReference(entity_id))?;
 
             for vertex in mesh.vertices() {
-                let raytracer_vertex = RaytracerVertex::from_vertex(vertex, material_index);
+                let raytracer_vertex =
+                    RaytracerVertex::from_vertex(vertex, material_index, &transform);
                 vertices.push(raytracer_vertex);
             }
 

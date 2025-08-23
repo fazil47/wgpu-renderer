@@ -1,6 +1,7 @@
-use crate::rendering::{rasterizer::Vertex, wgpu_utils::RGBA};
+use crate::rendering::wgpu_utils::RGBA;
+use maths::Vec4;
 
-use super::{Material, Mesh};
+use super::{Material, Mesh, Vertex};
 
 pub trait StaticMeshExt {
     fn triangle() -> Material;
@@ -17,16 +18,16 @@ impl StaticMeshExt for Material {
         material.add_mesh(Mesh::new(
             vec![
                 Vertex {
-                    position: [0.0, 1.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [-1.0, -1.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-1.0, -1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [1.0, -1.0, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(1.0, -1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
             ],
             vec![0, 1, 2],
@@ -40,24 +41,24 @@ impl StaticMeshExt for Material {
         material.add_mesh(Mesh::new(
             vec![
                 Vertex {
-                    position: [-0.0868241, 0.49240386, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.0868241, 0.49240386, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // A
                 Vertex {
-                    position: [-0.49513406, 0.06958647, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.49513406, 0.06958647, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // B
                 Vertex {
-                    position: [-0.21918549, -0.44939706, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.21918549, -0.44939706, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // C
                 Vertex {
-                    position: [0.35966998, -0.3473291, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.35966998, -0.3473291, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // D
                 Vertex {
-                    position: [0.44147372, 0.2347359, 0.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.44147372, 0.2347359, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // E
             ],
             vec![0, 1, 4, 1, 2, 4, 2, 3, 4],
@@ -72,37 +73,37 @@ impl StaticMeshExt for Material {
             vec![
                 // Front face
                 Vertex {
-                    position: [-0.5, -0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.5, -0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, -0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.5, -0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, 0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.5, 0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [-0.5, 0.5, 0.5, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-0.5, 0.5, 0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 // Back face
                 Vertex {
-                    position: [-0.5, -0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(-0.5, -0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, -0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(0.5, -0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
                 Vertex {
-                    position: [0.5, 0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(0.5, 0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
                 Vertex {
-                    position: [-0.5, 0.5, -0.5, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(-0.5, 0.5, -0.5, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 },
             ],
             vec![
@@ -123,28 +124,28 @@ impl StaticMeshExt for Material {
         material.add_mesh(Mesh::new(
             vec![
                 Vertex {
-                    position: [0.0, 1.0, 0.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(0.0, 1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 }, // 0: Top
                 Vertex {
-                    position: [0.0, -1.0, 0.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(0.0, -1.0, 0.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 }, // 1: Bottom
                 Vertex {
-                    position: [1.0, 0.0, 0.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(1.0, 0.0, 0.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 }, // 2: Right
                 Vertex {
-                    position: [-1.0, 0.0, 0.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-1.0, 0.0, 0.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 }, // 3: Left
                 Vertex {
-                    position: [0.0, 0.0, 1.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(0.0, 0.0, 1.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // 4: Front
                 Vertex {
-                    position: [0.0, 0.0, -1.0, 1.0],
-                    normal: [0.0, 0.0, -1.0, 0.0],
+                    position: Vec4::new(0.0, 0.0, -1.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, -1.0, 0.0),
                 }, // 5: Back
             ],
             vec![
@@ -167,20 +168,20 @@ impl StaticMeshExt for Material {
         left_material.add_mesh(Mesh::new(
             vec![
                 Vertex {
-                    position: [-2.0, -2.0, -2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, -2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, 2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, -2.0, 2.0, 1.0],
-                    normal: [1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
             ],
             vec![0, 1, 2, 2, 3, 0],
@@ -190,20 +191,20 @@ impl StaticMeshExt for Material {
         right_material.add_mesh(Mesh::new(
             vec![
                 Vertex {
-                    position: [2.0, -2.0, -2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, 2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, 2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, -2.0, 1.0],
-                    normal: [-1.0, 0.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
             ],
             vec![0, 1, 2, 2, 3, 0],
@@ -214,54 +215,54 @@ impl StaticMeshExt for Material {
             vec![
                 // Back wall
                 Vertex {
-                    position: [-2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, 0.0, 1.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
                 // Top wall
                 Vertex {
-                    position: [-2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, -2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, 2.0, 2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, 2.0, 2.0, 1.0],
-                    normal: [0.0, -1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, 2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, -1.0, 0.0, 0.0),
                 },
                 // Bottom wall
                 Vertex {
-                    position: [-2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [-2.0, -2.0, 2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(-2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, 2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, 2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
                 Vertex {
-                    position: [2.0, -2.0, -2.0, 1.0],
-                    normal: [0.0, 1.0, 0.0, 0.0],
+                    position: Vec4::new(2.0, -2.0, -2.0, 1.0),
+                    normal: Vec4::new(0.0, 1.0, 0.0, 0.0),
                 },
             ],
             vec![
@@ -306,8 +307,8 @@ impl StaticMeshExt for Material {
                 let nz = z / radius;
 
                 vertices.push(Vertex {
-                    position: [x, y, z, 1.0],
-                    normal: [nx, ny, nz, 0.0],
+                    position: Vec4::new(x, y, z, 1.0),
+                    normal: Vec4::new(nx, ny, nz, 0.0),
                 });
             }
         }

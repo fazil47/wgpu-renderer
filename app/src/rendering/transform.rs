@@ -2,13 +2,15 @@ use ecs::{Component, EntityId};
 use maths::{Quat, Vec3};
 
 /// Transform component for position, rotation, and scale
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Transform {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
     pub parent: Option<EntityId>,
 }
+
+impl Component for Transform {}
 
 impl Transform {
     pub fn new(position: Vec3) -> Self {
@@ -28,6 +30,32 @@ impl Transform {
             parent: Some(parent),
         }
     }
+
+    pub fn get_matrix(&self) -> maths::Mat4 {
+        let translation_matrix = maths::Mat4::from_translation(self.position);
+        let rotation_matrix = maths::Mat4::from_rotation(self.rotation);
+        let scale_matrix = maths::Mat4::from_scale(self.scale);
+        translation_matrix * rotation_matrix * scale_matrix
+    }
 }
 
-impl Component for Transform {}
+impl From<Transform> for transform_gizmo_egui::math::Transform {
+    fn from(val: Transform) -> Self {
+        transform_gizmo_egui::math::Transform {
+            translation: val.position.into(),
+            rotation: val.rotation.into(),
+            scale: val.scale.into(),
+        }
+    }
+}
+
+impl From<transform_gizmo_egui::math::Transform> for Transform {
+    fn from(value: transform_gizmo_egui::math::Transform) -> Self {
+        Self {
+            position: value.translation.into(),
+            rotation: value.rotation.into(),
+            scale: value.scale.into(),
+            parent: None,
+        }
+    }
+}
