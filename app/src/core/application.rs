@@ -49,7 +49,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             } // Continue
         }
 
-        let window_attributes = Window::default_attributes().with_title("TODO: Change this");
+        let window_attributes = Window::default_attributes().with_title("WGPU Renderer");
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
 
         #[cfg(target_arch = "wasm32")]
