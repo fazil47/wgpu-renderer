@@ -611,8 +611,18 @@ impl Extract for Raytracer {
                 vertices.push(raytracer_vertex);
             }
 
-            for &index in mesh.indices() {
-                indices.push(index + vertex_offset);
+            match mesh.indices() {
+                Some(mesh_indices) => {
+                    for &index in mesh_indices {
+                        indices.push(index + vertex_offset);
+                    }
+                }
+
+                None => {
+                    for index in 0..mesh.vertices().len() {
+                        indices.push(index as u32 + vertex_offset);
+                    }
+                }
             }
 
             vertex_offset += mesh.vertices().len() as u32;

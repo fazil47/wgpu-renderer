@@ -74,7 +74,7 @@ impl GltfMeshExt for Mesh {
                 }
 
                 let mut mesh_vertices = Vec::new();
-                let mut mesh_indices = Vec::new();
+                let mut mesh_indices = None;
                 let mut base_index = 0;
 
                 for primitive in primitives {
@@ -101,9 +101,14 @@ impl GltfMeshExt for Mesh {
 
                         // Handle indices
                         if let Some(indices_reader) = reader.read_indices() {
-                            mesh_indices.extend(indices_reader.into_u32().map(|i| i + base_index));
-                        } else {
-                            return Err("No indices found".to_string());
+                            let indices = indices_reader.into_u32().map(|i| i + base_index);
+                            mesh_indices.get_or_insert(Vec::new()).extend(indices);
+                        } else if mesh_indices.is_some() {
+                            // TODO: Currently all primitives that share a material are grouped together, but that's not right
+                            // Meshes in different transform heirarchies can share a material, but they should be separate
+                            return Err(
+                                "Some primitives have indices while others don't".to_string()
+                            );
                         }
 
                         base_index += vertex_count as u32;

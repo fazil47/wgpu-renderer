@@ -12,14 +12,14 @@ pub struct Vertex {
 #[derive(Clone)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
-    pub indices: Vec<Index>,
+    pub indices: Option<Vec<Index>>,
     pub material_entity: Option<Entity>,
 }
 
 impl Mesh {
     pub fn new(
         vertices: Vec<Vertex>,
-        indices: Vec<Index>,
+        indices: Option<Vec<Index>>,
         material_entity: Option<Entity>,
     ) -> Self {
         Self {
@@ -33,8 +33,8 @@ impl Mesh {
         &self.vertices
     }
 
-    pub fn indices(&self) -> &[Index] {
-        &self.indices
+    pub fn indices(&self) -> Option<&[Index]> {
+        self.indices.as_deref()
     }
 }
 
