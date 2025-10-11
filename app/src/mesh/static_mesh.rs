@@ -37,7 +37,7 @@ impl StaticMeshExt for Mesh {
                     normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 },
             ],
-            vec![0, 1, 2],
+            vec![0, 1, 2].into(),
             Some(material_entity),
         );
 
@@ -76,7 +76,7 @@ impl StaticMeshExt for Mesh {
                     normal: Vec4::new(0.0, 0.0, 1.0, 0.0),
                 }, // E
             ],
-            vec![0, 1, 4, 1, 2, 4, 2, 3, 4],
+            vec![0, 1, 4, 1, 2, 4, 2, 3, 4].into(),
             Some(material_entity),
         );
 
@@ -136,7 +136,8 @@ impl StaticMeshExt for Mesh {
                 4, 0, 3, 3, 7, 4, // Left face
                 3, 2, 6, 6, 7, 3, // Top face
                 4, 5, 1, 1, 0, 4, // Bottom face
-            ],
+            ]
+            .into(),
             Some(material_entity),
         );
 
@@ -188,7 +189,8 @@ impl StaticMeshExt for Mesh {
                 1, 4, 3, // Bottom-Front-Left
                 1, 3, 5, // Bottom-Left-Back
                 1, 5, 2, // Bottom-Back-Right
-            ],
+            ]
+            .into(),
             Some(material_entity),
         );
 
@@ -223,7 +225,7 @@ impl StaticMeshExt for Mesh {
                     normal: Vec4::new(1.0, 0.0, 0.0, 0.0),
                 },
             ],
-            vec![0, 1, 2, 2, 3, 0],
+            vec![0, 1, 2, 2, 3, 0].into(),
             Some(left_material_entity),
         );
 
@@ -250,7 +252,7 @@ impl StaticMeshExt for Mesh {
                     normal: Vec4::new(-1.0, 0.0, 0.0, 0.0),
                 },
             ],
-            vec![0, 1, 2, 2, 3, 0],
+            vec![0, 1, 2, 2, 3, 0].into(),
             Some(right_material_entity),
         );
 
@@ -316,7 +318,8 @@ impl StaticMeshExt for Mesh {
                 0, 1, 2, 2, 3, 0, // Back wall
                 4, 5, 6, 6, 7, 4, // Top wall
                 8, 9, 10, 10, 11, 8, // Bottom wall
-            ],
+            ]
+            .into(),
             Some(other_material_entity),
         );
 
@@ -396,7 +399,7 @@ impl StaticMeshExt for Mesh {
             }
         }
 
-        let mesh = Mesh::new(vertices, indices, Some(material_entity));
+        let mesh = Mesh::new(vertices, indices.into(), Some(material_entity));
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
         world.add_component(mesh_entity, Transform::default());

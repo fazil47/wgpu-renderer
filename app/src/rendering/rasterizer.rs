@@ -20,8 +20,8 @@ use ecs::{Entity, World};
 
 pub struct GpuMesh {
     vertex_buffer: Buffer,
-    index_buffer: Buffer,
-    index_count: u32,
+    vertex_count: u32,
+    index_buffer: Option<(Buffer, u32)>,
     material_entity: Option<Entity>,
 }
 
@@ -244,8 +244,13 @@ impl Rasterizer {
 
             rpass.set_bind_group(2, material_bind_group, &[]);
             rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
+
+            if let Some((buffer, count)) = mesh.index_buffer.as_ref() {
+                rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+                rpass.draw_indexed(0..*count, 0, 0..1);
+            } else {
+                rpass.draw(0..mesh.vertex_count, 0..1);
+            }
         }
     }
 
@@ -396,16 +401,25 @@ impl Extract for Rasterizer {
                 .label("Entity Mesh Vertex Buffer")
                 .usage(wgpu::BufferUsages::VERTEX)
                 .vertex(&vertices);
-            let index_buffer: Buffer = device
-                .buffer()
-                .label("Entity Mesh Index Buffer")
-                .usage(wgpu::BufferUsages::INDEX)
-                .index(mesh.indices());
+            let vertex_count = mesh.vertices().len() as u32;
+
+            let index_buffer = if let Some(mesh_indices) = mesh.indices() {
+                Some((
+                    device
+                        .buffer()
+                        .label("Entity Mesh Index Buffer")
+                        .usage(wgpu::BufferUsages::INDEX)
+                        .index(mesh_indices),
+                    mesh_indices.len() as u32,
+                ))
+            } else {
+                None
+            };
 
             gpu_meshes.push(GpuMesh {
                 vertex_buffer,
+                vertex_count,
                 index_buffer,
-                index_count: mesh.indices().len() as u32,
                 material_entity: mesh.material_entity,
             });
         }
