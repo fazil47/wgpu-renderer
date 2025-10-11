@@ -55,21 +55,22 @@ impl GltfMeshExt for Mesh {
                 parent: None,
             };
 
-            // Group mesh primitives by material
-            let mut primitives_by_material: HashMap<usize, Vec<gltf::Primitive>> = HashMap::new();
+            // Group mesh primitives by material (None for primitives without materials)
+            let mut primitives_by_material: HashMap<Option<usize>, Vec<gltf::Primitive>> =
+                HashMap::new();
             for primitive in mesh.primitives() {
                 let material_id = primitive.material().index();
-                if let Some(material_id) = material_id {
-                    primitives_by_material
-                        .entry(material_id)
-                        .or_default()
-                        .push(primitive);
-                }
+                primitives_by_material
+                    .entry(material_id)
+                    .or_default()
+                    .push(primitive);
             }
 
             for (material_id, primitives) in primitives_by_material {
-                if material_id >= materials.len() {
-                    return Err(format!("Material index out of bounds: {material_id}"));
+                if let Some(material_id) = material_id {
+                    if material_id >= materials.len() {
+                        return Err(format!("Material index out of bounds: {material_id}"));
+                    }
                 }
 
                 let mut mesh_vertices = Vec::new();
@@ -91,7 +92,8 @@ impl GltfMeshExt for Mesh {
                             let normal = if let Some(n) = normal_raw {
                                 Vec4::from_direction(Vec3::from_array(&n))
                             } else {
-                                return Err(format!("Missing normal for vertex {i}"));
+                                // TODO: Maybe calculate normals if they are missing?
+                                Vec4::from_direction(Vec3::new(0.0, 0.0, 1.0))
                             };
 
                             mesh_vertices.push(Vertex { position, normal });
@@ -113,7 +115,7 @@ impl GltfMeshExt for Mesh {
                 let mesh_entity = world.create_entity();
                 meshes.push(mesh_entity);
 
-                let material = materials[material_id];
+                let material = material_id.map(|id| materials[id]);
                 let mesh = Mesh::new(mesh_vertices, mesh_indices, material);
                 world.add_component(mesh_entity, mesh);
                 world.add_component(mesh_entity, mesh_transform_component);

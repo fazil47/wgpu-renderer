@@ -14,6 +14,7 @@ use crate::{
     camera::Camera,
     input::CameraController,
     lighting::DirectionalLight,
+    material::{DefaultMaterialEntity, Material},
     mesh::Mesh,
     rendering::{Renderer, WorldExtractExt},
     transform::Transform,
@@ -47,10 +48,14 @@ impl Engine {
         window_size.height = window_size.height.max(1);
 
         let mut world = World::new();
-        let camera_controller = CameraController::new(0.8);
+
+        let default_material_entity = world.create_entity();
+        world.add_component(default_material_entity, Material::default());
+        world.insert_resource(DefaultMaterialEntity(default_material_entity));
 
         let camera_entity = world.create_entity();
         let camera_position = Vec3::new(0.0, 0.0, 4.0);
+        let camera_controller = CameraController::new(0.8);
         world.add_component(camera_entity, Transform::new(camera_position));
         world.add_component(
             camera_entity,

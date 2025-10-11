@@ -1,4 +1,4 @@
-use ecs::Component;
+use ecs::{Component, Entity, Resource};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RGBA {
@@ -23,7 +23,7 @@ impl RGBA {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Material {
     pub color: RGBA,
 }
@@ -35,3 +35,18 @@ impl Material {
 }
 
 impl Component for Material {}
+
+impl Default for RGBA {
+    fn default() -> Self {
+        Self {
+            r: 0.8,
+            g: 0.8,
+            b: 0.8,
+            a: 1.0,
+        }
+    }
+}
+
+pub struct DefaultMaterialEntity(pub Entity);
+
+impl Resource for DefaultMaterialEntity {}

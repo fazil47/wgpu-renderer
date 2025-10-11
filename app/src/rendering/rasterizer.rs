@@ -22,7 +22,7 @@ pub struct GpuMesh {
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     index_count: u32,
-    material_entity: Entity,
+    material_entity: Option<Entity>,
 }
 
 // Rasterizer vertex type
@@ -218,7 +218,7 @@ impl Rasterizer {
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        _camera_entity: Entity,
+        default_material_entity: Entity,
     ) {
         let mut rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")
@@ -231,10 +231,16 @@ impl Rasterizer {
         rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
 
         for mesh in &self.gpu_meshes {
-            let material_bind_group = self
-                .material_bind_groups
-                .get(&mesh.material_entity)
-                .expect("Material bind group not found for mesh material entity");
+            let material_bind_group = if let Some(material_entity) = mesh.material_entity {
+                self.material_bind_groups
+                    .get(&material_entity)
+                    .expect("Material bind group not found for mesh material entity")
+            } else {
+                // Use the default material bind group (stored with a sentinel key)
+                self.material_bind_groups
+                    .get(&default_material_entity)
+                    .expect("Default material bind group not found")
+            };
 
             rpass.set_bind_group(2, material_bind_group, &[]);
             rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));

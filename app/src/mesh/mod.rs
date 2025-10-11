@@ -13,11 +13,15 @@ pub struct Vertex {
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<Index>,
-    pub material_entity: Entity, // TODO: Make this optional
+    pub material_entity: Option<Entity>,
 }
 
 impl Mesh {
-    pub fn new(vertices: Vec<Vertex>, indices: Vec<Index>, material_entity: Entity) -> Self {
+    pub fn new(
+        vertices: Vec<Vertex>,
+        indices: Vec<Index>,
+        material_entity: Option<Entity>,
+    ) -> Self {
         Self {
             vertices,
             indices,

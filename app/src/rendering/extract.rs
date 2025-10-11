@@ -95,10 +95,16 @@ impl WorldExtractExt for World {
     }
 
     fn extract_mesh_material(&self, mesh: &Mesh) -> Result<Material, ExtractionError> {
+        let material_entity = mesh.material_entity;
+        if material_entity.is_none() {
+            return Ok(Material::default());
+        }
+
+        let material_entity = material_entity.unwrap();
         let material = self
-            .get_component::<Material>(mesh.material_entity)
+            .get_component::<Material>(material_entity)
             .ok_or_else(|| {
-                ExtractionError::MissingComponent(mesh.material_entity, "Material".to_string())
+                ExtractionError::MissingComponent(material_entity, "Material".to_string())
             })?;
         let material: Material = material
             .try_borrow()

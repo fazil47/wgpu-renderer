@@ -6,7 +6,7 @@ use wesl::include_wesl;
 use wgpu::Device;
 
 use crate::{
-    material::Material,
+    material::{DefaultMaterialEntity, Material},
     mesh::Vertex,
     rendering::{
         extract::{Extract, ExtractionError, WorldExtractExt},
@@ -572,13 +572,21 @@ impl Extract for Raytracer {
         let material_entities = world.get_materials();
         let mut materials = Vec::new();
         let mut material_entity_to_index = HashMap::new();
+        let default_material_entity = world.get_resource::<DefaultMaterialEntity>().unwrap().0;
+        let mut default_material_index = None;
 
         for entity in material_entities {
             let material = world.extract_material_component(entity)?;
             let material_index = materials.len();
             materials.push(RaytracerMaterial::from_material(&material));
             material_entity_to_index.insert(entity, material_index);
+
+            if entity == default_material_entity {
+                default_material_index = Some(material_index);
+            }
         }
+
+        let default_material_index = default_material_index.unwrap();
 
         let renderables = world.get_renderables();
         let mut vertices = Vec::new();
@@ -589,9 +597,13 @@ impl Extract for Raytracer {
         for entity in renderables {
             let transform = world.extract_transform_component(entity)?;
             let mesh = world.extract_mesh_component(entity)?;
-            let material_index = *material_entity_to_index
-                .get(&mesh.material_entity)
-                .expect("Material entity not found for mesh");
+            let material_index = if let Some(mat_entity) = mesh.material_entity {
+                *material_entity_to_index
+                    .get(&mat_entity)
+                    .expect("Material entity not found for mesh")
+            } else {
+                default_material_index
+            };
 
             for vertex in mesh.vertices() {
                 let raytracer_vertex =

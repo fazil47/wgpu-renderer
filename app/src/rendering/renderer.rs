@@ -9,6 +9,7 @@ use web_time::Instant;
 use crate::{
     camera::Camera,
     core::engine::EngineConfiguration,
+    material::DefaultMaterialEntity,
     rendering::{rasterizer::Rasterizer, raytracer::Raytracer, wgpu::WgpuResources},
     ui::egui::RendererEgui,
 };
@@ -232,10 +233,12 @@ impl Renderer {
                 self.raytracer
                     .render(&mut render_encoder, &surface_texture_view);
             } else {
+                let default_material_entity =
+                    world.get_resource::<DefaultMaterialEntity>().unwrap().0;
                 self.rasterizer.borrow().render(
                     &mut render_encoder,
                     &surface_texture_view,
-                    camera_entity,
+                    default_material_entity,
                 );
 
                 // Render probe visualization if enabled
@@ -269,7 +272,9 @@ impl Renderer {
             if frames_to_wait > FRAMES_TO_WAIT_THRESHOLD {
                 self.frames_till_next_raytracer_compute = frames_to_wait;
             } else {
-                self.frames_till_next_raytracer_compute -= 1;
+                if self.frames_till_next_raytracer_compute > 0 {
+                    self.frames_till_next_raytracer_compute -= 1;
+                }
             }
         } else {
             self.frames_till_next_raytracer_compute = 0;
