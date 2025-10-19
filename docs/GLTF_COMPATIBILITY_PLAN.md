@@ -15,17 +15,20 @@ All models from [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glT
 - No textures, no transforms
 - Minimal glTF structure
 - **Goal**: Verify basic mesh loading
+- Done
 
 ### 1.2 Non-Indexed Geometry
 **Model**: [TriangleWithoutIndices](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TriangleWithoutIndices)
 - Tests non-indexed drawing
 - **Goal**: Support both indexed and non-indexed meshes
+- Done
 
 ### 1.3 Basic Transforms
 **Model**: [Box](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Box)
 - Simple cube with basic transforms
 - Tests node transformations (translation, rotation, scale)
 - **Goal**: Correctly apply local transforms
+- Done
 
 ### 1.4 Interleaved Buffers
 **Model**: [BoxInterleaved](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoxInterleaved)
