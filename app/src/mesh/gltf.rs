@@ -44,7 +44,7 @@ impl GltfMeshExt for Mesh {
                 .find(|node| node.mesh().is_some_and(|m| m.index() == mesh.index()))
                 .map(|node| node.transform().matrix());
             let mesh_transform = if let Some(mat) = mesh_transform_raw {
-                Mat4::from_matrix(mat)
+                Mat4::from_cols_array_2d(mat)
             } else {
                 Mat4::IDENTITY
             };

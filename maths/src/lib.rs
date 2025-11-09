@@ -310,12 +310,21 @@ impl Mat4 {
         }
     }
 
-    pub const fn from_matrix(mat: [[f32; 4]; 4]) -> Self {
+    pub const fn from_cols_array_2d(columns: [[f32; 4]; 4]) -> Self {
         Self::from_cols(
-            Vec4::new(mat[0][0], mat[1][0], mat[2][0], mat[3][0]),
-            Vec4::new(mat[0][1], mat[1][1], mat[2][1], mat[3][1]),
-            Vec4::new(mat[0][2], mat[1][2], mat[2][2], mat[3][2]),
-            Vec4::new(mat[0][3], mat[1][3], mat[2][3], mat[3][3]),
+            Vec4::from_array(columns[0]),
+            Vec4::from_array(columns[1]),
+            Vec4::from_array(columns[2]),
+            Vec4::from_array(columns[3]),
+        )
+    }
+
+    pub const fn from_rows_array_2d(rows: [[f32; 4]; 4]) -> Self {
+        Self::from_cols(
+            Vec4::new(rows[0][0], rows[1][0], rows[2][0], rows[3][0]),
+            Vec4::new(rows[0][1], rows[1][1], rows[2][1], rows[3][1]),
+            Vec4::new(rows[0][2], rows[1][2], rows[2][2], rows[3][2]),
+            Vec4::new(rows[0][3], rows[1][3], rows[2][3], rows[3][3]),
         )
     }
 
