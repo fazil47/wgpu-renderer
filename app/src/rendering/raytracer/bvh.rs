@@ -7,7 +7,7 @@ use super::RaytracerVertex;
 pub const BVH_LEAF_SIZE: usize = 4;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BvhNode {
     pub bounds_min: [f32; 4],
     pub bounds_max: [f32; 4],

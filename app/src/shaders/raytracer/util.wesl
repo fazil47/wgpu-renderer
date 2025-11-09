@@ -6,6 +6,15 @@ const FLT_MAX: f32 = 1e12;
 const K_EPSILON: f32 = 1e-6;
 const SUN_INTENSITY: f32 = 1.0;
 
+struct BvhNode {
+    bounds_min: vec4f,
+    bounds_max: vec4f,
+    left_child: u32,
+    right_child: u32,
+    first_primitive: u32,
+    primitive_count: u32,
+}
+
 @group(0) @binding(0) var<storage, read> materials: array<f32>;
 @group(0) @binding(1) var<uniform> material_stride: u32;
 
@@ -14,6 +23,8 @@ const SUN_INTENSITY: f32 = 1.0;
 @group(1) @binding(2) var<uniform> vertex_normal_offset: u32;
 @group(1) @binding(3) var<uniform> vertex_material_offset: u32;
 @group(1) @binding(4) var<storage, read> indices: array<u32>;
+@group(1) @binding(5) var<storage, read> bvh_nodes: array<BvhNode>;
+@group(1) @binding(6) var<storage, read> bvh_primitive_indices: array<u32>;
 
 @group(2) @binding(0) var<uniform> sun_direction: vec3f;
 

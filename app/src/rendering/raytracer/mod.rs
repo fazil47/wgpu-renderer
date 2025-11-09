@@ -153,6 +153,8 @@ impl Raytracer {
             .uniform(2, wgpu::ShaderStages::COMPUTE)
             .uniform(3, wgpu::ShaderStages::COMPUTE)
             .storage(4, wgpu::ShaderStages::COMPUTE, true)
+            .storage(5, wgpu::ShaderStages::COMPUTE, true)
+            .storage(6, wgpu::ShaderStages::COMPUTE, true)
             .build()
     }
 
@@ -247,6 +249,10 @@ impl Raytracer {
             indices,
             bvh_lines,
             bvh_line_vertex_count,
+            bvh_nodes,
+            bvh_node_count,
+            bvh_primitive_indices,
+            bvh_primitive_count,
         } = self.extract(device, world)?;
 
         self.buffers.materials = materials;
@@ -254,6 +260,10 @@ impl Raytracer {
         self.buffers.indices = indices;
         self.buffers.bvh_lines = bvh_lines;
         self.buffers.bvh_line_vertex_count = bvh_line_vertex_count;
+        self.buffers.bvh_nodes = bvh_nodes;
+        self.buffers.bvh_node_count = bvh_node_count;
+        self.buffers.bvh_primitive_indices = bvh_primitive_indices;
+        self.buffers.bvh_primitive_count = bvh_primitive_count;
 
         self.buffers
             .lighting
@@ -398,6 +408,10 @@ pub struct RaytracerBuffers {
     pub indices: wgpu::Buffer,
     pub bvh_lines: wgpu::Buffer,
     pub bvh_line_vertex_count: u32,
+    pub bvh_nodes: wgpu::Buffer,
+    pub bvh_node_count: u32,
+    pub bvh_primitive_indices: wgpu::Buffer,
+    pub bvh_primitive_count: u32,
 
     // Other buffers
     pub lighting: LightingBuffers,
@@ -463,6 +477,18 @@ impl RaytracerBuffers {
             .label("Raytracer BVH Line Buffer")
             .vertex(&initial_bvh_lines);
 
+        let initial_bvh_node = [bvh::BvhNode::default()];
+        let bvh_nodes = device
+            .buffer()
+            .label("Raytracer BVH Node Buffer")
+            .storage(&initial_bvh_node);
+
+        let initial_bvh_primitive_indices = [0u32];
+        let bvh_primitive_indices = device
+            .buffer()
+            .label("Raytracer BVH Primitive Indices Buffer")
+            .storage(&initial_bvh_primitive_indices);
+
         let lighting = LightingBuffers::new(device, "Raytracer");
         let camera = CameraBuffers::new(device, "Raytracer");
         let frame_count = device
@@ -482,6 +508,10 @@ impl RaytracerBuffers {
             indices,
             bvh_lines,
             bvh_line_vertex_count: 0,
+            bvh_nodes,
+            bvh_node_count: 0,
+            bvh_primitive_indices,
+            bvh_primitive_count: 0,
             lighting,
             camera,
             frame_count,
@@ -612,6 +642,8 @@ impl RaytracerBindGroups {
             .buffer(2, &buffers.vertex_normal_offset)
             .buffer(3, &buffers.vertex_material_offset)
             .buffer(4, &buffers.indices)
+            .buffer(5, &buffers.bvh_nodes)
+            .buffer(6, &buffers.bvh_primitive_indices)
             .build();
         let compute_lights = device
             .bind_group(&bgl.compute_lights)
@@ -674,6 +706,10 @@ pub struct RaytracerExtractedBuffers {
     pub indices: wgpu::Buffer,
     pub bvh_lines: wgpu::Buffer,
     pub bvh_line_vertex_count: u32,
+    pub bvh_nodes: wgpu::Buffer,
+    pub bvh_node_count: u32,
+    pub bvh_primitive_indices: wgpu::Buffer,
+    pub bvh_primitive_count: u32,
 }
 
 impl Extract for Raytracer {
@@ -788,12 +824,43 @@ impl Extract for Raytracer {
             )
         };
 
+        let bvh_node_count = bvh.nodes.len() as u32;
+        let bvh_primitive_count = bvh.primitive_indices.len() as u32;
+
+        let bvh_nodes_buffer = if bvh.nodes.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer BVH Node Buffer")
+                .storage(&[bvh::BvhNode::default()])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer BVH Node Buffer")
+                .storage(&bvh.nodes)
+        };
+
+        let bvh_primitives_buffer = if bvh.primitive_indices.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer BVH Primitive Indices Buffer")
+                .storage(&[0u32])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer BVH Primitive Indices Buffer")
+                .storage(&bvh.primitive_indices)
+        };
+
         Ok(RaytracerExtractedBuffers {
             materials: material_buffer,
             vertices: vertices_buffer,
             indices: indices_buffer,
             bvh_lines: bvh_line_buffer,
             bvh_line_vertex_count,
+            bvh_nodes: bvh_nodes_buffer,
+            bvh_node_count,
+            bvh_primitive_indices: bvh_primitives_buffer,
+            bvh_primitive_count,
         })
     }
 }
