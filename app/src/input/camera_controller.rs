@@ -21,6 +21,8 @@ pub struct CameraController {
     speed: f32,
     sensitivity: f32,
     cursor_locked: bool,
+    fast_speed_multiplier: f32,
+    fast_speed_requests: u32,
 }
 
 impl CameraController {
@@ -37,6 +39,8 @@ impl CameraController {
             speed,
             sensitivity: 0.002, // Much lower sensitivity for smoother camera movement
             cursor_locked: false,
+            fast_speed_multiplier: 2.0,
+            fast_speed_requests: 0,
         }
     }
 
@@ -47,6 +51,7 @@ impl CameraController {
                     KeyEvent {
                         state,
                         physical_key: PhysicalKey::Code(keycode),
+                        repeat,
                         ..
                     },
                 ..
@@ -79,6 +84,16 @@ impl CameraController {
                     }
                     KeyCode::KeyQ => {
                         self.amount_down = amount;
+                        true
+                    }
+                    KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                        if !repeat {
+                            if *state == ElementState::Pressed {
+                                self.fast_speed_requests += 1;
+                            } else if self.fast_speed_requests > 0 {
+                                self.fast_speed_requests -= 1;
+                            }
+                        }
                         true
                     }
                     _ => false,
@@ -132,7 +147,12 @@ impl CameraController {
             velocity += up * (self.amount_up - self.amount_down);
 
             if velocity.length() > 0.0 {
-                camera.eye += velocity.normalized() * self.speed * dt;
+                let speed_multiplier = if self.fast_speed_requests > 0 {
+                    self.fast_speed_multiplier
+                } else {
+                    1.0
+                };
+                camera.eye += velocity.normalized() * self.speed * speed_multiplier * dt;
             }
 
             // Rotate the camera based on mouse input
