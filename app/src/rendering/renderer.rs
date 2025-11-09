@@ -271,10 +271,8 @@ impl Renderer {
                 (start_of_render.elapsed().as_secs_f32() / config.target_frame_time).ceil() as u32;
             if frames_to_wait > FRAMES_TO_WAIT_THRESHOLD {
                 self.frames_till_next_raytracer_compute = frames_to_wait;
-            } else {
-                if self.frames_till_next_raytracer_compute > 0 {
-                    self.frames_till_next_raytracer_compute -= 1;
-                }
+            } else if self.frames_till_next_raytracer_compute > 0 {
+                self.frames_till_next_raytracer_compute -= 1;
             }
         } else {
             self.frames_till_next_raytracer_compute = 0;

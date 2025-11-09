@@ -403,18 +403,16 @@ impl Extract for Rasterizer {
                 .vertex(&vertices);
             let vertex_count = mesh.vertices().len() as u32;
 
-            let index_buffer = if let Some(mesh_indices) = mesh.indices() {
-                Some((
+            let index_buffer = mesh.indices().map(|mesh_indices| {
+                (
                     device
                         .buffer()
                         .label("Entity Mesh Index Buffer")
                         .usage(wgpu::BufferUsages::INDEX)
                         .index(mesh_indices),
                     mesh_indices.len() as u32,
-                ))
-            } else {
-                None
-            };
+                )
+            });
 
             gpu_meshes.push(GpuMesh {
                 vertex_buffer,

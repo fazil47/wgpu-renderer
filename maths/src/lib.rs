@@ -714,12 +714,12 @@ impl Mul<Vec3> for Quat {
 
 /// Transform Gizmo integration
 
-impl Into<transform_gizmo_egui::mint::Vector3<f64>> for Vec3 {
-    fn into(self) -> transform_gizmo_egui::mint::Vector3<f64> {
+impl From<Vec3> for transform_gizmo_egui::mint::Vector3<f64> {
+    fn from(val: Vec3) -> Self {
         transform_gizmo_egui::mint::Vector3 {
-            x: self.x as f64,
-            y: self.y as f64,
-            z: self.z as f64,
+            x: val.x as f64,
+            y: val.y as f64,
+            z: val.z as f64,
         }
     }
 }
@@ -730,15 +730,15 @@ impl From<transform_gizmo_egui::mint::Vector3<f64>> for Vec3 {
     }
 }
 
-impl Into<transform_gizmo_egui::mint::Quaternion<f64>> for Quat {
-    fn into(self) -> transform_gizmo_egui::mint::Quaternion<f64> {
+impl From<Quat> for transform_gizmo_egui::mint::Quaternion<f64> {
+    fn from(val: Quat) -> Self {
         transform_gizmo_egui::mint::Quaternion {
             v: transform_gizmo_egui::mint::Vector3 {
-                x: self.x as f64,
-                y: self.y as f64,
-                z: self.z as f64,
+                x: val.x as f64,
+                y: val.y as f64,
+                z: val.z as f64,
             },
-            s: self.w as f64,
+            s: val.w as f64,
         }
     }
 }
@@ -754,23 +754,23 @@ impl From<transform_gizmo_egui::mint::Quaternion<f64>> for Quat {
     }
 }
 
-impl Into<transform_gizmo_egui::mint::Vector4<f64>> for Vec4 {
-    fn into(self) -> transform_gizmo_egui::mint::Vector4<f64> {
+impl From<Vec4> for transform_gizmo_egui::mint::Vector4<f64> {
+    fn from(val: Vec4) -> Self {
         transform_gizmo_egui::mint::Vector4 {
-            x: self.x as f64,
-            y: self.y as f64,
-            z: self.z as f64,
-            w: self.w as f64,
+            x: val.x as f64,
+            y: val.y as f64,
+            z: val.z as f64,
+            w: val.w as f64,
         }
     }
 }
 
-impl Into<transform_gizmo_egui::mint::RowMatrix4<f64>> for Mat4 {
-    fn into(self) -> transform_gizmo_egui::mint::RowMatrix4<f64> {
-        let x = Vec4::new(self.a1(), self.b1(), self.c1(), self.d1());
-        let y = Vec4::new(self.a2(), self.b2(), self.c2(), self.d2());
-        let z = Vec4::new(self.a3(), self.b3(), self.c3(), self.d3());
-        let w = Vec4::new(self.a4(), self.b4(), self.c4(), self.d4());
+impl From<Mat4> for transform_gizmo_egui::mint::RowMatrix4<f64> {
+    fn from(val: Mat4) -> Self {
+        let x = Vec4::new(val.a1(), val.b1(), val.c1(), val.d1());
+        let y = Vec4::new(val.a2(), val.b2(), val.c2(), val.d2());
+        let z = Vec4::new(val.a3(), val.b3(), val.c3(), val.d3());
+        let w = Vec4::new(val.a4(), val.b4(), val.c4(), val.d4());
 
         transform_gizmo_egui::mint::RowMatrix4 {
             x: x.into(),
