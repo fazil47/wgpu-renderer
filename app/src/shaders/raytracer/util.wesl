@@ -197,21 +197,86 @@ fn get_material(index: u32) -> Material {
     return material;
 }
 
+fn intersects_aabb(ray: Ray, bounds_min: vec3f, bounds_max: vec3f, max_dist: f32) -> bool {
+    var t_min = 0.0;
+    var t_max = max_dist;
+
+    for (var axis: u32 = 0u; axis < 3u; axis += 1u) {
+        // For a ray, point = origin + direction * t
+        // bounds_min[axis] = ray.origin[axis] + ray.direction[axis] * t0;
+        // bounds_max[axis] = ray.origin[axis] + ray.direction[axis] * t1;
+
+        let origin = ray.origin[axis];
+        let direction = ray.direction[axis];
+        let inv_dir = 1.0 / direction;
+        var t0 = (bounds_min[axis] - origin) * inv_dir;
+        var t1 = (bounds_max[axis] - origin) * inv_dir;
+
+        if t0 > t1 {
+            let tmp = t0;
+            t0 = t1;
+            t1 = tmp;
+        }
+
+        t_min = max(t_min, t0);
+        t_max = min(t_max, t1);
+
+        if t_max <= t_min {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 fn trace_triangles(ray: Ray) -> HitInfo {
-    let num_triangles = u32(arrayLength(&indices) / 3u);
+    var stack: array<u32, 64u>;
+    var stack_size: u32 = 0u;
+
+    // Push root node if present
+    if arrayLength(&bvh_nodes) == 0u {
+        return HitInfo(false, FLT_MAX, 0u, vec3f(0.0), vec3f(0.0), 0.0, 0.0, 0.0);
+    }
+
+    stack[stack_size] = 0u;
+    stack_size += 1u;
 
     var nearest_hit_info: HitInfo;
     nearest_hit_info.did_hit = false;
     nearest_hit_info.t = FLT_MAX;
 
-    for (var i: u32 = 0u; i < num_triangles; i = i + 1u) {
-        let triangle: Triangle = get_triangle_data(i);
-        let hit_info: HitInfo = get_triangle_intersection_mt(triangle, ray);
+    while (stack_size > 0u) {
+        stack_size -= 1u;
+        let node_index = stack[stack_size];
+        let node = bvh_nodes[node_index];
 
-        if hit_info.did_hit {
-            if hit_info.t < nearest_hit_info.t {
-                nearest_hit_info = hit_info;
-                nearest_hit_info.i = i;
+        if !intersects_aabb(ray, node.bounds_min.xyz, node.bounds_max.xyz, nearest_hit_info.t) {
+            continue;
+        }
+
+        if node.primitive_count > 0u {
+            // Leaf node, test primitives
+            let start = node.first_primitive;
+            let end = start + node.primitive_count;
+            for (var i = start; i < end; i = i + 1u) {
+                let tri_index = bvh_primitive_indices[i];
+                let triangle: Triangle = get_triangle_data(tri_index);
+                let hit_info: HitInfo = get_triangle_intersection_mt(triangle, ray);
+
+                if hit_info.did_hit && hit_info.t < nearest_hit_info.t {
+                    nearest_hit_info = hit_info;
+                    nearest_hit_info.i = tri_index;
+                }
+            }
+        } else {
+            // Interior node, push children
+            if node.left_child != 0xffffffffu {
+                stack[stack_size] = node.left_child;
+                stack_size += 1u;
+            }
+            if node.right_child != 0xffffffffu {
+                stack[stack_size] = node.right_child;
+                stack_size += 1u;
             }
         }
     }
