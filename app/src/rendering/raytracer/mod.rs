@@ -10,11 +10,14 @@ use crate::{
     mesh::Vertex,
     rendering::{
         extract::{Extract, ExtractionError, WorldExtractExt},
+        raytracer::bvh::build_bvh,
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
     transform::Transform,
 };
 use ecs::{Entity, World};
+
+mod bvh;
 
 // Raytracer-specific vertex and material types
 #[repr(C)]
@@ -640,6 +643,8 @@ impl Extract for Raytracer {
             .buffer()
             .label("Raytracer Indices Buffer")
             .storage(&indices);
+
+        let _bvh = build_bvh(&vertices, &indices);
 
         Ok((material_buffer, vertices_buffer, indices_buffer))
     }
