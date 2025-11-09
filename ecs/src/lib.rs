@@ -136,7 +136,7 @@ impl World {
         self.entities.keys().copied().collect()
     }
 
-    pub fn get_resource<T: 'static + Resource>(&self) -> Option<Ref<T>> {
+    pub fn get_resource<T: 'static + Resource>(&self) -> Option<Ref<'_, T>> {
         let type_id = TypeId::of::<T>();
         let downcasted = Ref::map(self.resources.get(&type_id)?.borrow(), |r| {
             let as_any = r as &dyn Any;
@@ -146,7 +146,7 @@ impl World {
         Some(downcasted)
     }
 
-    pub fn get_resource_mut<T: 'static + Resource>(&self) -> Option<RefMut<T>> {
+    pub fn get_resource_mut<T: 'static + Resource>(&self) -> Option<RefMut<'_, T>> {
         let type_id = TypeId::of::<T>();
         let downcasted = RefMut::map(self.resources.get(&type_id)?.borrow_mut(), |r| {
             let as_any = r as &mut dyn Any;

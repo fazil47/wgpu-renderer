@@ -10,43 +10,43 @@ pub use wgpu::{
 
 /// Core trait that extends wgpu::Device with fluent builders
 pub trait WgpuExt {
-    fn texture(&self) -> TextureBuilder;
-    fn sampler(&self) -> SamplerBuilder;
-    fn shader(&self) -> ShaderBuilder;
-    fn buffer(&self) -> BufferBuilder;
-    fn bind_group_layout(&self) -> BindGroupLayoutBuilder;
+    fn texture(&self) -> TextureBuilder<'_>;
+    fn sampler(&self) -> SamplerBuilder<'_>;
+    fn shader(&self) -> ShaderBuilder<'_>;
+    fn buffer(&self) -> BufferBuilder<'_>;
+    fn bind_group_layout(&self) -> BindGroupLayoutBuilder<'_>;
     fn bind_group<'a>(&'a self, layout: &'a BindGroupLayout) -> BindGroupBuilder<'a>;
-    fn pipeline_layout(&self) -> PipelineLayoutBuilder;
-    fn render_pipeline(&self) -> RenderPipelineBuilder;
-    fn compute_pipeline(&self) -> ComputePipelineBuilder;
+    fn pipeline_layout(&self) -> PipelineLayoutBuilder<'_>;
+    fn render_pipeline(&self) -> RenderPipelineBuilder<'_>;
+    fn compute_pipeline(&self) -> ComputePipelineBuilder<'_>;
 }
 
 impl WgpuExt for Device {
-    fn texture(&self) -> TextureBuilder {
+    fn texture(&self) -> TextureBuilder<'_> {
         TextureBuilder::new(self)
     }
-    fn sampler(&self) -> SamplerBuilder {
+    fn sampler(&self) -> SamplerBuilder<'_> {
         SamplerBuilder::new(self)
     }
-    fn shader(&self) -> ShaderBuilder {
+    fn shader(&self) -> ShaderBuilder<'_> {
         ShaderBuilder::new(self)
     }
-    fn buffer(&self) -> BufferBuilder {
+    fn buffer(&self) -> BufferBuilder<'_> {
         BufferBuilder::new(self)
     }
-    fn bind_group_layout(&self) -> BindGroupLayoutBuilder {
+    fn bind_group_layout(&self) -> BindGroupLayoutBuilder<'_> {
         BindGroupLayoutBuilder::new(self)
     }
     fn bind_group<'a>(&'a self, layout: &'a BindGroupLayout) -> BindGroupBuilder<'a> {
         BindGroupBuilder::new(self, layout)
     }
-    fn pipeline_layout(&self) -> PipelineLayoutBuilder {
+    fn pipeline_layout(&self) -> PipelineLayoutBuilder<'_> {
         PipelineLayoutBuilder::new(self)
     }
-    fn render_pipeline(&self) -> RenderPipelineBuilder {
+    fn render_pipeline(&self) -> RenderPipelineBuilder<'_> {
         RenderPipelineBuilder::new(self)
     }
-    fn compute_pipeline(&self) -> ComputePipelineBuilder {
+    fn compute_pipeline(&self) -> ComputePipelineBuilder<'_> {
         ComputePipelineBuilder::new(self)
     }
 }

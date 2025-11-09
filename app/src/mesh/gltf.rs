@@ -67,10 +67,10 @@ impl GltfMeshExt for Mesh {
             }
 
             for (material_id, primitives) in primitives_by_material {
-                if let Some(material_id) = material_id {
-                    if material_id >= materials.len() {
-                        return Err(format!("Material index out of bounds: {material_id}"));
-                    }
+                if let Some(material_id) = material_id
+                    && material_id >= materials.len()
+                {
+                    return Err(format!("Material index out of bounds: {material_id}"));
                 }
 
                 let mut mesh_vertices = Vec::new();
