@@ -85,11 +85,7 @@ fn get_triangle_intersection_mt(triangle: Triangle, ray: Ray) -> HitInfo {
 
     hit_info.normal = normalize(cross(e0, e1));
 
-    if det < K_EPSILON {
-        hit_info.did_hit = false;
-        return hit_info;
-    }
-
+    // The ray is parallel to the triangle plane
     if abs(det) < K_EPSILON {
         hit_info.did_hit = false;
         return hit_info;
@@ -97,16 +93,20 @@ fn get_triangle_intersection_mt(triangle: Triangle, ray: Ray) -> HitInfo {
 
     let inv_det: f32 = 1.0 / det;
 
+    if det < 0.0 {
+        hit_info.normal = -hit_info.normal;
+    }
+
     let tvec: vec3f = ray.origin - triangle.c.position.xyz;
     let u: f32 = dot(tvec, pvec) * inv_det;
-    if u < 0 || u > 1 {
+    if u < 0.0 || u > 1.0 {
         hit_info.did_hit = false;
         return hit_info;
     }
 
     let qvec: vec3f = cross(tvec, e0);
     let v: f32 = dot(ray.direction, qvec) * inv_det;
-    if v < 0 || u + v > 1 {
+    if v < 0.0 || u + v > 1.0 {
         hit_info.did_hit = false;
         return hit_info;
     }

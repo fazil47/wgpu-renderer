@@ -62,8 +62,10 @@ pub struct Rasterizer {
     depth_texture: crate::rendering::wgpu::Texture,
     material_bgl: BindGroupLayout,
     material_bind_groups: HashMap<Entity, BindGroup>,
+    material_double_sided: HashMap<Entity, bool>,
     other_bind_group: BindGroup,
     render_pipeline: RenderPipeline,
+    render_pipeline_double_sided: RenderPipeline,
     probe_grid: ProbeGrid,
     probe_updater: ProbeUpdatePipeline,
     probe_visualization: ProbeVisualization,
@@ -123,6 +125,20 @@ impl Rasterizer {
             .build()
             .unwrap();
 
+        let render_pipeline_double_sided = wgpu
+            .device
+            .render_pipeline()
+            .label("Rasterizer Render Pipeline (Double Sided)")
+            .layout(&render_pipeline_layout)
+            .vertex_shader(&rasterizer_shader, "vs_main")
+            .fragment_shader(&rasterizer_shader, "fs_main")
+            .vertex_buffer(GpuVertex::desc())
+            .color_target_alpha_blend(swapchain_format)
+            .cull_mode(None)
+            .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
+            .build()
+            .unwrap();
+
         let depth_texture = crate::rendering::wgpu::Texture::create_depth_texture(
             &wgpu.device,
             &wgpu.surface_config,
@@ -166,8 +182,10 @@ impl Rasterizer {
             depth_texture,
             material_bgl,
             material_bind_groups: HashMap::new(),
+            material_double_sided: HashMap::new(),
             other_bind_group,
             render_pipeline,
+            render_pipeline_double_sided,
             probe_grid,
             probe_visualization,
             probe_updater,
@@ -187,7 +205,11 @@ impl Rasterizer {
             .update_from_world(queue, world, camera_entity);
         self.lighting_buffers
             .update_from_world(queue, world, sun_light_entity);
-        (self.gpu_meshes, self.material_bind_groups) = self.extract(device, world)?;
+        let (gpu_meshes, material_bind_groups, material_double_sided) =
+            self.extract(device, world)?;
+        self.gpu_meshes = gpu_meshes;
+        self.material_bind_groups = material_bind_groups;
+        self.material_double_sided = material_double_sided;
 
         Ok(())
     }
@@ -226,21 +248,32 @@ impl Rasterizer {
             .depth_attachment(&self.depth_texture.view, Some(1.0))
             .begin();
 
-        rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.other_bind_group, &[]);
         rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
 
         for mesh in &self.gpu_meshes {
-            let material_bind_group = if let Some(material_entity) = mesh.material_entity {
-                self.material_bind_groups
-                    .get(&material_entity)
-                    .expect("Material bind group not found for mesh material entity")
+            let material_entity = mesh.material_entity.unwrap_or(default_material_entity);
+            let material_bind_group = self
+                .material_bind_groups
+                .get(&material_entity)
+                .or_else(|| self.material_bind_groups.get(&default_material_entity))
+                .expect("Material bind group not found");
+            let double_sided = self
+                .material_double_sided
+                .get(&material_entity)
+                .copied()
+                .or_else(|| {
+                    self.material_double_sided
+                        .get(&default_material_entity)
+                        .copied()
+                })
+                .unwrap_or(false);
+
+            if double_sided {
+                rpass.set_pipeline(&self.render_pipeline_double_sided);
             } else {
-                // Use the default material bind group (stored with a sentinel key)
-                self.material_bind_groups
-                    .get(&default_material_entity)
-                    .expect("Default material bind group not found")
-            };
+                rpass.set_pipeline(&self.render_pipeline);
+            }
 
             rpass.set_bind_group(2, material_bind_group, &[]);
             rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -344,7 +377,11 @@ impl Rasterizer {
 }
 
 impl Extract for Rasterizer {
-    type ExtractedData = (Vec<GpuMesh>, HashMap<Entity, BindGroup>);
+    type ExtractedData = (
+        Vec<GpuMesh>,
+        HashMap<Entity, BindGroup>,
+        HashMap<Entity, bool>,
+    );
 
     fn extract(
         &self,
@@ -353,6 +390,7 @@ impl Extract for Rasterizer {
     ) -> Result<Self::ExtractedData, ExtractionError> {
         let materials: Vec<Entity> = world.get_materials();
         let mut material_bind_groups: HashMap<Entity, BindGroup> = HashMap::new();
+        let mut material_double_sided: HashMap<Entity, bool> = HashMap::new();
 
         for entity in materials {
             let material = world.extract_material_component(entity)?;
@@ -372,6 +410,9 @@ impl Extract for Rasterizer {
             material_bind_groups
                 .entry(entity)
                 .or_insert(material_bind_group);
+            material_double_sided
+                .entry(entity)
+                .or_insert(material.double_sided);
         }
 
         let renderables: Vec<Entity> = world.get_renderables();
@@ -422,6 +463,6 @@ impl Extract for Rasterizer {
             });
         }
 
-        Ok((gpu_meshes, material_bind_groups))
+        Ok((gpu_meshes, material_bind_groups, material_double_sided))
     }
 }

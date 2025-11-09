@@ -30,7 +30,7 @@ impl GltfMeshExt for Mesh {
             };
 
             let rgba = RGBA::new([base_color[0], base_color[1], base_color[2], alpha]);
-            let material = Material::new(rgba);
+            let material = Material::new(rgba, material.double_sided());
             let material_entity = world.create_entity();
             world.add_component(material_entity, material.clone());
 
