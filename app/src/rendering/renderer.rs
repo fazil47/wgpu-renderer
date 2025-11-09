@@ -231,7 +231,7 @@ impl Renderer {
         {
             if config.is_raytracer_enabled {
                 self.raytracer
-                    .render(&mut render_encoder, &surface_texture_view);
+                    .render(&mut render_encoder, &surface_texture_view, config.show_bvh);
             } else {
                 let default_material_entity =
                     world.get_resource::<DefaultMaterialEntity>().unwrap().0;

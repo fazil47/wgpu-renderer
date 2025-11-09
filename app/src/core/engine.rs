@@ -141,12 +141,14 @@ impl Engine {
         let delta_time_ms = self.stat.delta_time * 1000.0;
         let fps = 1.0 / self.stat.delta_time;
         let is_raytracer_enabled = self.config.is_raytracer_enabled;
+        let show_bvh = self.config.show_bvh;
         let rasterizer = renderer.rasterizer.clone();
 
         // Store probe baking request and UI change outside the closure
         let mut bake_requested = false;
         let mut raytracer_enabled = is_raytracer_enabled;
         let mut reset_raytracer = self.config.reset_raytracer;
+        let mut raytracer_show_bvh = show_bvh;
 
         let mut selected_entity = self.selected_entity.borrow_mut();
         let selectable_entities = self.get_renderable_entities();
@@ -239,8 +241,10 @@ impl Engine {
                                     bake_requested = true;
                                 }
 
-                                // Run the raytracer when the checkbox is toggled on
-                                ui.checkbox(&mut raytracer_enabled, "Raytracing");
+                                ui.collapsing("Raytracing", |ui| {
+                                    ui.checkbox(&mut raytracer_enabled, "Enabled");
+                                    ui.checkbox(&mut raytracer_show_bvh, "Show BVH");
+                                });
                             });
                     });
             });
@@ -252,6 +256,10 @@ impl Engine {
 
         if raytracer_enabled != self.config.is_raytracer_enabled {
             self.config.is_raytracer_enabled = raytracer_enabled;
+        }
+
+        if raytracer_show_bvh != self.config.show_bvh {
+            self.config.show_bvh = raytracer_show_bvh;
         }
 
         if bake_requested {
@@ -349,6 +357,7 @@ pub struct EngineConfiguration {
     pub target_frame_time: f32, // in seconds
     pub raytracer_max_frames: u32,
     pub is_raytracer_enabled: bool,
+    pub show_bvh: bool,
     reset_raytracer: bool,
 }
 
@@ -358,6 +367,7 @@ impl Default for EngineConfiguration {
             target_frame_time: 1.0 / 60.0,
             raytracer_max_frames: 256,
             is_raytracer_enabled: false,
+            show_bvh: false,
             reset_raytracer: false,
         }
     }

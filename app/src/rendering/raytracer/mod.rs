@@ -10,12 +10,13 @@ use crate::{
     mesh::Vertex,
     rendering::{
         extract::{Extract, ExtractionError, WorldExtractExt},
-        raytracer::bvh::build_bvh,
+        raytracer::bvh::{build_bvh, build_bvh_debug_lines},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
     transform::Transform,
 };
 use ecs::{Entity, World};
+use maths::Vec3;
 
 mod bvh;
 
@@ -57,6 +58,43 @@ impl RaytracerMaterial {
     pub fn from_mesh_material(material: &Material) -> Self {
         Self {
             color: material.color.to_array(),
+        }
+    }
+}
+
+const BVH_INTERIOR_COLOR: [f32; 4] = [0.2, 0.6, 1.0, 1.0];
+const BVH_LEAF_COLOR: [f32; 4] = [1.0, 0.4, 0.2, 1.0];
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerBvhLineVertex {
+    pub position: [f32; 4],
+    pub color: [f32; 4],
+}
+
+impl RaytracerBvhLineVertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+
+    pub fn from_vec3(position: Vec3, color: [f32; 4]) -> Self {
+        Self {
+            position: [position.x, position.y, position.z, 1.0],
+            color,
+        }
+    }
+
+    fn zero() -> Self {
+        Self {
+            position: [0.0, 0.0, 0.0, 1.0],
+            color: [0.0, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -161,8 +199,30 @@ impl Raytracer {
             .shader(&shaders.compute, "main")
             .build()
             .unwrap();
+        let bvh_lines_pipeline_layout = wgpu
+            .device
+            .pipeline_layout()
+            .label("Raytracer BVH Line Pipeline Layout")
+            .bind_group_layout(&bind_group_layouts.bvh_lines_camera)
+            .build();
+        let bvh_lines = wgpu
+            .device
+            .render_pipeline()
+            .label("Raytracer BVH Line Pipeline")
+            .layout(&bvh_lines_pipeline_layout)
+            .vertex_shader(&shaders.bvh_lines, "vs_main")
+            .fragment_shader(&shaders.bvh_lines, "fs_main")
+            .vertex_buffer(RaytracerBvhLineVertex::desc())
+            .topology(wgpu::PrimitiveTopology::LineList)
+            .color_target_alpha_blend(swapchain_format)
+            .build()
+            .unwrap();
 
-        let pipelines = RaytracerPipelines { render, compute };
+        let pipelines = RaytracerPipelines {
+            render,
+            compute,
+            bvh_lines,
+        };
         let bind_groups = RaytracerBindGroups::new(&wgpu.device, &bind_group_layouts, &buffers);
 
         Self {
@@ -181,11 +241,19 @@ impl Raytracer {
         camera_entity: Entity,
         sun_light_entity: Entity,
     ) -> Result<(), ExtractionError> {
-        (
-            self.buffers.materials,
-            self.buffers.vertices,
-            self.buffers.indices,
-        ) = self.extract(device, world)?;
+        let RaytracerExtractedBuffers {
+            materials,
+            vertices,
+            indices,
+            bvh_lines,
+            bvh_line_vertex_count,
+        } = self.extract(device, world)?;
+
+        self.buffers.materials = materials;
+        self.buffers.vertices = vertices;
+        self.buffers.indices = indices;
+        self.buffers.bvh_lines = bvh_lines;
+        self.buffers.bvh_line_vertex_count = bvh_line_vertex_count;
 
         self.buffers
             .lighting
@@ -230,6 +298,7 @@ impl Raytracer {
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
+        show_bvh: bool,
     ) {
         let mut rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Raytracer Render Pass"),
@@ -249,6 +318,13 @@ impl Raytracer {
         rpass.set_bind_group(0, &self.bind_groups.render, &[]);
         rpass.set_pipeline(&self.pipelines.render);
         rpass.draw(0..3, 0..1);
+
+        if show_bvh && self.buffers.bvh_line_vertex_count > 0 {
+            rpass.set_pipeline(&self.pipelines.bvh_lines);
+            rpass.set_bind_group(0, &self.bind_groups.bvh_lines_camera, &[]);
+            rpass.set_vertex_buffer(0, self.buffers.bvh_lines.slice(..));
+            rpass.draw(0..self.buffers.bvh_line_vertex_count, 0..1);
+        }
     }
 
     pub fn compute(
@@ -283,6 +359,7 @@ impl Raytracer {
 struct RaytracerShaders {
     render: wgpu::ShaderModule,
     compute: wgpu::ShaderModule,
+    bvh_lines: wgpu::ShaderModule,
 }
 
 impl RaytracerShaders {
@@ -295,8 +372,16 @@ impl RaytracerShaders {
             .shader()
             .label("Raytracer Compute Shader")
             .wesl(include_wesl!("raytracer-compute").into());
+        let bvh_lines = device
+            .shader()
+            .label("Raytracer BVH Line Shader")
+            .wesl(include_wesl!("raytracer-bvh-lines").into());
 
-        Self { render, compute }
+        Self {
+            render,
+            compute,
+            bvh_lines,
+        }
     }
 }
 
@@ -311,6 +396,8 @@ pub struct RaytracerBuffers {
     pub vertex_normal_offset: wgpu::Buffer,
     pub vertex_material_offset: wgpu::Buffer,
     pub indices: wgpu::Buffer,
+    pub bvh_lines: wgpu::Buffer,
+    pub bvh_line_vertex_count: u32,
 
     // Other buffers
     pub lighting: LightingBuffers,
@@ -367,6 +454,15 @@ impl RaytracerBuffers {
             .label("Raytracer Indices Buffer")
             .storage(&initial_indices);
 
+        let initial_bvh_lines = [
+            RaytracerBvhLineVertex::zero(),
+            RaytracerBvhLineVertex::zero(),
+        ];
+        let bvh_lines = device
+            .buffer()
+            .label("Raytracer BVH Line Buffer")
+            .vertex(&initial_bvh_lines);
+
         let lighting = LightingBuffers::new(device, "Raytracer");
         let camera = CameraBuffers::new(device, "Raytracer");
         let frame_count = device
@@ -384,6 +480,8 @@ impl RaytracerBuffers {
             vertex_normal_offset,
             vertex_material_offset,
             indices,
+            bvh_lines,
+            bvh_line_vertex_count: 0,
             lighting,
             camera,
             frame_count,
@@ -429,6 +527,7 @@ pub struct RaytracerBindGroupLayouts {
     compute_meshes: wgpu::BindGroupLayout,
     compute_lights: wgpu::BindGroupLayout,
     compute_result_camera: wgpu::BindGroupLayout,
+    bvh_lines_camera: wgpu::BindGroupLayout,
 }
 
 impl RaytracerBindGroupLayouts {
@@ -463,12 +562,18 @@ impl RaytracerBindGroupLayouts {
             .uniform(2, wgpu::ShaderStages::COMPUTE)
             .uniform(3, wgpu::ShaderStages::COMPUTE)
             .build();
+        let bvh_lines_camera = device
+            .bind_group_layout()
+            .label("Raytracer BVH Line Camera Bind Group Layout")
+            .uniform(0, wgpu::ShaderStages::VERTEX)
+            .build();
         Self {
             render,
             compute_materials,
             compute_meshes,
             compute_lights,
             compute_result_camera,
+            bvh_lines_camera,
         }
     }
 }
@@ -479,6 +584,7 @@ struct RaytracerBindGroups {
     compute_mesh: wgpu::BindGroup,
     compute_lights: wgpu::BindGroup,
     compute_result_camera: wgpu::BindGroup,
+    bvh_lines_camera: wgpu::BindGroup,
 }
 
 impl RaytracerBindGroups {
@@ -520,12 +626,18 @@ impl RaytracerBindGroups {
             .buffer(2, &buffers.camera.camera_inverse_projection)
             .buffer(3, &buffers.frame_count)
             .build();
+        let bvh_lines_camera = device
+            .bind_group(&bgl.bvh_lines_camera)
+            .label("Raytracer BVH Line Camera Bind Group")
+            .buffer(0, &buffers.camera.view_projection)
+            .build();
         Self {
             render,
             compute_material,
             compute_mesh,
             compute_lights,
             compute_result_camera,
+            bvh_lines_camera,
         }
     }
     fn on_resize(
@@ -553,19 +665,19 @@ impl RaytracerBindGroups {
 struct RaytracerPipelines {
     render: wgpu::RenderPipeline,
     compute: wgpu::ComputePipeline,
+    bvh_lines: wgpu::RenderPipeline,
 }
 
-pub struct RaytracerExtractedData {
-    pub vertices: Vec<RaytracerVertex>,
-    pub materials: Vec<RaytracerMaterial>,
-    pub indices: Vec<u32>,
-    pub vertex_count: u32,
-    pub material_count: u32,
-    pub index_count: u32,
+pub struct RaytracerExtractedBuffers {
+    pub materials: wgpu::Buffer,
+    pub vertices: wgpu::Buffer,
+    pub indices: wgpu::Buffer,
+    pub bvh_lines: wgpu::Buffer,
+    pub bvh_line_vertex_count: u32,
 }
 
 impl Extract for Raytracer {
-    type ExtractedData = (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer); // (materials, vertices, indices)
+    type ExtractedData = RaytracerExtractedBuffers;
 
     fn extract(
         &self,
@@ -644,8 +756,44 @@ impl Extract for Raytracer {
             .label("Raytracer Indices Buffer")
             .storage(&indices);
 
-        let _bvh = build_bvh(&vertices, &indices);
+        let bvh = build_bvh(&vertices, &indices);
+        let debug_lines = build_bvh_debug_lines(&bvh);
+        let mut line_vertices = Vec::with_capacity(debug_lines.len() * 2);
 
-        Ok((material_buffer, vertices_buffer, indices_buffer))
+        for line in debug_lines {
+            let color = if line.is_leaf {
+                BVH_LEAF_COLOR
+            } else {
+                BVH_INTERIOR_COLOR
+            };
+            line_vertices.push(RaytracerBvhLineVertex::from_vec3(line.start, color));
+            line_vertices.push(RaytracerBvhLineVertex::from_vec3(line.end, color));
+        }
+
+        let (bvh_line_buffer, bvh_line_vertex_count) = if line_vertices.is_empty() {
+            (
+                device.buffer().label("Raytracer BVH Line Buffer").vertex(&[
+                    RaytracerBvhLineVertex::zero(),
+                    RaytracerBvhLineVertex::zero(),
+                ]),
+                0,
+            )
+        } else {
+            (
+                device
+                    .buffer()
+                    .label("Raytracer BVH Line Buffer")
+                    .vertex(&line_vertices),
+                line_vertices.len() as u32,
+            )
+        };
+
+        Ok(RaytracerExtractedBuffers {
+            materials: material_buffer,
+            vertices: vertices_buffer,
+            indices: indices_buffer,
+            bvh_lines: bvh_line_buffer,
+            bvh_line_vertex_count,
+        })
     }
 }

@@ -6,6 +6,7 @@ fn main() {
     resolver.build_artefact("rasterizer/main.wesl", "rasterizer-main");
     resolver.build_artefact("raytracer/render.wesl", "raytracer-render");
     resolver.build_artefact("raytracer/compute.wesl", "raytracer-compute");
+    resolver.build_artefact("raytracer/bvh-lines.wesl", "raytracer-bvh-lines");
     resolver.build_artefact("probe_lighting/updater.wesl", "probe-updater");
     resolver.build_artefact("probe_lighting/visualization.wesl", "probe-visualization");
 }
