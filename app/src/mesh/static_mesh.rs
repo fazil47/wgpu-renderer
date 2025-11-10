@@ -1,11 +1,16 @@
 use crate::{
     material::{Material, RGBA},
-    transform::Transform,
+    transform::{GlobalTransform, Transform},
 };
 use ecs::{Entity, World};
 use maths::{Vec3, Vec4};
 
 use super::{Mesh, Vertex};
+
+fn insert_transform(world: &mut World, entity: Entity, transform: Transform) {
+    world.add_component(entity, transform);
+    world.add_component(entity, GlobalTransform::from_transform(&transform));
+}
 
 pub trait StaticMeshExt {
     fn triangle(world: &mut World) -> Entity;
@@ -43,7 +48,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
-        world.add_component(mesh_entity, Transform::default());
+        insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
     }
@@ -82,7 +87,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
-        world.add_component(mesh_entity, Transform::default());
+        insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
     }
@@ -143,7 +148,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
-        world.add_component(mesh_entity, Transform::default());
+        insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
     }
@@ -196,7 +201,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
-        world.add_component(mesh_entity, Transform::default());
+        insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
     }
@@ -325,15 +330,23 @@ impl StaticMeshExt for Mesh {
 
         let left_mesh_entity = world.create_entity();
         world.add_component(left_mesh_entity, left_mesh);
-        world.add_component(left_mesh_entity, Transform::new(Vec3::new(-2.0, 0.0, 0.0)));
+        insert_transform(
+            world,
+            left_mesh_entity,
+            Transform::new(Vec3::new(-2.0, 0.0, 0.0)),
+        );
 
         let right_mesh_entity = world.create_entity();
         world.add_component(right_mesh_entity, right_mesh);
-        world.add_component(right_mesh_entity, Transform::new(Vec3::new(2.0, 0.0, 0.0)));
+        insert_transform(
+            world,
+            right_mesh_entity,
+            Transform::new(Vec3::new(2.0, 0.0, 0.0)),
+        );
 
         let other_mesh_entity = world.create_entity();
         world.add_component(other_mesh_entity, other_mesh);
-        world.add_component(other_mesh_entity, Transform::default());
+        insert_transform(world, other_mesh_entity, Transform::default());
 
         vec![left_mesh_entity, right_mesh_entity, other_mesh_entity]
     }
@@ -402,7 +415,7 @@ impl StaticMeshExt for Mesh {
         let mesh = Mesh::new(vertices, indices.into(), Some(material_entity));
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
-        world.add_component(mesh_entity, Transform::default());
+        insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
     }

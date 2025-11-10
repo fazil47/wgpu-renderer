@@ -205,6 +205,7 @@ impl Rasterizer {
             .update_from_world(queue, world, camera_entity);
         self.lighting_buffers
             .update_from_world(queue, world, sun_light_entity);
+        world.update_global_transforms()?;
         let (gpu_meshes, material_bind_groups, material_double_sided) =
             self.extract(device, world)?;
         self.gpu_meshes = gpu_meshes;
@@ -419,16 +420,16 @@ impl Extract for Rasterizer {
         let mut gpu_meshes: Vec<GpuMesh> = Vec::new();
 
         for entity in renderables {
-            let transform = world.extract_transform_component(entity)?;
+            let global_transform = world.extract_global_transform_component(entity)?;
             let mesh = world.extract_mesh_component(entity)?;
+            let transform_matrix = global_transform.matrix;
 
             let vertices: Vec<GpuVertex> = mesh
                 .vertices()
                 .iter()
                 .map(|v| {
-                    let transform = transform.get_matrix();
-                    let position = transform * v.position;
-                    let normal = transform * v.normal;
+                    let position = transform_matrix * v.position;
+                    let normal = transform_matrix * v.normal;
 
                     GpuVertex {
                         position: position.to_array(),

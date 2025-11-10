@@ -13,10 +13,9 @@ use crate::{
         raytracer::bvh::{build_bvh, build_bvh_debug_lines},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
-    transform::Transform,
 };
 use ecs::{Entity, World};
-use maths::Vec3;
+use maths::{Mat4, Vec3};
 
 mod bvh;
 
@@ -30,10 +29,9 @@ pub struct RaytracerVertex {
 }
 
 impl RaytracerVertex {
-    pub fn from_vertex(vertex: &Vertex, material_index: usize, transform: &Transform) -> Self {
-        let transformation_matrix = transform.get_matrix();
-        let position = transformation_matrix * vertex.position;
-        let normal = transformation_matrix * vertex.normal;
+    pub fn from_vertex(vertex: &Vertex, material_index: usize, transform: Mat4) -> Self {
+        let position = transform * vertex.position;
+        let normal = transform * vertex.normal;
         Self {
             position: position.to_array(),
             normal: normal.to_array(),
@@ -243,6 +241,7 @@ impl Raytracer {
         camera_entity: Entity,
         sun_light_entity: Entity,
     ) -> Result<(), ExtractionError> {
+        world.update_global_transforms()?;
         let RaytracerExtractedBuffers {
             materials,
             vertices,
@@ -746,7 +745,7 @@ impl Extract for Raytracer {
 
         // Extract and combine all mesh data
         for entity in renderables {
-            let transform = world.extract_transform_component(entity)?;
+            let global_transform = world.extract_global_transform_component(entity)?;
             let mesh = world.extract_mesh_component(entity)?;
             let material_index = if let Some(mat_entity) = mesh.material_entity {
                 *material_entity_to_index
@@ -755,10 +754,11 @@ impl Extract for Raytracer {
             } else {
                 default_material_index
             };
+            let transform_matrix = global_transform.matrix;
 
             for vertex in mesh.vertices() {
                 let raytracer_vertex =
-                    RaytracerVertex::from_vertex(vertex, material_index, &transform);
+                    RaytracerVertex::from_vertex(vertex, material_index, transform_matrix);
                 vertices.push(raytracer_vertex);
             }
 
@@ -863,9 +863,7 @@ fn create_bvh_lines_vertex_buffer(
     device: &wgpu::Device,
     vertices: &[RaytracerBvhLineVertex],
 ) -> (wgpu::Buffer, u32) {
-    use std::mem::size_of;
-
-    let byte_len = (vertices.len() * size_of::<RaytracerBvhLineVertex>()) as u64;
+    let byte_len = std::mem::size_of_val(vertices) as u64;
     let max_size = device.limits().max_buffer_size;
 
     if byte_len > max_size {

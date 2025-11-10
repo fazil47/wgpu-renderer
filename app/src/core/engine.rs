@@ -17,7 +17,7 @@ use crate::{
     material::{DefaultMaterialEntity, Material},
     mesh::Mesh,
     rendering::{Renderer, WorldExtractExt},
-    transform::Transform,
+    transform::{GlobalTransform, Transform},
 };
 use ecs::{Entity, World};
 use maths::Vec3;
@@ -56,7 +56,12 @@ impl Engine {
         let camera_entity = world.create_entity();
         let camera_position = Vec3::new(0.0, 0.0, 4.0);
         let camera_controller = CameraController::new(0.8);
-        world.add_component(camera_entity, Transform::new(camera_position));
+        let camera_transform = Transform::new(camera_position);
+        world.add_component(camera_entity, camera_transform);
+        world.add_component(
+            camera_entity,
+            GlobalTransform::from_transform(&camera_transform),
+        );
         world.add_component(
             camera_entity,
             Camera::new(
@@ -71,7 +76,12 @@ impl Engine {
 
         // Create sun light entity
         let sun_light_entity = world.create_entity();
-        world.add_component(sun_light_entity, Transform::new(Vec3::ZERO));
+        let sun_transform = Transform::new(Vec3::ZERO);
+        world.add_component(sun_light_entity, sun_transform);
+        world.add_component(
+            sun_light_entity,
+            GlobalTransform::from_transform(&sun_transform),
+        );
         world.add_component(sun_light_entity, DirectionalLight::new(45.0, 45.0));
 
         #[cfg(not(target_arch = "wasm32"))]

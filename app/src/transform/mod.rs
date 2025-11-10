@@ -1,5 +1,5 @@
 use ecs::{Component, Entity};
-use maths::{Quat, Vec3};
+use maths::{Mat4, Quat, Vec3};
 
 /// Transform component for position, rotation, and scale
 #[derive(Debug, Clone, Copy, Default)]
@@ -38,6 +38,50 @@ impl Transform {
         translation_matrix * rotation_matrix * scale_matrix
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct GlobalTransform {
+    pub matrix: Mat4,
+}
+
+impl GlobalTransform {
+    pub fn identity() -> Self {
+        Self {
+            matrix: Mat4::IDENTITY,
+        }
+    }
+
+    pub fn from_matrix(matrix: Mat4) -> Self {
+        Self { matrix }
+    }
+
+    pub fn from_transform(transform: &Transform) -> Self {
+        Self {
+            matrix: transform.get_matrix(),
+        }
+    }
+}
+
+impl Default for GlobalTransform {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+impl Component for GlobalTransform {}
+
+#[derive(Debug, Clone, Default)]
+pub struct Children {
+    pub entities: Vec<Entity>,
+}
+
+impl Children {
+    pub fn new(entities: Vec<Entity>) -> Self {
+        Self { entities }
+    }
+}
+
+impl Component for Children {}
 
 impl From<Transform> for transform_gizmo_egui::math::Transform {
     fn from(val: Transform) -> Self {

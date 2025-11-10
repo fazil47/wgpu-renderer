@@ -626,6 +626,10 @@ impl Quat {
         Self { x, y, z, w }
     }
 
+    pub const fn from_array(arr: &[f32; 4]) -> Self {
+        Self::new(arr[0], arr[1], arr[2], arr[3])
+    }
+
     pub fn normalize(&self) -> Self {
         let length = (self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt();
         if length == 0.0 {
