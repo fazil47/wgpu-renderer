@@ -83,6 +83,21 @@ impl Children {
 
 impl Component for Children {}
 
+#[derive(Debug, Clone)]
+pub struct Name(pub String);
+
+impl Name {
+    pub fn new<S: Into<String>>(value: S) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Component for Name {}
+
 impl From<Transform> for transform_gizmo_egui::math::Transform {
     fn from(val: Transform) -> Self {
         transform_gizmo_egui::math::Transform {

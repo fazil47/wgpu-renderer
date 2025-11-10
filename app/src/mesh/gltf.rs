@@ -1,7 +1,7 @@
 use super::{Mesh, Vertex};
 use crate::{
     material::{Material, RGBA},
-    transform::{Children, GlobalTransform, Transform},
+    transform::{Children, GlobalTransform, Name, Transform},
 };
 use ecs::{Entity, World};
 use gltf::material::AlphaMode;
@@ -32,9 +32,15 @@ impl GltfMeshExt for Mesh {
             };
 
             let rgba = RGBA::new([base_color[0], base_color[1], base_color[2], alpha]);
-            let material = Material::new(rgba, material.double_sided());
             let material_entity = world.create_entity();
-            world.add_component(material_entity, material.clone());
+            world.add_component(
+                material_entity,
+                Material::new(rgba, material.double_sided()),
+            );
+
+            if let Some(name) = derive_material_name(&material) {
+                world.add_component(material_entity, Name::new(name));
+            }
 
             materials.push(material_entity);
         }
@@ -106,6 +112,10 @@ fn process_node(
             let entity = world.create_entity();
             world.add_component(entity, transform);
 
+            if let Some(name) = derive_node_name(&node) {
+                world.add_component(entity, Name::new(name));
+            }
+
             if parent.is_none() {
                 world.add_component(entity, GlobalTransform::from_transform(&transform));
             } else {
@@ -164,21 +174,39 @@ fn create_mesh_entities(
     let groups: Vec<(Option<usize>, Vec<gltf::Primitive>)> =
         primitives_by_material.into_iter().collect();
     let use_node_entity = groups.len() == 1;
+    let mut parent_name_cache: Option<Option<String>> = None;
 
-    for (material_id, primitives) in groups {
-        let target_entity = if use_node_entity && !world.has_component::<Mesh>(node_entity) {
-            node_entity
-        } else {
-            create_child_entity(world, node_entity)?
-        };
-
-        let (vertices, indices) = build_mesh(&primitives, buffers)?;
-
+    for (material_id, primitives) in groups.into_iter() {
         if let Some(material_index) = material_id
             && material_index >= materials.len()
         {
             return Err(format!("Material index out of bounds: {material_index}"));
         }
+
+        let target_entity = if use_node_entity && !world.has_component::<Mesh>(node_entity) {
+            node_entity
+        } else {
+            let parent_label = parent_name_cache
+                .get_or_insert_with(|| entity_name(&*world, node_entity))
+                .clone();
+
+            let material_label = material_id.and_then(|material_index| {
+                materials
+                    .get(material_index)
+                    .and_then(|&entity| entity_name(&*world, entity))
+            });
+
+            let child_name = match (parent_label.clone(), material_label) {
+                (Some(parent), Some(material)) => Some(format!("{parent} - {material}")),
+                (Some(parent), None) => Some(parent),
+                (None, Some(material)) => Some(material),
+                (None, None) => None,
+            };
+
+            create_child_entity(world, node_entity, child_name)?
+        };
+
+        let (vertices, indices) = build_mesh(&primitives, buffers)?;
 
         let material = material_id.map(|id| materials[id]);
         let mesh_component = Mesh::new(vertices, indices, material);
@@ -231,7 +259,11 @@ fn build_mesh(
     Ok((vertices, indices))
 }
 
-fn create_child_entity(world: &mut World, parent: Entity) -> Result<Entity, String> {
+fn create_child_entity(
+    world: &mut World,
+    parent: Entity,
+    name: Option<String>,
+) -> Result<Entity, String> {
     let child = world.create_entity();
     let transform = Transform {
         position: Vec3::ZERO,
@@ -242,6 +274,9 @@ fn create_child_entity(world: &mut World, parent: Entity) -> Result<Entity, Stri
 
     world.add_component(child, transform);
     world.add_component(child, GlobalTransform::identity());
+    if let Some(name) = name {
+        world.add_component(child, Name::new(name));
+    }
     append_child(world, parent, child)?;
 
     Ok(child)
@@ -274,4 +309,37 @@ fn append_child(world: &mut World, parent: Entity, child: Entity) -> Result<(), 
     }
 
     Ok(())
+}
+
+fn entity_name(world: &World, entity: Entity) -> Option<String> {
+    world
+        .get_component::<Name>(entity)
+        .and_then(|name_rc| name_rc.try_borrow().ok().map(|name| name.0.clone()))
+}
+
+fn derive_node_name(node: &gltf::Node) -> Option<String> {
+    if let Some(name) = node.name()
+        && !name.is_empty()
+    {
+        return Some(name.to_string());
+    }
+
+    if let Some(mesh) = node.mesh()
+        && let Some(mesh_name) = mesh.name()
+        && !mesh_name.is_empty()
+    {
+        return Some(mesh_name.to_string());
+    }
+
+    None
+}
+
+fn derive_material_name(material: &gltf::Material) -> Option<String> {
+    if let Some(name) = material.name()
+        && !name.is_empty()
+    {
+        return Some(name.to_string());
+    }
+
+    None
 }

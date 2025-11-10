@@ -881,19 +881,11 @@ fn create_bvh_lines_vertex_buffer(
         return (fallback, 0);
     }
 
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Raytracer BVH Line Buffer"),
-        size: byte_len,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::MAP_WRITE,
-        mapped_at_creation: true,
-    });
-
-    {
-        let mut mapped = buffer.slice(..).get_mapped_range_mut();
-        mapped.copy_from_slice(bytemuck::cast_slice(vertices));
-    }
-
-    buffer.unmap();
+    let buffer = device
+        .buffer()
+        .label("Raytracer BVH Line Buffer")
+        .usage(wgpu::BufferUsages::COPY_DST)
+        .vertex(vertices);
 
     (buffer, vertices.len() as u32)
 }

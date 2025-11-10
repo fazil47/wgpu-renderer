@@ -17,7 +17,7 @@ use crate::{
     material::{DefaultMaterialEntity, Material},
     mesh::Mesh,
     rendering::{Renderer, WorldExtractExt},
-    transform::{GlobalTransform, Transform},
+    transform::{GlobalTransform, Name, Transform},
 };
 use ecs::{Entity, World};
 use maths::Vec3;
@@ -160,8 +160,13 @@ impl Engine {
         let mut reset_raytracer = self.config.reset_raytracer;
         let mut raytracer_show_bvh = show_bvh;
 
+        let selectable_entities: Vec<(Entity, String)> = self
+            .get_renderable_entities()
+            .into_iter()
+            .map(|entity| (entity, self.entity_display_name(entity)))
+            .collect();
+
         let mut selected_entity = self.selected_entity.borrow_mut();
-        let selectable_entities = self.get_renderable_entities();
         let mut has_transform_changed = false;
         let frame_count = renderer.get_frame_count();
 
@@ -192,19 +197,20 @@ impl Engine {
                             .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                             .show(egui_ctx, |ui| {
                                 ui.collapsing("Meshes", |ui| {
-                                    for &entity in &selectable_entities {
-                                        if ui
-                                            .toggle_value(
-                                                &mut (selected_entity.is_some()
-                                                    && entity == selected_entity.unwrap()),
-                                                format!("Entity {}", *entity),
-                                            )
-                                            .clicked()
-                                        {
-                                            if selected_entity.is_some_and(|e| e == entity) {
+                                    for (entity, label) in &selectable_entities {
+                                        let mut is_selected =
+                                            selected_entity.is_some_and(|e| e == *entity);
+                                        let response =
+                                            ui.toggle_value(&mut is_selected, label.as_str());
+
+                                        if response.clicked() {
+                                            // is_selected will be true if the toggle is now on
+                                            // otherwise if this entity was selected, deselect it
+                                            if is_selected {
+                                                selected_entity.replace(*entity);
+                                            } else if selected_entity.is_some_and(|e| e == *entity)
+                                            {
                                                 *selected_entity = None;
-                                            } else {
-                                                selected_entity.replace(entity);
                                             }
                                         }
                                     }
@@ -345,6 +351,19 @@ impl Engine {
 
     pub fn get_renderable_entities(&self) -> Vec<Entity> {
         self.world.get_renderables()
+    }
+
+    fn entity_display_name(&self, entity: Entity) -> String {
+        if let Some(name_rc) = self.world.get_component::<Name>(entity)
+            && let Ok(name) = name_rc.try_borrow()
+        {
+            let label = name.as_str();
+            if !label.is_empty() {
+                return label.to_owned();
+            }
+        }
+
+        format!("Entity {}", entity.0)
     }
 }
 

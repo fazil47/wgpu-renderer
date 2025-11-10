@@ -1,6 +1,6 @@
 use crate::{
     material::{Material, RGBA},
-    transform::{GlobalTransform, Transform},
+    transform::{GlobalTransform, Name, Transform},
 };
 use ecs::{Entity, World};
 use maths::{Vec3, Vec4};
@@ -10,6 +10,10 @@ use super::{Mesh, Vertex};
 fn insert_transform(world: &mut World, entity: Entity, transform: Transform) {
     world.add_component(entity, transform);
     world.add_component(entity, GlobalTransform::from_transform(&transform));
+}
+
+fn insert_name<S: Into<String>>(world: &mut World, entity: Entity, name: S) {
+    world.add_component(entity, Name::new(name));
 }
 
 pub trait StaticMeshExt {
@@ -26,6 +30,10 @@ impl StaticMeshExt for Mesh {
         let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
+        insert_name(world, material_entity, "Octahedron Material");
+        insert_name(world, material_entity, "Cube Material");
+        insert_name(world, material_entity, "Pentagon Material");
+        insert_name(world, material_entity, "Triangle Material");
 
         let mesh = Mesh::new(
             vec![
@@ -48,6 +56,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
+        insert_name(world, mesh_entity, "Triangle");
         insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
@@ -87,6 +96,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
+        insert_name(world, mesh_entity, "Pentagon");
         insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
@@ -148,6 +158,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
+        insert_name(world, mesh_entity, "Cube");
         insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
@@ -201,6 +212,7 @@ impl StaticMeshExt for Mesh {
 
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
+        insert_name(world, mesh_entity, "Octahedron");
         insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
@@ -210,6 +222,7 @@ impl StaticMeshExt for Mesh {
         let left_material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
         let left_material_entity = world.create_entity();
         world.add_component(left_material_entity, left_material.clone());
+        insert_name(world, left_material_entity, "Cornell Box Left Material");
 
         let left_mesh = Mesh::new(
             vec![
@@ -237,6 +250,7 @@ impl StaticMeshExt for Mesh {
         let right_material = Material::new(RGBA::new([0.0, 1.0, 0.0, 1.0]), false);
         let right_material_entity = world.create_entity();
         world.add_component(right_material_entity, right_material.clone());
+        insert_name(world, right_material_entity, "Cornell Box Right Material");
 
         let right_mesh = Mesh::new(
             vec![
@@ -264,6 +278,7 @@ impl StaticMeshExt for Mesh {
         let other_material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]), false);
         let other_material_entity = world.create_entity();
         world.add_component(other_material_entity, other_material.clone());
+        insert_name(world, other_material_entity, "Cornell Box Neutral Material");
 
         let other_mesh = Mesh::new(
             vec![
@@ -330,6 +345,7 @@ impl StaticMeshExt for Mesh {
 
         let left_mesh_entity = world.create_entity();
         world.add_component(left_mesh_entity, left_mesh);
+        insert_name(world, left_mesh_entity, "Cornell Box Left Wall");
         insert_transform(
             world,
             left_mesh_entity,
@@ -338,6 +354,7 @@ impl StaticMeshExt for Mesh {
 
         let right_mesh_entity = world.create_entity();
         world.add_component(right_mesh_entity, right_mesh);
+        insert_name(world, right_mesh_entity, "Cornell Box Right Wall");
         insert_transform(
             world,
             right_mesh_entity,
@@ -346,6 +363,7 @@ impl StaticMeshExt for Mesh {
 
         let other_mesh_entity = world.create_entity();
         world.add_component(other_mesh_entity, other_mesh);
+        insert_name(world, other_mesh_entity, "Cornell Box Interior");
         insert_transform(world, other_mesh_entity, Transform::default());
 
         vec![left_mesh_entity, right_mesh_entity, other_mesh_entity]
@@ -355,6 +373,7 @@ impl StaticMeshExt for Mesh {
         let material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
+        insert_name(world, material_entity, "Sphere Material");
 
         let radius = 1.0;
         let sectors = 36; // longitude divisions
@@ -415,6 +434,7 @@ impl StaticMeshExt for Mesh {
         let mesh = Mesh::new(vertices, indices.into(), Some(material_entity));
         let mesh_entity = world.create_entity();
         world.add_component(mesh_entity, mesh);
+        insert_name(world, mesh_entity, "Sphere");
         insert_transform(world, mesh_entity, Transform::default());
 
         mesh_entity
