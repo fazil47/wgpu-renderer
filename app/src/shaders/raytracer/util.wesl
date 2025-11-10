@@ -1,4 +1,4 @@
-const MAX_BOUNCES: u32 = 8u;
+const MAX_BOUNCES: u32 = 3u;
 const MAX_LOW_FRAME_BOUNCES: u32 = 2u;
 const LOW_BOUNCE_FRAMES: u32 = 4u;
 const CLEAR_COLOR: vec4f = vec4f(0.0, 0.0, 0.0, 1.0);

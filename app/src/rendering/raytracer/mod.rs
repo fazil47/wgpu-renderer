@@ -815,13 +815,7 @@ impl Extract for Raytracer {
                 0,
             )
         } else {
-            (
-                device
-                    .buffer()
-                    .label("Raytracer BVH Line Buffer")
-                    .vertex(&line_vertices),
-                line_vertices.len() as u32,
-            )
+            create_bvh_lines_vertex_buffer(device, &line_vertices)
         };
 
         let bvh_node_count = bvh.nodes.len() as u32;
@@ -863,4 +857,45 @@ impl Extract for Raytracer {
             bvh_primitive_count,
         })
     }
+}
+
+fn create_bvh_lines_vertex_buffer(
+    device: &wgpu::Device,
+    vertices: &[RaytracerBvhLineVertex],
+) -> (wgpu::Buffer, u32) {
+    use std::mem::size_of;
+
+    let byte_len = (vertices.len() * size_of::<RaytracerBvhLineVertex>()) as u64;
+    let max_size = device.limits().max_buffer_size;
+
+    if byte_len > max_size {
+        log::warn!(
+            "Skipping BVH debug lines: buffer would be {:.2} MiB, exceeds device limit {:.2} MiB",
+            byte_len as f64 / (1024.0 * 1024.0),
+            max_size as f64 / (1024.0 * 1024.0)
+        );
+
+        let fallback = device.buffer().label("Raytracer BVH Line Buffer").vertex(&[
+            RaytracerBvhLineVertex::zero(),
+            RaytracerBvhLineVertex::zero(),
+        ]);
+
+        return (fallback, 0);
+    }
+
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Raytracer BVH Line Buffer"),
+        size: byte_len,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::MAP_WRITE,
+        mapped_at_creation: true,
+    });
+
+    {
+        let mut mapped = buffer.slice(..).get_mapped_range_mut();
+        mapped.copy_from_slice(bytemuck::cast_slice(vertices));
+    }
+
+    buffer.unmap();
+
+    (buffer, vertices.len() as u32)
 }
