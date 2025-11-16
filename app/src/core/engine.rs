@@ -87,7 +87,7 @@ impl Engine {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(meshes) = Mesh::from_gltf(&mut world, "assets/chess.glb") {
+            if let Ok(meshes) = Mesh::from_gltf(&mut world, "assets/cornell-box.glb") {
                 println!("Loaded {} meshes from GLTF", meshes.len());
             } else {
                 log::warn!("Failed to load GLTF mesh");
