@@ -4,7 +4,10 @@ use ecs::{Entity, World};
 use transform_gizmo_egui::{Gizmo, GizmoConfig, GizmoExt, GizmoMode, GizmoOrientation};
 use winit::window::Window;
 
-use crate::{camera::Camera, transform::Transform};
+use crate::{
+    camera::Camera,
+    transform::{GlobalTransform, Transform},
+};
 
 pub struct RendererEgui {
     pub renderer: egui_wgpu::Renderer,
@@ -101,15 +104,44 @@ impl RendererEgui {
         }
 
         let transform = transform.unwrap();
-        let transform_read = transform.clone();
-        let transform_read = *transform_read.borrow();
-        if let Some((_, new_transforms)) = self
-            .gizmo
-            .borrow_mut()
-            .interact(ui, &[transform_read.into()])
+
+        let (parent, mut gizmo_transform) = {
+            let transform_ref = transform.borrow();
+            let local_transform = *transform_ref;
+            let gizmo_transform: transform_gizmo_egui::math::Transform = local_transform.into();
+            (local_transform.parent, gizmo_transform)
+        };
+
+        if let Some(global_transform) = world.get_component::<GlobalTransform>(entity)
+            && let Ok(global_transform) = global_transform.try_borrow()
         {
-            let transform = transform.clone();
-            *transform.borrow_mut() = new_transforms[0].into();
+            gizmo_transform.translation = global_transform.matrix.extract_translation().into();
+            gizmo_transform.rotation = global_transform.matrix.extract_rotation().into();
+            gizmo_transform.scale = global_transform.matrix.extract_scale().into();
+        }
+
+        if let Some((_, new_transforms)) = self.gizmo.borrow_mut().interact(ui, &[gizmo_transform])
+        {
+            // TODO: Support translating more than one entity at a time
+            let mut next: Transform = new_transforms[0].into();
+            next.parent = parent;
+
+            // Convert the gizmo's world-space translation back into local space.
+            if let Some(parent) = parent
+                && let Some(parent) = world.get_component::<GlobalTransform>(parent)
+                && let Ok(parent) = parent.try_borrow()
+            {
+                let inverse = parent.matrix.inverse();
+                let local = inverse * maths::Vec4::from_point(next.position);
+                let w = if local.w.abs() > f32::EPSILON {
+                    local.w
+                } else {
+                    1.0
+                };
+                next.position = maths::Vec3::new(local.x / w, local.y / w, local.z / w);
+            }
+
+            *transform.borrow_mut() = next;
             has_changed = true;
         }
 

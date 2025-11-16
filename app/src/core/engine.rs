@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -86,7 +87,7 @@ impl Engine {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(meshes) = Mesh::from_gltf(&mut world, "assets/cornell-box.glb") {
+            if let Ok(meshes) = Mesh::from_gltf(&mut world, "assets/chess.glb") {
                 println!("Loaded {} meshes from GLTF", meshes.len());
             } else {
                 log::warn!("Failed to load GLTF mesh");
@@ -160,12 +161,7 @@ impl Engine {
         let mut reset_raytracer = self.config.reset_raytracer;
         let mut raytracer_show_bvh = show_bvh;
 
-        let selectable_entities: Vec<(Entity, String)> = self
-            .get_renderable_entities()
-            .into_iter()
-            .map(|entity| (entity, self.entity_display_name(entity)))
-            .collect();
-
+        let mesh_hierarchy = self.build_mesh_hierarchy();
         let mut selected_entity = self.selected_entity.borrow_mut();
         let mut has_transform_changed = false;
         let frame_count = renderer.get_frame_count();
@@ -197,23 +193,7 @@ impl Engine {
                             .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
                             .show(egui_ctx, |ui| {
                                 ui.collapsing("Meshes", |ui| {
-                                    for (entity, label) in &selectable_entities {
-                                        let mut is_selected =
-                                            selected_entity.is_some_and(|e| e == *entity);
-                                        let response =
-                                            ui.toggle_value(&mut is_selected, label.as_str());
-
-                                        if response.clicked() {
-                                            // is_selected will be true if the toggle is now on
-                                            // otherwise if this entity was selected, deselect it
-                                            if is_selected {
-                                                selected_entity.replace(*entity);
-                                            } else if selected_entity.is_some_and(|e| e == *entity)
-                                            {
-                                                *selected_entity = None;
-                                            }
-                                        }
-                                    }
+                                    draw_mesh_hierarchy(ui, &mesh_hierarchy, &mut selected_entity);
                                 });
 
                                 // Lighting controls
@@ -353,6 +333,61 @@ impl Engine {
         self.world.get_renderables()
     }
 
+    fn build_mesh_hierarchy(&self) -> MeshHierarchy {
+        let renderable_entities = self.get_renderable_entities();
+        let mut stack = renderable_entities.clone();
+        let renderables: HashSet<Entity> = renderable_entities.into_iter().collect();
+        let mut transforms = renderables.clone();
+
+        while let Some(entity) = stack.pop() {
+            if let Some(transform) = self.world.get_component::<Transform>(entity)
+                && let Ok(transform) = transform.try_borrow()
+                && let Some(parent) = transform.parent
+                && transforms.insert(parent)
+            {
+                stack.push(parent);
+            }
+        }
+
+        let mut labels = HashMap::new();
+        for &entity in &transforms {
+            labels.insert(entity, self.entity_display_name(entity));
+        }
+
+        let mut children: HashMap<Entity, Vec<Entity>> = HashMap::new();
+        let mut has_parent: HashSet<Entity> = HashSet::new();
+
+        for &entity in &transforms {
+            if let Some(transform_rc) = self.world.get_component::<Transform>(entity)
+                && let Ok(transform) = transform_rc.try_borrow()
+                && let Some(parent) = transform.parent
+                && transforms.contains(&parent)
+            {
+                children.entry(parent).or_default().push(entity);
+                has_parent.insert(entity);
+            }
+        }
+
+        for child_list in children.values_mut() {
+            child_list.sort_by(|a, b| labels.get(a).unwrap().cmp(labels.get(b).unwrap()));
+        }
+
+        let mut roots: Vec<Entity> = transforms
+            .iter()
+            .copied()
+            .filter(|entity| !has_parent.contains(entity))
+            .collect();
+
+        roots.sort_by(|a, b| labels.get(a).unwrap().cmp(labels.get(b).unwrap()));
+
+        MeshHierarchy {
+            roots,
+            children,
+            labels,
+            renderables,
+        }
+    }
+
     fn entity_display_name(&self, entity: Entity) -> String {
         if let Some(name_rc) = self.world.get_component::<Name>(entity)
             && let Ok(name) = name_rc.try_borrow()
@@ -364,6 +399,80 @@ impl Engine {
         }
 
         format!("Entity {}", entity.0)
+    }
+}
+
+struct MeshHierarchy {
+    roots: Vec<Entity>,
+    children: HashMap<Entity, Vec<Entity>>,
+    labels: HashMap<Entity, String>,
+    renderables: HashSet<Entity>,
+}
+
+fn draw_mesh_hierarchy(
+    ui: &mut egui::Ui,
+    hierarchy: &MeshHierarchy,
+    selected: &mut Option<Entity>,
+) {
+    if hierarchy.roots.is_empty() {
+        ui.label("No meshes available");
+        return;
+    }
+
+    for &root in &hierarchy.roots {
+        draw_mesh_node(ui, root, hierarchy, selected);
+    }
+}
+
+fn draw_mesh_node(
+    ui: &mut egui::Ui,
+    entity: Entity,
+    hierarchy: &MeshHierarchy,
+    selected: &mut Option<Entity>,
+) {
+    let label = hierarchy
+        .labels
+        .get(&entity)
+        .map(String::as_str)
+        .unwrap_or("Entity");
+    let children = hierarchy.children.get(&entity);
+    let is_renderable = hierarchy.renderables.contains(&entity);
+    let is_selected = selected.is_some_and(|e| e == entity);
+
+    if let Some(children) = children {
+        let header_label = if is_renderable && is_selected {
+            egui::RichText::new(label).strong()
+        } else {
+            egui::RichText::new(label)
+        };
+
+        let response = egui::CollapsingHeader::new(header_label)
+            .id_salt(entity.0)
+            .default_open(true)
+            .show(ui, |ui| {
+                for &child in children {
+                    draw_mesh_node(ui, child, hierarchy, selected);
+                }
+            });
+
+        if is_renderable && response.header_response.clicked() {
+            if is_selected {
+                *selected = None;
+            } else {
+                selected.replace(entity);
+            }
+        }
+    } else if is_renderable {
+        let response = ui.selectable_label(is_selected, label);
+        if response.clicked() {
+            if is_selected {
+                *selected = None;
+            } else {
+                selected.replace(entity);
+            }
+        }
+    } else {
+        ui.label(label);
     }
 }
 
