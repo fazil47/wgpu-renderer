@@ -69,7 +69,7 @@ impl Engine {
                 -camera_position.normalized(), // look at origin
                 window_size.width as f32 / window_size.height as f32,
                 45.0,
-                0.1,
+                0.01,
                 10000.0,
             ),
         );
