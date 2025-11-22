@@ -6,7 +6,7 @@ import super::super::probe_lighting::util::{
 };
 
 struct Camera {
-    view_proj: mat4x4f,
+    view_proj: mat4x4<f32>,
 };
 
 struct VertexInput {

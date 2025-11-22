@@ -12,8 +12,8 @@ import super::util::{
 
 @group(3) @binding(0) @if(wasm) var result: texture_storage_2d<r32float, read_write>;
 @group(3) @binding(0) @else var result: texture_storage_2d<rgba8unorm, read_write>;
-@group(3) @binding(1) var<uniform> camera_to_world: mat4x4f;
-@group(3) @binding(2) var<uniform> camera_inverse_projection: mat4x4f;
+@group(3) @binding(1) var<uniform> camera_to_world: mat4x4<f32>;
+@group(3) @binding(2) var<uniform> camera_inverse_projection: mat4x4<f32>;
 @group(3) @binding(3) var<uniform> frame_count: u32;
 
 fn get_camera_position(uv: vec2f) -> vec3f {
@@ -32,7 +32,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // Get the current pixel coordinates
     let coords = vec2i(i32(id.x), i32(id.y));
 
-    if frame_count == 0 {
+    if frame_count == 0u {
         // Clear the result texture on the first frame
         var clear_color: vec4f;
         @if(wasm) {
