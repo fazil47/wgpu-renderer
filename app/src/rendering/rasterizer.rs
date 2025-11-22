@@ -205,7 +205,6 @@ impl Rasterizer {
             .update_from_world(queue, world, camera_entity);
         self.lighting_buffers
             .update_from_world(queue, world, sun_light_entity);
-        world.update_global_transforms()?;
         let (gpu_meshes, material_bind_groups, material_double_sided) =
             self.extract(device, world)?;
         self.gpu_meshes = gpu_meshes;

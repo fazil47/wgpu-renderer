@@ -241,7 +241,6 @@ impl Raytracer {
         camera_entity: Entity,
         sun_light_entity: Entity,
     ) -> Result<(), ExtractionError> {
-        world.update_global_transforms()?;
         let RaytracerExtractedBuffers {
             materials,
             vertices,

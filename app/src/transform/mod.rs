@@ -118,3 +118,66 @@ impl From<transform_gizmo_egui::math::Transform> for Transform {
         }
     }
 }
+
+pub fn transform_system(world: &mut ecs::World) {
+    let mut cache: std::collections::HashMap<Entity, Mat4> = std::collections::HashMap::new();
+    let mut visiting: std::collections::HashSet<Entity> = std::collections::HashSet::new();
+
+    for entity in world.get_entities_with::<Transform>() {
+        let _ = compute_global_transform(world, entity, &mut cache, &mut visiting);
+    }
+}
+
+fn compute_global_transform(
+    world: &ecs::World,
+    entity: Entity,
+    cache: &mut std::collections::HashMap<Entity, Mat4>,
+    visiting: &mut std::collections::HashSet<Entity>,
+) -> Result<Mat4, String> {
+    if let Some(matrix) = cache.get(&entity) {
+        return Ok(*matrix);
+    }
+
+    if !visiting.insert(entity) {
+        return Err(format!(
+            "Transform hierarchy cycle detected at entity {entity:?}"
+        ));
+    }
+
+    let transform_rc = world
+        .get_component::<Transform>(entity)
+        .ok_or_else(|| format!("Entity {entity:?} missing component: Transform"))?;
+    let transform = *transform_rc
+        .try_borrow()
+        .map_err(|_| "Borrow conflict: Transform".to_string())?;
+
+    let local_matrix = transform.get_matrix();
+
+    let global_matrix = if let Some(parent) = transform.parent {
+        if !world.has_component::<Transform>(parent) {
+            return Err(format!("Entity {parent:?} missing component: Transform"));
+        }
+
+        let parent_matrix = compute_global_transform(world, parent, cache, visiting)?;
+        parent_matrix * local_matrix
+    } else {
+        local_matrix
+    };
+
+    visiting.remove(&entity);
+
+    cache.insert(entity, global_matrix);
+
+    let global_transform_rc = world
+        .get_component::<GlobalTransform>(entity)
+        .ok_or_else(|| format!("Entity {entity:?} missing component: GlobalTransform"))?;
+
+    {
+        let mut global_transform = global_transform_rc
+            .try_borrow_mut()
+            .map_err(|_| "Borrow conflict: GlobalTransform".to_string())?;
+        *global_transform = GlobalTransform::from_matrix(global_matrix);
+    }
+
+    Ok(global_matrix)
+}

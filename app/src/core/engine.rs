@@ -35,6 +35,7 @@ pub struct Engine {
     pub camera_controller: CameraController,
     pub selected_entity: Rc<RefCell<Option<Entity>>>,
     pub world: World,
+    pub transform_schedule: ecs::Schedule,
     pub camera_entity: Entity,
     pub sun_light_entity: Entity,
     is_light_dirty: bool,
@@ -94,6 +95,11 @@ impl Engine {
             }
         }
 
+        let mut transform_schedule = ecs::Schedule::new();
+        transform_schedule.add_system(crate::transform::transform_system);
+        // FIXME: Running the schedule to get the initial global transforms correct before the renderer is created
+        transform_schedule.run(&mut world);
+
         let renderer = Renderer::new(
             window.clone(),
             &window_size,
@@ -111,6 +117,7 @@ impl Engine {
             camera_controller,
             selected_entity: Rc::new(RefCell::new(None)),
             world,
+            transform_schedule,
             camera_entity,
             sun_light_entity,
             is_light_dirty: false,
@@ -245,8 +252,18 @@ impl Engine {
                     });
             });
 
+        // Drop renderer borrow before running schedule
+        drop(renderer);
+
         if has_transform_changed {
             reset_raytracer = true;
+            self.transform_schedule.run(&mut self.world);
+        }
+
+        // Re-acquire renderer borrow
+        let mut renderer = self.world.get_resource_mut::<Renderer>().unwrap();
+
+        if has_transform_changed {
             renderer.update_render_data(&self.world);
         }
 
