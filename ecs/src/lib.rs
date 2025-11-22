@@ -161,3 +161,94 @@ impl World {
             .insert(resource.type_id(), Rc::new(RefCell::new(resource)));
     }
 }
+
+pub type System = Box<dyn FnMut(&mut World)>;
+
+pub struct Schedule {
+    systems: Vec<System>,
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Schedule {
+    pub fn new() -> Self {
+        Self {
+            systems: Vec::new(),
+        }
+    }
+
+    pub fn add_system<S: FnMut(&mut World) + 'static>(&mut self, system: S) {
+        self.systems.push(Box::new(system));
+    }
+
+    pub fn run(&mut self, world: &mut World) {
+        for system in &mut self.systems {
+            system(world);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestComponent(u32);
+    impl Component for TestComponent {}
+
+    struct TestResource(u32);
+    impl Resource for TestResource {}
+
+    #[test]
+    fn test_schedule_sanity() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(0));
+        world.insert_resource(TestResource(0));
+
+        let mut schedule = Schedule::new();
+
+        // System that modifies a component
+        schedule.add_system(move |world: &mut World| {
+            if let Some(component) = world.get_component::<TestComponent>(entity) {
+                component.borrow_mut().0 += 1;
+            }
+        });
+
+        // System that modifies a resource
+        schedule.add_system(|world: &mut World| {
+            if let Some(mut resource) = world.get_resource_mut::<TestResource>() {
+                resource.0 += 1;
+            }
+        });
+
+        schedule.run(&mut world);
+
+        let component = world.get_component::<TestComponent>(entity).unwrap();
+        assert_eq!(component.borrow().0, 1);
+
+        let resource = world.get_resource::<TestResource>().unwrap();
+        assert_eq!(resource.0, 1);
+    }
+
+    #[test]
+    fn test_schedule_mutable_ops() {
+        let mut world = World::new();
+        let mut schedule = Schedule::new();
+
+        // System that creates an entity - this requires &mut World
+        schedule.add_system(|world: &mut World| {
+            let entity = world.create_entity();
+            world.add_component(entity, TestComponent(10));
+        });
+
+        schedule.run(&mut world);
+
+        assert_eq!(world.get_all_entities().len(), 1);
+        let entities = world.get_entities_with::<TestComponent>();
+        assert_eq!(entities.len(), 1);
+    }
+}
