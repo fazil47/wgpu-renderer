@@ -726,7 +726,6 @@ impl Mul<Vec3> for Quat {
 }
 
 /// Transform Gizmo integration
-
 impl From<Vec3> for transform_gizmo_egui::mint::Vector3<f64> {
     fn from(val: Vec3) -> Self {
         transform_gizmo_egui::mint::Vector3 {

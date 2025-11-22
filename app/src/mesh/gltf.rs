@@ -15,6 +15,14 @@ pub trait GltfMeshExt {
     fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String>;
 }
 
+struct GltfContext<'a> {
+    buffers: &'a [gltf::buffer::Data],
+    materials: &'a [Entity],
+    mesh_entities: &'a mut Vec<Entity>,
+    node_entities: &'a mut HashMap<usize, Entity>,
+    processed_nodes: &'a mut HashSet<usize>,
+}
+
 impl GltfMeshExt for Mesh {
     fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String> {
         let (document, buffers, _) = gltf::import(path).map_err(|err| err.to_string())?;
@@ -49,32 +57,22 @@ impl GltfMeshExt for Mesh {
         let mut node_entities: HashMap<usize, Entity> = HashMap::new();
         let mut processed_nodes: HashSet<usize> = HashSet::new();
 
+        let mut context = GltfContext {
+            buffers: &buffers,
+            materials: &materials,
+            mesh_entities: &mut mesh_entities,
+            node_entities: &mut node_entities,
+            processed_nodes: &mut processed_nodes,
+        };
+
         if let Some(default_scene) = document.default_scene() {
             for node in default_scene.nodes() {
-                process_node(
-                    world,
-                    node,
-                    None,
-                    &buffers,
-                    &materials,
-                    &mut mesh_entities,
-                    &mut node_entities,
-                    &mut processed_nodes,
-                )?;
+                process_node(world, node, None, &mut context)?;
             }
         } else {
             for scene in document.scenes() {
                 for node in scene.nodes() {
-                    process_node(
-                        world,
-                        node,
-                        None,
-                        &buffers,
-                        &materials,
-                        &mut mesh_entities,
-                        &mut node_entities,
-                        &mut processed_nodes,
-                    )?;
+                    process_node(world, node, None, &mut context)?;
                 }
             }
         }
@@ -87,15 +85,11 @@ fn process_node(
     world: &mut World,
     node: gltf::Node,
     parent: Option<Entity>,
-    buffers: &[gltf::buffer::Data],
-    materials: &[Entity],
-    mesh_entities: &mut Vec<Entity>,
-    node_entities: &mut HashMap<usize, Entity>,
-    processed_nodes: &mut HashSet<usize>,
+    context: &mut GltfContext,
 ) -> Result<(), String> {
     let node_index = node.index();
 
-    let entity = match node_entities.get(&node_index) {
+    let entity = match context.node_entities.get(&node_index) {
         Some(&existing) => {
             ensure_parent(world, existing, parent)?;
             existing
@@ -122,7 +116,7 @@ fn process_node(
                 world.add_component(entity, GlobalTransform::identity());
             }
 
-            node_entities.insert(node_index, entity);
+            context.node_entities.insert(node_index, entity);
             entity
         }
     };
@@ -131,22 +125,13 @@ fn process_node(
         append_child(world, parent_entity, entity)?;
     }
 
-    if processed_nodes.insert(node_index) {
+    if context.processed_nodes.insert(node_index) {
         if let Some(mesh) = node.mesh() {
-            create_mesh_entities(world, entity, mesh, buffers, materials, mesh_entities)?;
+            create_mesh_entities(world, entity, mesh, context)?;
         }
 
         for child in node.children() {
-            process_node(
-                world,
-                child,
-                Some(entity),
-                buffers,
-                materials,
-                mesh_entities,
-                node_entities,
-                processed_nodes,
-            )?;
+            process_node(world, child, Some(entity), context)?;
         }
     }
 
@@ -157,9 +142,7 @@ fn create_mesh_entities(
     world: &mut World,
     node_entity: Entity,
     mesh: gltf::Mesh,
-    buffers: &[gltf::buffer::Data],
-    materials: &[Entity],
-    mesh_entities: &mut Vec<Entity>,
+    context: &mut GltfContext,
 ) -> Result<(), String> {
     let mut primitives_by_material: HashMap<Option<usize>, Vec<gltf::Primitive>> = HashMap::new();
 
@@ -178,7 +161,7 @@ fn create_mesh_entities(
 
     for (material_id, primitives) in groups.into_iter() {
         if let Some(material_index) = material_id
-            && material_index >= materials.len()
+            && material_index >= context.materials.len()
         {
             return Err(format!("Material index out of bounds: {material_index}"));
         }
@@ -191,7 +174,8 @@ fn create_mesh_entities(
                 .clone();
 
             let material_label = material_id.and_then(|material_index| {
-                materials
+                context
+                    .materials
                     .get(material_index)
                     .and_then(|&entity| entity_name(&*world, entity))
             });
@@ -206,12 +190,12 @@ fn create_mesh_entities(
             create_child_entity(world, node_entity, child_name)?
         };
 
-        let (vertices, indices) = build_mesh(&primitives, buffers)?;
+        let (vertices, indices) = build_mesh(&primitives, context.buffers)?;
 
-        let material = material_id.map(|id| materials[id]);
+        let material = material_id.map(|id| context.materials[id]);
         let mesh_component = Mesh::new(vertices, indices, material);
         world.add_component(target_entity, mesh_component);
-        mesh_entities.push(target_entity);
+        context.mesh_entities.push(target_entity);
     }
 
     Ok(())
