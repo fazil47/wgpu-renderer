@@ -35,14 +35,18 @@ pub struct Engine {
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub selected_entity: Rc<RefCell<Option<Entity>>>,
     pub world: World,
-    pub transform_schedule: ecs::Schedule,
-    pub update_schedule: ecs::Schedule,
+    pub static_schedule: ecs::Schedule, // Run only when data changes
+    pub frame_schedule: ecs::Schedule,  // Run every frame
     pub camera_entity: Entity,
     pub sun_light_entity: Entity,
     is_light_dirty: bool,
     stat: EngineStatistics,
     config: EngineConfiguration,
 }
+
+pub struct StaticDataDirtyFlag(pub bool);
+
+impl ecs::Resource for StaticDataDirtyFlag {}
 
 impl Engine {
     pub async fn new(window: Arc<Window>) -> Engine {
@@ -98,14 +102,14 @@ impl Engine {
 
         world.insert_resource(camera_controller);
         world.insert_resource(Time { delta_time: 0.0 });
+        world.insert_resource(StaticDataDirtyFlag(true)); // Initial update required
 
-        let mut transform_schedule = ecs::Schedule::new();
-        transform_schedule.add_system(crate::transform::transform_system);
-        // FIXME: Running the schedule to get the initial global transforms correct before the renderer is created
-        transform_schedule.run(&mut world);
+        let mut static_schedule = ecs::Schedule::new();
+        static_schedule.add_system(crate::transform::transform_system);
+        static_schedule.add_system(crate::rendering::renderer::renderer_update_system);
 
-        let mut update_schedule = ecs::Schedule::new();
-        update_schedule.add_system(crate::input::camera_controller::camera_controller_system);
+        let mut frame_schedule = ecs::Schedule::new();
+        frame_schedule.add_system(crate::input::camera_controller::camera_controller_system);
 
         let renderer = Renderer::new(
             window.clone(),
@@ -123,8 +127,8 @@ impl Engine {
             window_size,
             selected_entity: Rc::new(RefCell::new(None)),
             world,
-            transform_schedule,
-            update_schedule,
+            static_schedule,
+            frame_schedule,
             camera_entity,
             sun_light_entity,
             is_light_dirty: false,
@@ -166,7 +170,7 @@ impl Engine {
         }
 
         // Run update schedule (inputs, camera, etc.)
-        self.update_schedule.run(&mut self.world);
+        self.frame_schedule.run(&mut self.world);
 
         let mut renderer = self.world.get_resource_mut::<Renderer>().unwrap();
 
@@ -272,15 +276,26 @@ impl Engine {
 
         if has_transform_changed {
             reset_raytracer = true;
-            self.transform_schedule.run(&mut self.world);
+            if let Some(mut flag) = self.world.get_resource_mut::<StaticDataDirtyFlag>() {
+                flag.0 = true;
+            }
+        }
+
+        let run_static = if let Some(flag) = self.world.get_resource::<StaticDataDirtyFlag>() {
+            flag.0
+        } else {
+            false
+        };
+
+        if run_static {
+            self.static_schedule.run(&mut self.world);
+            if let Some(mut flag) = self.world.get_resource_mut::<StaticDataDirtyFlag>() {
+                flag.0 = false;
+            }
         }
 
         // Re-acquire renderer borrow
         let mut renderer = self.world.get_resource_mut::<Renderer>().unwrap();
-
-        if has_transform_changed {
-            renderer.update_render_data(&self.world);
-        }
 
         if raytracer_enabled != self.config.is_raytracer_enabled {
             self.config.is_raytracer_enabled = raytracer_enabled;

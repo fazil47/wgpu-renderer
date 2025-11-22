@@ -298,3 +298,9 @@ impl Renderer {
             .update_light(&self.wgpu.queue, world, sun_light_entity);
     }
 }
+
+pub fn renderer_update_system(world: &mut World) {
+    if let Some(mut renderer) = world.get_resource_mut::<Renderer>() {
+        renderer.update_render_data(world);
+    }
+}
