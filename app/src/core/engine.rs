@@ -17,6 +17,7 @@ use crate::{
     material::{DefaultMaterialEntity, Material},
     mesh::Mesh,
     rendering::Renderer,
+    time::Time,
     transform::{GlobalTransform, Transform},
     ui::{build_mesh_hierarchy, draw_mesh_hierarchy},
 };
@@ -32,10 +33,10 @@ pub struct Engine {
     // unsafe references to the window's resources.
     pub window: Arc<Window>,
     pub window_size: winit::dpi::PhysicalSize<u32>,
-    pub camera_controller: CameraController,
     pub selected_entity: Rc<RefCell<Option<Entity>>>,
     pub world: World,
     pub transform_schedule: ecs::Schedule,
+    pub update_schedule: ecs::Schedule,
     pub camera_entity: Entity,
     pub sun_light_entity: Entity,
     is_light_dirty: bool,
@@ -95,10 +96,16 @@ impl Engine {
             }
         }
 
+        world.insert_resource(camera_controller);
+        world.insert_resource(Time { delta_time: 0.0 });
+
         let mut transform_schedule = ecs::Schedule::new();
         transform_schedule.add_system(crate::transform::transform_system);
         // FIXME: Running the schedule to get the initial global transforms correct before the renderer is created
         transform_schedule.run(&mut world);
+
+        let mut update_schedule = ecs::Schedule::new();
+        update_schedule.add_system(crate::input::camera_controller::camera_controller_system);
 
         let renderer = Renderer::new(
             window.clone(),
@@ -114,10 +121,10 @@ impl Engine {
         Self {
             window,
             window_size,
-            camera_controller,
             selected_entity: Rc::new(RefCell::new(None)),
             world,
             transform_schedule,
+            update_schedule,
             camera_entity,
             sun_light_entity,
             is_light_dirty: false,
@@ -146,14 +153,22 @@ impl Engine {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let mut renderer = self.world.get_resource_mut::<Renderer>().unwrap();
-
         // Update delta time
         let current_time = Instant::now();
         self.stat.delta_time = current_time
             .duration_since(self.stat.last_frame_time)
             .as_secs_f32();
         self.stat.last_frame_time = current_time;
+
+        // Update Time resource
+        if let Some(mut time) = self.world.get_resource_mut::<Time>() {
+            time.delta_time = self.stat.delta_time;
+        }
+
+        // Run update schedule (inputs, camera, etc.)
+        self.update_schedule.run(&mut self.world);
+
+        let mut renderer = self.world.get_resource_mut::<Renderer>().unwrap();
 
         // Extract values needed in closure to avoid borrow conflicts
         let delta_time_ms = self.stat.delta_time * 1000.0;
@@ -311,29 +326,21 @@ impl Engine {
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {
-        self.camera_controller.process_events(event);
+        let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
+        camera_controller.process_events(event);
 
-        if self.camera_controller.is_cursor_locked() && self.camera_controller.has_camera_moved() {
+        if camera_controller.is_cursor_locked() && camera_controller.has_camera_moved() {
             self.config.reset_raytracer = true;
-            self.camera_controller.update_camera(
-                &mut self.world,
-                self.camera_entity,
-                self.stat.delta_time,
-            );
         }
     }
 
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
-            self.camera_controller.process_mouse(delta.0, delta.1);
+            let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
+            camera_controller.process_mouse(delta.0, delta.1);
 
-            if self.camera_controller.is_cursor_locked() {
+            if camera_controller.is_cursor_locked() {
                 self.config.reset_raytracer = true;
-                self.camera_controller.update_camera(
-                    &mut self.world,
-                    self.camera_entity,
-                    self.stat.delta_time,
-                );
             }
         }
     }

@@ -5,8 +5,8 @@ use winit::{
 
 use maths::{Quat, Vec3};
 
-use crate::camera::Camera;
-use ecs::{Entity, World};
+use crate::{camera::Camera, time::Time};
+use ecs::World;
 
 /// ECS-compatible camera controller for handling input and updating camera position
 pub struct CameraController {
@@ -39,7 +39,7 @@ impl CameraController {
             speed,
             sensitivity: 0.002, // Much lower sensitivity for smoother camera movement
             cursor_locked: false,
-            fast_speed_multiplier: 2.0,
+            fast_speed_multiplier: 10.0,
             fast_speed_requests: 0,
         }
     }
@@ -129,7 +129,21 @@ impl CameraController {
             || self.rotate_vertical != 0.0
     }
 
-    pub fn update_camera(&mut self, world: &mut World, camera_entity: Entity, dt: f32) {
+    pub fn is_cursor_locked(&self) -> bool {
+        self.cursor_locked
+    }
+}
+
+impl ecs::Resource for CameraController {}
+
+pub fn camera_controller_system(world: &mut World) {
+    let dt = world.get_resource::<Time>().unwrap().delta_time;
+
+    let mut controller = world.get_resource_mut::<CameraController>().unwrap();
+
+    let camera_entities = world.get_entities_with::<Camera>();
+
+    for camera_entity in camera_entities {
         if let Some(camera_component) = world.get_component::<Camera>(camera_entity) {
             let mut camera = camera_component.borrow_mut();
 
@@ -142,30 +156,33 @@ impl CameraController {
             };
 
             let mut velocity = Vec3::ZERO;
-            velocity += forward * (self.amount_forward - self.amount_backward);
-            velocity += right * (self.amount_right - self.amount_left);
-            velocity += up * (self.amount_up - self.amount_down);
+            velocity += forward * (controller.amount_forward - controller.amount_backward);
+            velocity += right * (controller.amount_right - controller.amount_left);
+            velocity += up * (controller.amount_up - controller.amount_down);
 
             if velocity.length() > 0.0 {
-                let speed_multiplier = if self.fast_speed_requests > 0 {
-                    self.fast_speed_multiplier
+                let speed_multiplier = if controller.fast_speed_requests > 0 {
+                    controller.fast_speed_multiplier
                 } else {
                     1.0
                 };
-                camera.eye += velocity.normalized() * self.speed * speed_multiplier * dt;
+                camera.eye += velocity.normalized() * controller.speed * speed_multiplier * dt;
             }
 
             // Rotate the camera based on mouse input
-            if self.cursor_locked && (self.rotate_horizontal != 0.0 || self.rotate_vertical != 0.0)
+            if controller.cursor_locked
+                && (controller.rotate_horizontal != 0.0 || controller.rotate_vertical != 0.0)
             {
                 // Horizontal rotation around world Y axis
                 let yaw_rotation =
-                    Quat::from_rotation_y(-self.rotate_horizontal * self.sensitivity);
+                    Quat::from_rotation_y(-controller.rotate_horizontal * controller.sensitivity);
 
                 // Vertical rotation around the camera's right axis
                 let right_axis = camera.forward.cross(Vec3::Y).normalized();
-                let pitch_rotation =
-                    Quat::from_axis_angle(right_axis, -self.rotate_vertical * self.sensitivity);
+                let pitch_rotation = Quat::from_axis_angle(
+                    right_axis,
+                    -controller.rotate_vertical * controller.sensitivity,
+                );
 
                 // Apply rotations to forward vector
                 camera.forward = yaw_rotation * camera.forward;
@@ -181,13 +198,9 @@ impl CameraController {
                 camera.up = right.cross(camera.forward).normalized();
 
                 // Reset rotation deltas
-                self.rotate_horizontal = 0.0;
-                self.rotate_vertical = 0.0;
+                controller.rotate_horizontal = 0.0;
+                controller.rotate_vertical = 0.0;
             }
         }
-    }
-
-    pub fn is_cursor_locked(&self) -> bool {
-        self.cursor_locked
     }
 }
