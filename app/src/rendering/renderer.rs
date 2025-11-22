@@ -82,24 +82,19 @@ impl Renderer {
     }
 
     pub fn update_render_data(&mut self, world: &World) {
-        let camera_entity = world.get_entities_with::<Camera>().into_iter().next();
-        let sun_light_entity = world
+        let Some(camera_entity) = world.get_entities_with::<Camera>().into_iter().next() else {
+            eprintln!("Warning: No camera entity found in the world.");
+            return;
+        };
+
+        let Some(sun_light_entity) = world
             .get_entities_with::<crate::lighting::DirectionalLight>()
             .into_iter()
-            .next();
-
-        if camera_entity.is_none() || sun_light_entity.is_none() {
-            eprintln!("Warning: No camera or sun light entity found in the world.");
-            return;
-        }
-
-        if sun_light_entity.is_none() {
+            .next()
+        else {
             eprintln!("Warning: No sun light entity found in the world.");
             return;
-        }
-
-        let camera_entity = camera_entity.unwrap();
-        let sun_light_entity = sun_light_entity.unwrap();
+        };
 
         if let Err(err) = self.rasterizer.borrow_mut().update_render_data(
             &self.wgpu.device,
