@@ -760,13 +760,6 @@ impl<'a> RenderPipelineBuilder<'a> {
         self
     }
 
-    // Preset configurations
-    pub fn fullscreen_triangle(mut self) -> Self {
-        // No vertex buffers needed for fullscreen triangle
-        self.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
-        self
-    }
-
     pub fn build(self) -> Result<RenderPipeline, &'static str> {
         let layout = self.layout.ok_or("Pipeline layout is required")?;
         let (vs_module, vs_entry) = self.vertex_shader.ok_or("Vertex shader is required")?;
@@ -948,119 +941,6 @@ impl<'a> ComputePassBuilder<'a> {
                 label: self.label,
                 timestamp_writes: None,
             })
-    }
-}
-
-/// Helper functions for common WGPU patterns
-pub mod helpers {
-
-    /// Create a fullscreen triangle vertex shader source
-    pub fn fullscreen_triangle_vertex_shader() -> &'static str {
-        r#"
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-}
-
-@vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    var out: VertexOutput;
-    let x = f32((vertex_index << 1u) & 2u) - 1.0;
-    let y = f32(vertex_index & 2u) - 1.0;
-    out.clip_position = vec4<f32>(x, y, 0.0, 1.0);
-    out.uv = vec2<f32>(x * 0.5 + 0.5, 0.5 - y * 0.5);
-    return out;
-}"#
-    }
-
-    /// Create a simple pass-through vertex shader
-    pub fn passthrough_vertex_shader() -> &'static str {
-        r#"
-struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) uv: vec2<f32>,
-}
-
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-}
-
-@vertex
-fn vs_main(input: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    out.clip_position = vec4<f32>(input.position, 1.0);
-    out.uv = input.uv;
-    return out;
-}"#
-    }
-
-    /// Create a simple copy fragment shader
-    pub fn copy_fragment_shader() -> &'static str {
-        r#"
-@group(0) @binding(0) var input_texture: texture_2d<f32>;
-@group(0) @binding(1) var input_sampler: sampler;
-
-@fragment
-fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-    return textureSample(input_texture, input_sampler, uv);
-}"#
-    }
-}
-
-/// Extension trait for common operations on CommandEncoder
-pub trait CommandEncoderExt {
-    fn copy_texture_to_texture_simple(
-        &mut self,
-        src: &Texture,
-        dst: &Texture,
-        size: wgpu::Extent3d,
-    );
-
-    fn clear_texture(&mut self, texture: &Texture, color: wgpu::Color);
-}
-
-impl CommandEncoderExt for CommandEncoder {
-    fn copy_texture_to_texture_simple(
-        &mut self,
-        src: &Texture,
-        dst: &Texture,
-        size: wgpu::Extent3d,
-    ) {
-        self.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: src,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: dst,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            size,
-        );
-    }
-
-    fn clear_texture(&mut self, texture: &Texture, color: wgpu::Color) {
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let _render_pass = self.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Clear Texture"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(color),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        drop(_render_pass);
     }
 }
 
