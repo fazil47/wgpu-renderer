@@ -283,24 +283,17 @@ fn create_child_entity(
 }
 
 fn ensure_parent(world: &World, entity: Entity, parent: Option<Entity>) -> Result<(), String> {
-    let transform_rc = world
-        .get_component::<Transform>(entity)
+    let mut transform = world
+        .get_component_mut::<Transform>(entity)
         .ok_or_else(|| format!("Entity {entity:?} missing Transform component"))?;
 
-    let mut transform = transform_rc
-        .try_borrow_mut()
-        .map_err(|_| "Failed to mutably borrow Transform".to_string())?;
     transform.parent = parent;
 
     Ok(())
 }
 
 fn append_child(world: &mut World, parent: Entity, child: Entity) -> Result<(), String> {
-    if let Some(children_rc) = world.get_component::<Children>(parent) {
-        let mut children = children_rc
-            .try_borrow_mut()
-            .map_err(|_| "Failed to mutably borrow Children".to_string())?;
-
+    if let Some(mut children) = world.get_component_mut::<Children>(parent) {
         if !children.entities.contains(&child) {
             children.entities.push(child);
         }
@@ -314,7 +307,7 @@ fn append_child(world: &mut World, parent: Entity, child: Entity) -> Result<(), 
 fn entity_name(world: &World, entity: Entity) -> Option<String> {
     world
         .get_component::<Name>(entity)
-        .and_then(|name_rc| name_rc.try_borrow().ok().map(|name| name.0.clone()))
+        .map(|name| name.0.clone())
 }
 
 fn derive_node_name(node: &gltf::Node) -> Option<String> {

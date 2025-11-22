@@ -21,8 +21,7 @@ pub fn build_mesh_hierarchy(world: &World) -> MeshHierarchy {
 
     // Walk up the parent chain so the tree includes ancestors of renderable entities.
     while let Some(entity) = stack.pop() {
-        if let Some(transform_rc) = world.get_component::<Transform>(entity)
-            && let Ok(transform) = transform_rc.try_borrow()
+        if let Some(transform) = world.get_component::<Transform>(entity)
             && let Some(parent) = transform.parent
             && transforms.insert(parent)
         {
@@ -39,8 +38,7 @@ pub fn build_mesh_hierarchy(world: &World) -> MeshHierarchy {
     let mut has_parent: HashSet<Entity> = HashSet::new();
 
     for &entity in &transforms {
-        if let Some(transform_rc) = world.get_component::<Transform>(entity)
-            && let Ok(transform) = transform_rc.try_borrow()
+        if let Some(transform) = world.get_component::<Transform>(entity)
             && let Some(parent) = transform.parent
             && transforms.contains(&parent)
         {
@@ -137,9 +135,7 @@ fn draw_mesh_node(
 }
 
 fn get_display_name(world: &World, entity: Entity) -> String {
-    if let Some(name_rc) = world.get_component::<Name>(entity)
-        && let Ok(name) = name_rc.try_borrow()
-    {
+    if let Some(name) = world.get_component::<Name>(entity) {
         let label = name.as_str();
         if !label.is_empty() {
             return label.to_owned();

@@ -69,8 +69,7 @@ impl LightingBuffers {
 /// Update camera buffers when camera changes
 impl CameraBuffers {
     pub fn update_from_world(&self, queue: &wgpu::Queue, world: &World, camera_entity: Entity) {
-        if let Some(camera_component) = world.get_component::<Camera>(camera_entity) {
-            let camera = camera_component.borrow();
+        if let Some(camera) = world.get_component::<Camera>(camera_entity) {
             queue.write_buffer(
                 &self.view_projection,
                 0,
@@ -93,10 +92,9 @@ impl CameraBuffers {
 /// Update lighting buffers when lighting changes
 impl LightingBuffers {
     pub fn update_from_world(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
-        if let Some(light_component) =
+        if let Some(light) =
             world.get_component::<crate::lighting::DirectionalLight>(sun_light_entity)
         {
-            let light = light_component.borrow();
             let dir = light.direction.to_array();
             let direction_vec4 = [dir[0], dir[1], dir[2], 0.0]; // Convert Vec3 to Vec4
             queue.write_buffer(

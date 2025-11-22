@@ -142,8 +142,8 @@ impl Engine {
         self.config.reset_raytracer = true;
 
         // Update camera aspect ratio
-        if let Some(camera) = self.world.get_component::<Camera>(self.camera_entity) {
-            camera.borrow_mut().aspect = new_size.width as f32 / new_size.height as f32;
+        if let Some(mut camera) = self.world.get_component_mut::<Camera>(self.camera_entity) {
+            camera.aspect = new_size.width as f32 / new_size.height as f32;
         }
 
         let mut renderer = self.world.get_resource_mut::<Renderer>().unwrap();
@@ -224,33 +224,26 @@ impl Engine {
 
                                 // Lighting controls
                                 ui.collapsing("Lighting", |ui| {
-                                    if let Some(light) = self
-                                        .world
-                                        .get_component::<DirectionalLight>(self.sun_light_entity)
+                                    if let Some(mut light) =
+                                        self.world.get_component_mut::<DirectionalLight>(
+                                            self.sun_light_entity,
+                                        )
                                     {
-                                        let mut light_ref = light.borrow_mut();
-
                                         let sun_azi_changed = ui
                                             .add(
-                                                egui::Slider::new(
-                                                    &mut light_ref.azimuth,
-                                                    0.0..=360.0,
-                                                )
-                                                .text("Sun Azimuth"),
+                                                egui::Slider::new(&mut light.azimuth, 0.0..=360.0)
+                                                    .text("Sun Azimuth"),
                                             )
                                             .changed();
                                         let sun_alt_changed = ui
                                             .add(
-                                                egui::Slider::new(
-                                                    &mut light_ref.altitude,
-                                                    0.0..=90.0,
-                                                )
-                                                .text("Sun Altitude"),
+                                                egui::Slider::new(&mut light.altitude, 0.0..=90.0)
+                                                    .text("Sun Altitude"),
                                             )
                                             .changed();
 
                                         if sun_azi_changed || sun_alt_changed {
-                                            light_ref.recalculate();
+                                            light.recalculate();
                                             self.is_light_dirty = true;
                                             reset_raytracer = true;
                                         }

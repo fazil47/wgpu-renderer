@@ -65,10 +65,7 @@ impl WorldExtractExt for World {
         let material = self
             .get_component::<Material>(entity)
             .ok_or_else(|| ExtractionError::MissingComponent(entity, "Material".to_string()))?;
-        let material: Material = material
-            .try_borrow()
-            .map_err(|_| ExtractionError::BorrowConflict("Material".to_string()))?
-            .clone();
+        let material: Material = material.clone();
 
         Ok(material)
     }
@@ -83,9 +80,7 @@ impl WorldExtractExt for World {
         let transform = self
             .get_component::<Transform>(entity)
             .ok_or_else(|| ExtractionError::MissingComponent(entity, "Transform".to_string()))?;
-        let transform: Transform = *transform
-            .try_borrow()
-            .map_err(|_| ExtractionError::BorrowConflict("Transform".to_string()))?;
+        let transform: Transform = *transform;
 
         Ok(transform)
     }
@@ -99,9 +94,7 @@ impl WorldExtractExt for World {
             .ok_or_else(|| {
                 ExtractionError::MissingComponent(entity, "GlobalTransform".to_string())
             })?;
-        let global_transform: GlobalTransform = *global_transform
-            .try_borrow()
-            .map_err(|_| ExtractionError::BorrowConflict("GlobalTransform".to_string()))?;
+        let global_transform: GlobalTransform = *global_transform;
 
         Ok(global_transform)
     }
@@ -110,10 +103,7 @@ impl WorldExtractExt for World {
         let mesh = self
             .get_component::<Mesh>(entity)
             .ok_or_else(|| ExtractionError::MissingComponent(entity, "Mesh".to_string()))?;
-        let mesh: Mesh = mesh
-            .try_borrow()
-            .map_err(|_| ExtractionError::BorrowConflict("Mesh".to_string()))?
-            .clone();
+        let mesh: Mesh = mesh.clone();
 
         Ok(mesh)
     }
@@ -130,10 +120,7 @@ impl WorldExtractExt for World {
             .ok_or_else(|| {
                 ExtractionError::MissingComponent(material_entity, "Material".to_string())
             })?;
-        let material: Material = material
-            .try_borrow()
-            .map_err(|_| ExtractionError::BorrowConflict("Material".to_string()))?
-            .clone();
+        let material: Material = material.clone();
 
         Ok(material)
     }

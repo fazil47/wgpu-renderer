@@ -74,13 +74,30 @@ impl World {
         }
     }
 
-    pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Rc<RefCell<T>>> {
+    pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Ref<'_, T>> {
         if let Some(components) = self.entities.get(&entity) {
             if let Some(component) = components.get(&TypeId::of::<T>()) {
-                let any_rc = component.clone();
-                let concrete_rc =
-                    unsafe { Rc::from_raw(Rc::into_raw(any_rc) as *const RefCell<T>) };
-                Some(concrete_rc)
+                let downcasted = Ref::map(component.borrow(), |c| {
+                    let as_any = c as &dyn Any;
+                    as_any.downcast_ref::<T>().unwrap()
+                });
+                Some(downcasted)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<RefMut<'_, T>> {
+        if let Some(components) = self.entities.get(&entity) {
+            if let Some(component) = components.get(&TypeId::of::<T>()) {
+                let downcasted = RefMut::map(component.borrow_mut(), |c| {
+                    let as_any = c as &mut dyn Any;
+                    as_any.downcast_mut::<T>().unwrap()
+                });
+                Some(downcasted)
             } else {
                 None
             }
@@ -213,8 +230,8 @@ mod tests {
 
         // System that modifies a component
         schedule.add_system(move |world: &mut World| {
-            if let Some(component) = world.get_component::<TestComponent>(entity) {
-                component.borrow_mut().0 += 1;
+            if let Some(mut component) = world.get_component_mut::<TestComponent>(entity) {
+                component.0 += 1;
             }
         });
 
@@ -228,7 +245,7 @@ mod tests {
         schedule.run(&mut world);
 
         let component = world.get_component::<TestComponent>(entity).unwrap();
-        assert_eq!(component.borrow().0, 1);
+        assert_eq!(component.0, 1);
 
         let resource = world.get_resource::<TestResource>().unwrap();
         assert_eq!(resource.0, 1);

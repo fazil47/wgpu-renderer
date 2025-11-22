@@ -144,12 +144,9 @@ fn compute_global_transform(
         ));
     }
 
-    let transform_rc = world
+    let transform = *world
         .get_component::<Transform>(entity)
         .ok_or_else(|| format!("Entity {entity:?} missing component: Transform"))?;
-    let transform = *transform_rc
-        .try_borrow()
-        .map_err(|_| "Borrow conflict: Transform".to_string())?;
 
     let local_matrix = transform.get_matrix();
 
@@ -168,14 +165,7 @@ fn compute_global_transform(
 
     cache.insert(entity, global_matrix);
 
-    let global_transform_rc = world
-        .get_component::<GlobalTransform>(entity)
-        .ok_or_else(|| format!("Entity {entity:?} missing component: GlobalTransform"))?;
-
-    {
-        let mut global_transform = global_transform_rc
-            .try_borrow_mut()
-            .map_err(|_| "Borrow conflict: GlobalTransform".to_string())?;
+    if let Some(mut global_transform) = world.get_component_mut::<GlobalTransform>(entity) {
         *global_transform = GlobalTransform::from_matrix(global_matrix);
     }
 

@@ -144,9 +144,7 @@ pub fn camera_controller_system(world: &mut World) {
     let camera_entities = world.get_entities_with::<Camera>();
 
     for camera_entity in camera_entities {
-        if let Some(camera_component) = world.get_component::<Camera>(camera_entity) {
-            let mut camera = camera_component.borrow_mut();
-
+        if let Some(mut camera) = world.get_component_mut::<Camera>(camera_entity) {
             // Move the camera based on input
             let (forward, right, up) = {
                 let forward = camera.forward.normalized();

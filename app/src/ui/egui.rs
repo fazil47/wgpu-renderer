@@ -83,8 +83,7 @@ impl RendererEgui {
     }
 
     pub fn update_camera(&self, world: &World, camera_entity: Entity) {
-        if let Some(camera_component) = world.get_component::<Camera>(camera_entity) {
-            let camera = camera_component.borrow();
+        if let Some(camera) = world.get_component::<Camera>(camera_entity) {
             self.gizmo.borrow_mut().update_config(GizmoConfig {
                 view_matrix: camera.view_matrix().into(),
                 projection_matrix: camera.projection_matrix().into(),
@@ -97,24 +96,22 @@ impl RendererEgui {
 
     pub fn select_entity(&self, world: &World, ui: &egui::Ui, entity: Entity) -> bool {
         let mut has_changed = false;
-        let transform = world.get_component::<Transform>(entity);
 
-        if transform.is_none() {
-            return has_changed;
-        }
+        // We need to get the component mutably later, but for now we just need to read it.
+        // However, since we can't easily upgrade a borrow, and we need to modify it at the end,
+        // we might need to structure this differently.
+        // Actually, we can just get it mutably at the end if needed, or clone the data we need.
 
-        let transform = transform.unwrap();
+        let (parent, mut gizmo_transform) =
+            if let Some(transform) = world.get_component::<Transform>(entity) {
+                let local_transform = *transform;
+                let gizmo_transform: transform_gizmo_egui::math::Transform = local_transform.into();
+                (local_transform.parent, gizmo_transform)
+            } else {
+                return false;
+            };
 
-        let (parent, mut gizmo_transform) = {
-            let transform_ref = transform.borrow();
-            let local_transform = *transform_ref;
-            let gizmo_transform: transform_gizmo_egui::math::Transform = local_transform.into();
-            (local_transform.parent, gizmo_transform)
-        };
-
-        if let Some(global_transform) = world.get_component::<GlobalTransform>(entity)
-            && let Ok(global_transform) = global_transform.try_borrow()
-        {
+        if let Some(global_transform) = world.get_component::<GlobalTransform>(entity) {
             gizmo_transform.translation = global_transform.matrix.extract_translation().into();
             gizmo_transform.rotation = global_transform.matrix.extract_rotation().into();
             gizmo_transform.scale = global_transform.matrix.extract_scale().into();
@@ -128,10 +125,9 @@ impl RendererEgui {
 
             // Convert the gizmo's world-space translation back into local space.
             if let Some(parent) = parent
-                && let Some(parent) = world.get_component::<GlobalTransform>(parent)
-                && let Ok(parent) = parent.try_borrow()
+                && let Some(parent_transform) = world.get_component::<GlobalTransform>(parent)
             {
-                let inverse = parent.matrix.inverse();
+                let inverse = parent_transform.matrix.inverse();
                 let local = inverse * maths::Vec4::from_point(next.position);
                 let w = if local.w.abs() > f32::EPSILON {
                     local.w
@@ -141,8 +137,10 @@ impl RendererEgui {
                 next.position = maths::Vec3::new(local.x / w, local.y / w, local.z / w);
             }
 
-            *transform.borrow_mut() = next;
-            has_changed = true;
+            if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
+                *transform = next;
+                has_changed = true;
+            }
         }
 
         has_changed
