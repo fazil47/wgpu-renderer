@@ -18,7 +18,6 @@ use crate::{
     mesh::Mesh,
     time::Time,
     transform::{GlobalTransform, Transform},
-    ui::{build_mesh_hierarchy, draw_mesh_hierarchy},
 };
 use ecs::{Entity, World};
 use maths::Vec3;
@@ -36,9 +35,7 @@ pub struct Engine {
     pub frame_schedule: ecs::Schedule,  // Run every frame
     pub camera_entity: Entity,
     pub sun_light_entity: Entity,
-    is_light_dirty: bool,
     stat: EngineStatistics,
-    config: EngineConfiguration,
 }
 
 pub struct SelectedEntity(pub Option<Entity>);
@@ -48,6 +45,7 @@ impl ecs::Resource for SelectedEntity {}
 pub struct RaytracerFrameState {
     pub frame_count: u32,
     pub frames_till_next_compute: u32,
+    pub accumulator: f32,
 }
 
 impl ecs::Resource for RaytracerFrameState {}
@@ -131,6 +129,9 @@ impl Engine {
 
         let mut frame_schedule = ecs::Schedule::new();
         frame_schedule.add_system(crate::input::camera_controller::camera_controller_system);
+        frame_schedule.add_system(crate::systems::ui_system::ui_system);
+        frame_schedule.add_system(crate::systems::probe_baking_system::probe_baking_system);
+        frame_schedule.add_system(crate::systems::render_system::render_system);
 
         // Create rendering resources separately
         let wgpu = crate::rendering::wgpu::WgpuResources::new(window.clone(), &window_size).await;
@@ -167,6 +168,12 @@ impl Engine {
         world.insert_resource(egui);
         world.insert_resource(rasterizer);
         world.insert_resource(raytracer);
+        world.insert_resource(SelectedEntity(None));
+        world.insert_resource(RaytracerFrameState::default());
+        world.insert_resource(EngineConfiguration::default());
+        world.insert_resource(crate::ui::UiState::default());
+        world.insert_resource(LightDirtyFlag(true)); // Start dirty to ensure initial update
+        world.insert_resource(WindowResource(window.clone()));
 
         Self {
             window,
@@ -176,15 +183,15 @@ impl Engine {
             frame_schedule,
             camera_entity,
             sun_light_entity,
-            is_light_dirty: false,
             stat: EngineStatistics::default(),
-            config: EngineConfiguration::default(),
         }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.window_size = new_size;
-        self.config.reset_raytracer = true;
+        if let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
+            config.reset_raytracer = true;
+        }
 
         // Update camera aspect ratio
         if let Some(mut camera) = self.world.get_component_mut::<Camera>(self.camera_entity) {
@@ -217,11 +224,6 @@ impl Engine {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        use crate::rendering::rasterizer::Rasterizer;
-        use crate::rendering::raytracer::Raytracer;
-        use crate::rendering::wgpu::WgpuResources;
-        use crate::ui::egui::RendererEgui;
-
         // Update delta time
         let current_time = Instant::now();
         self.stat.delta_time = current_time
@@ -234,117 +236,10 @@ impl Engine {
             time.delta_time = self.stat.delta_time;
         }
 
-        // Run update schedule (inputs, camera, etc.)
+        // Run update schedule (inputs, camera, ui, rendering, etc.)
         self.frame_schedule.run(&mut self.world);
 
-        // Extract values for UI
-        let delta_time_ms = self.stat.delta_time * 1000.0;
-        let fps = 1.0 / self.stat.delta_time;
-        let mut raytracer_enabled = self.config.is_raytracer_enabled;
-        let mut raytracer_show_bvh = self.config.show_bvh;
-        let mut reset_raytracer = self.config.reset_raytracer;
-        let mut bake_requested = false;
-        let mut has_transform_changed = false;
-
-        let mesh_hierarchy = build_mesh_hierarchy(&self.world);
-
-        // Get frame count
-        let frame_count = self
-            .world
-            .get_resource::<RaytracerFrameState>()
-            .map(|s| s.frame_count)
-            .unwrap_or(0);
-
-        // Setup and run egui
-        let egui_output = {
-            let mut egui = self.world.get_resource_mut::<RendererEgui>().unwrap();
-            let mut selected = self.world.get_resource_mut::<SelectedEntity>().unwrap();
-            let mut rasterizer = self.world.get_resource_mut::<Rasterizer>().unwrap();
-
-            let egui_raw_input = egui.state.take_egui_input(&self.window);
-            let egui_ctx = egui.state.egui_ctx().clone();
-
-            egui_ctx.run(egui_raw_input, |ctx| {
-                egui::CentralPanel::default()
-                    .frame(egui::Frame::NONE)
-                    .show(ctx, |ui| {
-                        if let Some(entity) = selected.0 {
-                            has_transform_changed = egui.select_entity(&self.world, ui, entity);
-                        }
-
-                        egui::SidePanel::right("fps_panel")
-                            .exact_width(150.0)
-                            .show_separator_line(false)
-                            .resizable(false)
-                            .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
-                            .show(ctx, |ui| {
-                                ui.label(format!("Frame Time: {delta_time_ms:.2}ms"));
-                                ui.label(format!("FPS: {fps:.1}"));
-
-                                if raytracer_enabled {
-                                    ui.label(format!("Frame Count: {frame_count}"));
-                                }
-                            });
-
-                        egui::CentralPanel::default()
-                            .frame(egui::Frame::new().inner_margin(egui::Margin::same(10)))
-                            .show(ctx, |ui| {
-                                ui.collapsing("Meshes", |ui| {
-                                    draw_mesh_hierarchy(ui, &mesh_hierarchy, &mut selected.0);
-                                });
-
-                                // Lighting controls
-                                ui.collapsing("Lighting", |ui| {
-                                    if let Some(mut light) =
-                                        self.world.get_component_mut::<DirectionalLight>(
-                                            self.sun_light_entity,
-                                        )
-                                    {
-                                        let sun_azi_changed = ui
-                                            .add(
-                                                egui::Slider::new(&mut light.azimuth, 0.0..=360.0)
-                                                    .text("Sun Azimuth"),
-                                            )
-                                            .changed();
-                                        let sun_alt_changed = ui
-                                            .add(
-                                                egui::Slider::new(&mut light.altitude, 0.0..=90.0)
-                                                    .text("Sun Altitude"),
-                                            )
-                                            .changed();
-
-                                        if sun_azi_changed || sun_alt_changed {
-                                            light.recalculate();
-                                            self.is_light_dirty = true;
-                                            reset_raytracer = true;
-                                        }
-                                    }
-                                });
-
-                                // Run probe UI
-                                let probe_ui_result = rasterizer.run_probe_ui(ui);
-                                if probe_ui_result.bake_requested {
-                                    bake_requested = true;
-                                }
-
-                                ui.collapsing("Raytracing", |ui| {
-                                    ui.checkbox(&mut raytracer_enabled, "Enabled");
-                                    ui.checkbox(&mut raytracer_show_bvh, "Show BVH");
-                                });
-                            });
-                    });
-            })
-        };
-
-        // Handle transform changes
-        if has_transform_changed {
-            reset_raytracer = true;
-            if let Some(mut flag) = self.world.get_resource_mut::<StaticDataDirtyFlag>() {
-                flag.0 = true;
-            }
-        }
-
-        // Run static schedule if needed
+        // Handle static data updates if flagged
         let run_static = self
             .world
             .get_resource::<StaticDataDirtyFlag>()
@@ -357,210 +252,6 @@ impl Engine {
                 flag.0 = false;
             }
         }
-
-        // Update config
-        if raytracer_enabled != self.config.is_raytracer_enabled {
-            self.config.is_raytracer_enabled = raytracer_enabled;
-        }
-        if raytracer_show_bvh != self.config.show_bvh {
-            self.config.show_bvh = raytracer_show_bvh;
-        }
-
-        // Handle probe baking
-        if bake_requested {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            let rasterizer = self.world.get_resource::<Rasterizer>().unwrap();
-            let raytracer = self.world.get_resource::<Raytracer>().unwrap();
-            let material_bind_group = raytracer.get_material_bind_group();
-            let mesh_bind_group = raytracer.get_mesh_bind_group();
-            rasterizer.bake_probes(
-                &wgpu.device,
-                &wgpu.queue,
-                material_bind_group,
-                mesh_bind_group,
-            );
-        }
-
-        // === RENDERING PHASE ===
-        let start_of_render = Instant::now();
-
-        // Update camera and lights
-        {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            let mut egui = self.world.get_resource_mut::<RendererEgui>().unwrap();
-            egui.update_camera(&self.world, self.camera_entity);
-            drop(egui);
-
-            let rasterizer = self.world.get_resource::<Rasterizer>().unwrap();
-            rasterizer.update_camera(&wgpu.queue, &self.world, self.camera_entity);
-            rasterizer.update_light(&wgpu.queue, &self.world, self.sun_light_entity);
-            drop(rasterizer);
-
-            let raytracer = self.world.get_resource::<Raytracer>().unwrap();
-            raytracer.update_camera(&wgpu.queue, &self.world, self.camera_entity);
-            raytracer.update_light(&wgpu.queue, &self.world, self.sun_light_entity);
-        }
-
-        // Check if probe grid configuration changed
-        {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            let mut rasterizer = self.world.get_resource_mut::<Rasterizer>().unwrap();
-            if rasterizer.is_probe_dirty() {
-                rasterizer.update_probes(&wgpu.device, &wgpu.queue);
-                rasterizer.clear_probe_dirty();
-            }
-        }
-
-        // Raytracer compute
-        {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            let raytracer = self.world.get_resource::<Raytracer>().unwrap();
-            let mut frame_state = self
-                .world
-                .get_resource_mut::<RaytracerFrameState>()
-                .unwrap();
-
-            if self.config.is_raytracer_enabled
-                && (reset_raytracer
-                    || (frame_state.frame_count < self.config.raytracer_max_frames
-                        && frame_state.frames_till_next_compute == 0))
-            {
-                raytracer.update_frame_count(&wgpu.queue, frame_state.frame_count);
-                raytracer.compute(&self.window_size, &wgpu.device, &wgpu.queue);
-
-                if reset_raytracer {
-                    frame_state.frame_count = 0;
-                } else {
-                    frame_state.frame_count += 1;
-                }
-            } else if reset_raytracer {
-                frame_state.frame_count = 0;
-            }
-        }
-
-        // Get surface and create encoder
-        let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-        let surface_texture = wgpu.surface.get_current_texture()?;
-        let surface_texture_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut render_encoder =
-            wgpu.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Command Encoder"),
-                });
-        drop(wgpu);
-
-        // Tessellate egui
-        let egui_primitives = {
-            let egui = self.world.get_resource::<RendererEgui>().unwrap();
-            egui.state
-                .egui_ctx()
-                .tessellate(egui_output.shapes, egui_output.pixels_per_point)
-        };
-
-        let egui_screen_descriptor = {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            egui_wgpu::ScreenDescriptor {
-                size_in_pixels: [wgpu.surface_config.width, wgpu.surface_config.height],
-                pixels_per_point: self.window.scale_factor() as f32,
-            }
-        };
-
-        // Update egui textures
-        {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            let mut egui = self.world.get_resource_mut::<RendererEgui>().unwrap();
-            for (id, image_delta) in egui_output.textures_delta.set {
-                egui.renderer
-                    .update_texture(&wgpu.device, &wgpu.queue, id, &image_delta);
-            }
-        }
-
-        // Render scene
-        {
-            if self.config.is_raytracer_enabled {
-                let raytracer = self.world.get_resource::<Raytracer>().unwrap();
-                raytracer.render(
-                    &mut render_encoder,
-                    &surface_texture_view,
-                    self.config.show_bvh,
-                );
-            } else {
-                let default_material_entity = self
-                    .world
-                    .get_resource::<DefaultMaterialEntity>()
-                    .unwrap()
-                    .0;
-                let rasterizer = self.world.get_resource::<Rasterizer>().unwrap();
-                rasterizer.render(
-                    &mut render_encoder,
-                    &surface_texture_view,
-                    default_material_entity,
-                );
-
-                // Render probe visualization if enabled
-                if rasterizer.should_render_probe_visualization() {
-                    rasterizer
-                        .render_probe_visualization(&mut render_encoder, &surface_texture_view);
-                }
-            }
-
-            // Render egui
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            let mut egui = self.world.get_resource_mut::<RendererEgui>().unwrap();
-            egui.render(
-                &wgpu.device,
-                &wgpu.queue,
-                &mut render_encoder,
-                &surface_texture_view,
-                &egui_primitives,
-                &egui_screen_descriptor,
-            );
-        }
-
-        // Submit and present
-        {
-            let wgpu = self.world.get_resource::<WgpuResources>().unwrap();
-            wgpu.queue.submit(Some(render_encoder.finish()));
-        }
-        surface_texture.present();
-
-        // Free egui textures
-        {
-            let mut egui = self.world.get_resource_mut::<RendererEgui>().unwrap();
-            for id in egui_output.textures_delta.free {
-                egui.renderer.free_texture(&id);
-            }
-        }
-
-        // Update frame throttling for raytracer
-        if self.config.is_raytracer_enabled {
-            const FRAMES_TO_WAIT_THRESHOLD: u32 = 2;
-            let frames_to_wait = (start_of_render.elapsed().as_secs_f32()
-                / self.config.target_frame_time)
-                .ceil() as u32;
-
-            let mut frame_state = self
-                .world
-                .get_resource_mut::<RaytracerFrameState>()
-                .unwrap();
-            if frames_to_wait > FRAMES_TO_WAIT_THRESHOLD {
-                frame_state.frames_till_next_compute = frames_to_wait;
-            } else if frame_state.frames_till_next_compute > 0 {
-                frame_state.frames_till_next_compute -= 1;
-            }
-        } else {
-            let mut frame_state = self
-                .world
-                .get_resource_mut::<RaytracerFrameState>()
-                .unwrap();
-            frame_state.frames_till_next_compute = 0;
-        }
-
-        // Reset flags
-        self.is_light_dirty = false;
-        self.config.reset_raytracer = false;
 
         Ok(())
     }
@@ -580,9 +271,10 @@ impl Engine {
         let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
         camera_controller.process_events(event);
 
-        if camera_controller.is_cursor_locked() && camera_controller.has_camera_moved() {
-            self.config.reset_raytracer = true;
-        }
+        if camera_controller.is_cursor_locked() && camera_controller.has_camera_moved()
+            && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
+                config.reset_raytracer = true;
+            }
     }
 
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
@@ -590,18 +282,24 @@ impl Engine {
             let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
             camera_controller.process_mouse(delta.0, delta.1);
 
-            if camera_controller.is_cursor_locked() {
-                self.config.reset_raytracer = true;
-            }
+            if camera_controller.is_cursor_locked()
+                && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
+                    config.reset_raytracer = true;
+                }
         }
     }
 
-    pub fn is_light_dirty(&self) -> bool {
-        self.is_light_dirty
+    pub fn get_target_frame_time(&self) -> f32 {
+        self.world
+            .get_resource::<EngineConfiguration>()
+            .unwrap()
+            .target_frame_time
     }
 
-    pub fn set_light_clean(&mut self) {
-        self.is_light_dirty = false;
+    pub fn reset_raytracer(&mut self) {
+        if let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
+            config.reset_raytracer = true;
+        }
     }
 }
 
@@ -624,8 +322,20 @@ pub struct EngineConfiguration {
     pub raytracer_max_frames: u32,
     pub is_raytracer_enabled: bool,
     pub show_bvh: bool,
-    reset_raytracer: bool,
+    pub reset_raytracer: bool,
 }
+
+impl ecs::Resource for EngineConfiguration {}
+
+
+
+
+#[derive(Default)]
+pub struct LightDirtyFlag(pub bool);
+impl ecs::Resource for LightDirtyFlag {}
+
+pub struct WindowResource(pub std::sync::Arc<winit::window::Window>);
+impl ecs::Resource for WindowResource {}
 
 impl Default for EngineConfiguration {
     fn default() -> Self {

@@ -5,6 +5,7 @@ pub mod lighting;
 pub mod material;
 pub mod mesh;
 pub mod rendering;
+pub mod systems;
 pub mod time;
 pub mod transform;
 pub mod ui;
