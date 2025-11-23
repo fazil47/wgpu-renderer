@@ -118,6 +118,8 @@ pub struct Raytracer {
     pipelines: RaytracerPipelines,
 }
 
+impl ecs::Resource for Raytracer {}
+
 impl Raytracer {
     pub fn create_scene_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device

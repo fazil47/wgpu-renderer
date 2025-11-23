@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use ecs::{Entity, World};
 use transform_gizmo_egui::{Gizmo, GizmoConfig, GizmoExt, GizmoMode, GizmoOrientation};
 use winit::window::Window;
@@ -12,8 +10,10 @@ use crate::{
 pub struct RendererEgui {
     pub renderer: egui_wgpu::Renderer,
     pub state: egui_winit::State,
-    pub gizmo: Rc<RefCell<Gizmo>>,
+    pub gizmo: Gizmo,
 }
+
+impl ecs::Resource for RendererEgui {}
 
 impl RendererEgui {
     pub fn new(
@@ -39,7 +39,7 @@ impl RendererEgui {
         Self {
             renderer: egui_renderer,
             state: egui_state,
-            gizmo: Rc::new(RefCell::new(Gizmo::default())),
+            gizmo: Gizmo::default(),
         }
     }
 
@@ -82,9 +82,9 @@ impl RendererEgui {
         );
     }
 
-    pub fn update_camera(&self, world: &World, camera_entity: Entity) {
+    pub fn update_camera(&mut self, world: &World, camera_entity: Entity) {
         if let Some(camera) = world.get_component::<Camera>(camera_entity) {
-            self.gizmo.borrow_mut().update_config(GizmoConfig {
+            self.gizmo.update_config(GizmoConfig {
                 view_matrix: camera.view_matrix().into(),
                 projection_matrix: camera.projection_matrix().into(),
                 modes: GizmoMode::all(),
@@ -94,13 +94,8 @@ impl RendererEgui {
         }
     }
 
-    pub fn select_entity(&self, world: &World, ui: &egui::Ui, entity: Entity) -> bool {
+    pub fn select_entity(&mut self, world: &World, ui: &egui::Ui, entity: Entity) -> bool {
         let mut has_changed = false;
-
-        // We need to get the component mutably later, but for now we just need to read it.
-        // However, since we can't easily upgrade a borrow, and we need to modify it at the end,
-        // we might need to structure this differently.
-        // Actually, we can just get it mutably at the end if needed, or clone the data we need.
 
         let (parent, mut gizmo_transform) =
             if let Some(transform) = world.get_component::<Transform>(entity) {
@@ -117,8 +112,7 @@ impl RendererEgui {
             gizmo_transform.scale = global_transform.matrix.extract_scale().into();
         }
 
-        if let Some((_, new_transforms)) = self.gizmo.borrow_mut().interact(ui, &[gizmo_transform])
-        {
+        if let Some((_, new_transforms)) = self.gizmo.interact(ui, &[gizmo_transform]) {
             // TODO: Support translating more than one entity at a time
             let mut next: Transform = new_transforms[0].into();
             next.parent = parent;

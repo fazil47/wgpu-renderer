@@ -72,6 +72,8 @@ pub struct Rasterizer {
     probe_updater_light_bgl: BindGroupLayout,
 }
 
+impl ecs::Resource for Rasterizer {}
+
 impl Rasterizer {
     pub fn new(wgpu: &WgpuResources) -> Self {
         let rasterizer_shader = wgpu

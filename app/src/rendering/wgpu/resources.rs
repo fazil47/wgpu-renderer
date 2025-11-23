@@ -14,6 +14,8 @@ pub struct WgpuResources {
     pub surface_config: wgpu::SurfaceConfiguration,
 }
 
+impl ecs::Resource for WgpuResources {}
+
 impl WgpuResources {
     pub async fn new(window: Arc<Window>, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
         let instance = wgpu::Instance::default();
