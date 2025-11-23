@@ -3,18 +3,17 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     ops::{Deref, DerefMut},
-    rc::Rc,
 };
 
 /// Marker trait for ECS components
 pub trait Component: 'static + Any {}
 
-impl<T> Component for Rc<T> where T: Component {}
+impl<T> Component for Box<T> where T: Component {}
 
 /// Marker trait for ECS resources
 pub trait Resource: 'static + Any {}
 
-impl<T> Resource for Rc<T> where T: Resource {}
+impl<T> Resource for Box<T> where T: Resource {}
 
 /// A unique identifier for an entity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,12 +33,12 @@ impl DerefMut for Entity {
     }
 }
 
-pub type EntityComponents = HashMap<TypeId, Rc<RefCell<dyn Component>>>;
+pub type EntityComponents = HashMap<TypeId, Box<RefCell<dyn Component>>>;
 
 /// The main ECS world that holds all entities and their components
 pub struct World {
     entities: HashMap<Entity, EntityComponents>,
-    resources: HashMap<TypeId, Rc<RefCell<dyn Resource>>>,
+    resources: HashMap<TypeId, Box<RefCell<dyn Resource>>>,
     next_id: u32,
 }
 
@@ -70,7 +69,7 @@ impl World {
 
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
         if let Some(entity) = self.entities.get_mut(&entity) {
-            entity.insert(TypeId::of::<T>(), Rc::new(RefCell::new(component)));
+            entity.insert(TypeId::of::<T>(), Box::new(RefCell::new(component)));
         }
     }
 
@@ -175,7 +174,7 @@ impl World {
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) {
         self.resources
-            .insert(resource.type_id(), Rc::new(RefCell::new(resource)));
+            .insert(resource.type_id(), Box::new(RefCell::new(resource)));
     }
 }
 
