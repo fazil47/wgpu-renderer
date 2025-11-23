@@ -13,7 +13,7 @@ gltf = { version = "1.4" }
 log = "0.4"
 maths = { path = "../maths" }
 transform-gizmo-egui = { workspace = true }
-wesl = { version = "0.1" }
+wesl = { version = "0.2" }
 wgpu = "25"
 winit = "0.30"
 
@@ -41,4 +41,4 @@ js-sys = "0.3"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [build-dependencies]
-wesl = { version = "0.1.2" }
+wesl = { version = "0.2" }
