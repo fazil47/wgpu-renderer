@@ -619,7 +619,6 @@ impl Default for EngineStatistics {
     }
 }
 
-#[derive(Clone)]
 pub struct EngineConfiguration {
     pub target_frame_time: f32, // in seconds
     pub raytracer_max_frames: u32,
