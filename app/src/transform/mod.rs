@@ -119,7 +119,16 @@ impl From<transform_gizmo_egui::math::Transform> for Transform {
     }
 }
 
-pub fn transform_system(world: &mut ecs::World) {
+pub fn calculate_global_position_system(world: &mut ecs::World) {
+    let is_dirty = world
+        .get_resource::<crate::core::engine::StaticDataDirtyFlag>()
+        .map(|f| f.0)
+        .unwrap_or(false);
+
+    if !is_dirty {
+        return;
+    }
+
     let mut cache: std::collections::HashMap<Entity, Mat4> = std::collections::HashMap::new();
     let mut visiting: std::collections::HashSet<Entity> = std::collections::HashSet::new();
 

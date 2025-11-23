@@ -6,6 +6,16 @@ use crate::{
 use ecs::World;
 
 pub fn renderer_update_system(world: &mut World) {
+    // Check if static data is dirty
+    let is_dirty = world
+        .get_resource::<crate::core::engine::StaticDataDirtyFlag>()
+        .map(|f| f.0)
+        .unwrap_or(false);
+
+    if !is_dirty {
+        return;
+    }
+
     // Find camera and sun light entities
     let camera_entity = world
         .get_entities_with::<Camera>()

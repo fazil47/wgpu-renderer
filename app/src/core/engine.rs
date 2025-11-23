@@ -31,8 +31,10 @@ pub struct Engine {
     pub window: Arc<Window>,
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub world: World,
-    pub static_schedule: ecs::Schedule, // Run only when data changes
-    pub frame_schedule: ecs::Schedule,  // Run every frame
+    pub input_schedule: ecs::Schedule,
+    pub update_schedule: ecs::Schedule,
+    pub render_schedule: ecs::Schedule,
+    pub cleanup_schedule: ecs::Schedule,
     pub camera_entity: Entity,
     pub sun_light_entity: Entity,
     stat: EngineStatistics,
@@ -123,15 +125,20 @@ impl Engine {
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
 
-        let mut static_schedule = ecs::Schedule::new();
-        static_schedule.add_system(crate::transform::transform_system);
-        static_schedule.add_system(crate::rendering::renderer::renderer_update_system);
+        let mut input_schedule = ecs::Schedule::new();
+        input_schedule.add_system(crate::input::camera_controller::camera_controller_system);
 
-        let mut frame_schedule = ecs::Schedule::new();
-        frame_schedule.add_system(crate::input::camera_controller::camera_controller_system);
-        frame_schedule.add_system(crate::systems::ui_system::ui_system);
-        frame_schedule.add_system(crate::systems::probe_baking_system::probe_baking_system);
-        frame_schedule.add_system(crate::systems::render_system::render_system);
+        let mut update_schedule = ecs::Schedule::new();
+        update_schedule.add_system(crate::systems::ui_system::ui_system);
+        update_schedule.add_system(crate::transform::calculate_global_position_system);
+        update_schedule.add_system(crate::rendering::renderer::renderer_update_system);
+
+        let mut render_schedule = ecs::Schedule::new();
+        render_schedule.add_system(crate::systems::probe_baking_system::probe_baking_system);
+        render_schedule.add_system(crate::systems::render_system::render_system);
+
+        let mut cleanup_schedule = ecs::Schedule::new();
+        cleanup_schedule.add_system(crate::systems::scene_system::reset_dirty_flags_system);
 
         // Create rendering resources separately
         let wgpu = crate::rendering::wgpu::WgpuResources::new(window.clone(), &window_size).await;
@@ -179,8 +186,10 @@ impl Engine {
             window,
             window_size,
             world,
-            static_schedule,
-            frame_schedule,
+            input_schedule,
+            update_schedule,
+            render_schedule,
+            cleanup_schedule,
             camera_entity,
             sun_light_entity,
             stat: EngineStatistics::default(),
@@ -236,22 +245,11 @@ impl Engine {
             time.delta_time = self.stat.delta_time;
         }
 
-        // Run update schedule (inputs, camera, ui, rendering, etc.)
-        self.frame_schedule.run(&mut self.world);
-
-        // Handle static data updates if flagged
-        let run_static = self
-            .world
-            .get_resource::<StaticDataDirtyFlag>()
-            .map(|f| f.0)
-            .unwrap_or(false);
-
-        if run_static {
-            self.static_schedule.run(&mut self.world);
-            if let Some(mut flag) = self.world.get_resource_mut::<StaticDataDirtyFlag>() {
-                flag.0 = false;
-            }
-        }
+        // Run schedules
+        self.input_schedule.run(&mut self.world);
+        self.update_schedule.run(&mut self.world);
+        self.render_schedule.run(&mut self.world);
+        self.cleanup_schedule.run(&mut self.world);
 
         Ok(())
     }

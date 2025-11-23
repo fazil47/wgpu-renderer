@@ -84,11 +84,6 @@ pub fn render_system(world: &mut World) {
         if let Some(raytracer) = world.get_resource::<Raytracer>() {
             raytracer.update_light(&wgpu.queue, world, sun_light_entity);
         }
-
-        // Reset flag
-        if let Some(mut flag) = world.get_resource_mut::<crate::core::engine::LightDirtyFlag>() {
-            flag.0 = false;
-        }
     }
 
     // Update Raytracer Camera
@@ -137,11 +132,6 @@ pub fn render_system(world: &mut World) {
         if reset_raytracer {
             frame_state.frame_count = 0;
             frame_state.frames_till_next_compute = 0;
-
-            // Reset the flag in config!
-            if let Some(mut config) = world.get_resource_mut::<EngineConfiguration>() {
-                config.reset_raytracer = false;
-            }
         }
     }
 
