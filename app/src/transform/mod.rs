@@ -121,8 +121,8 @@ impl From<transform_gizmo_egui::math::Transform> for Transform {
 
 pub fn calculate_global_position_system(world: &mut ecs::World) {
     let is_dirty = world
-        .get_resource::<crate::core::engine::StaticDataDirtyFlag>()
-        .map(|f| f.0)
+        .get_resource::<crate::core::flags::DirtyFlags>()
+        .map(|f| f.static_data)
         .unwrap_or(false);
 
     if !is_dirty {

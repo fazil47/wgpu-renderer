@@ -1,5 +1,5 @@
 use crate::core::engine::{
-    EngineConfiguration, RaytracerFrameState, SelectedEntity, StaticDataDirtyFlag, WindowResource,
+    EngineConfiguration, RaytracerFrameState, SelectedEntity, WindowResource,
 };
 use crate::lighting::DirectionalLight;
 use crate::rendering::rasterizer::Rasterizer;
@@ -10,13 +10,7 @@ use ecs::World;
 
 pub fn ui_system(world: &mut World) {
     // 1. Extract resources
-    let (
-        mut raytracer_enabled,
-        mut raytracer_show_bvh,
-        mut reset_raytracer,
-        delta_time,
-        frame_count,
-    ) = {
+    let (mut raytracer_enabled, mut raytracer_show_bvh, delta_time, frame_count) = {
         let config = world.get_resource::<EngineConfiguration>().unwrap();
         let stat_delta_time = if let Some(time) = world.get_resource::<crate::time::Time>() {
             time.delta_time
@@ -31,7 +25,6 @@ pub fn ui_system(world: &mut World) {
         (
             config.is_raytracer_enabled,
             config.show_bvh,
-            config.reset_raytracer,
             stat_delta_time,
             frame_count,
         )
@@ -122,7 +115,6 @@ pub fn ui_system(world: &mut World) {
                                     if sun_azi_changed || sun_alt_changed {
                                         light.recalculate();
                                         is_light_dirty = true;
-                                        reset_raytracer = true;
                                     }
                                 }
                             });
@@ -146,30 +138,26 @@ pub fn ui_system(world: &mut World) {
     if let Some(mut config) = world.get_resource_mut::<EngineConfiguration>() {
         config.is_raytracer_enabled = raytracer_enabled;
         config.show_bvh = raytracer_show_bvh;
-        config.reset_raytracer = reset_raytracer;
     }
 
-    if has_transform_changed {
-        if let Some(mut config) = world.get_resource_mut::<EngineConfiguration>() {
-            config.reset_raytracer = true;
+    if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
+        if has_transform_changed {
+            flags.raytracer_reset = true;
+            flags.static_data = true;
         }
-        if let Some(mut flag) = world.get_resource_mut::<StaticDataDirtyFlag>() {
-            flag.0 = true;
+        if bake_requested {
+            flags.probe_bake_requested = true;
+        }
+        if is_light_dirty {
+            flags.lights = true;
+            flags.raytracer_reset = true;
         }
     }
 
     // 4. Store UI output in UiState
     if let Some(mut ui_state) = world.get_resource_mut::<UiState>() {
         ui_state.egui_output = Some(egui_output);
-        ui_state.bake_requested = bake_requested;
-        ui_state.has_transform_changed = has_transform_changed;
         ui_state.fps = 1.0 / delta_time;
         ui_state.frame_time_ms = delta_time * 1000.0;
-    }
-
-    if is_light_dirty
-        && let Some(mut flag) = world.get_resource_mut::<crate::lighting::LightDirtyFlag>()
-    {
-        flag.0 = true;
     }
 }

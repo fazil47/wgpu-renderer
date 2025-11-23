@@ -1,12 +1,12 @@
 use crate::rendering::rasterizer::Rasterizer;
 use crate::rendering::wgpu::WgpuResources;
-use crate::ui::UiState;
+
 use ecs::World;
 
 pub fn probe_baking_system(world: &mut World) {
     let bake_requested = world
-        .get_resource::<UiState>()
-        .map(|s| s.bake_requested)
+        .get_resource::<crate::core::flags::DirtyFlags>()
+        .map(|s| s.probe_bake_requested)
         .unwrap_or(false);
 
     if !bake_requested {

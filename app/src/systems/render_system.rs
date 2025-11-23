@@ -9,18 +9,11 @@ use ecs::World;
 pub fn render_system(world: &mut World) {
     // 1. Get resources
     let wgpu = world.get_resource::<WgpuResources>().unwrap();
-    let (
-        raytracer_enabled,
-        raytracer_show_bvh,
-        reset_raytracer,
-        target_frame_time,
-        raytracer_max_frames,
-    ) = {
+    let (raytracer_enabled, raytracer_show_bvh, target_frame_time, raytracer_max_frames) = {
         let config = world.get_resource::<EngineConfiguration>().unwrap();
         (
             config.is_raytracer_enabled,
             config.show_bvh,
-            config.reset_raytracer,
             config.target_frame_time,
             config.raytracer_max_frames,
         )
@@ -50,11 +43,11 @@ pub fn render_system(world: &mut World) {
             label: Some("Render Encoder"),
         });
 
-    // Check LightDirtyFlag
-    let light_dirty = world
-        .get_resource::<crate::lighting::LightDirtyFlag>()
-        .map(|f| f.0)
-        .unwrap_or(false);
+    // Check DirtyFlags
+    let (light_dirty, reset_raytracer) = world
+        .get_resource::<crate::core::flags::DirtyFlags>()
+        .map(|f| (f.lights, f.raytracer_reset))
+        .unwrap_or((false, false));
 
     // We need camera and light entities for updates
     let camera_entity = world
@@ -110,15 +103,19 @@ pub fn render_system(world: &mut World) {
             frame_state.pending_skip_calculation = false;
         }
 
+        // Handle skipping
         if frame_state.frames_to_skip > 0 {
             frame_state.frames_to_skip -= 1;
         } else {
+            // Check if we should compute
             let should_compute = reset_raytracer || frame_state.frame_count < raytracer_max_frames;
 
             if raytracer_enabled && should_compute {
+                // We need mutable access to Raytracer
                 if let Some(raytracer) = world.get_resource::<Raytracer>() {
                     raytracer.update_frame_count(&wgpu.queue, frame_state.frame_count);
 
+                    // Dispatch compute
                     let window_size = winit::dpi::PhysicalSize::new(
                         wgpu.surface_config.width,
                         wgpu.surface_config.height,

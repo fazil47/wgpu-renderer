@@ -8,8 +8,8 @@ use ecs::World;
 pub fn renderer_update_system(world: &mut World) {
     // Check if static data is dirty
     let is_dirty = world
-        .get_resource::<crate::core::engine::StaticDataDirtyFlag>()
-        .map(|f| f.0)
+        .get_resource::<crate::core::flags::DirtyFlags>()
+        .map(|f| f.static_data)
         .unwrap_or(false);
 
     if !is_dirty {

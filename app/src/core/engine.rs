@@ -12,8 +12,9 @@ use winit::{
 
 use crate::{
     camera::Camera,
+    core::flags::DirtyFlags,
     input::CameraController,
-    lighting::{DirectionalLight, LightDirtyFlag},
+    lighting::DirectionalLight,
     material::{DefaultMaterialEntity, Material},
     mesh::Mesh,
     time::Time,
@@ -52,10 +53,6 @@ pub struct RaytracerFrameState {
 }
 
 impl ecs::Resource for RaytracerFrameState {}
-
-pub struct StaticDataDirtyFlag(pub bool);
-
-impl ecs::Resource for StaticDataDirtyFlag {}
 
 impl Engine {
     pub async fn new(window: Arc<Window>) -> Engine {
@@ -125,7 +122,11 @@ impl Engine {
             delta_time: 0.0,
             elapsed_time: 0.0,
         });
-        world.insert_resource(StaticDataDirtyFlag(true)); // Initial update required
+        world.insert_resource(DirtyFlags {
+            static_data: true,
+            lights: true,
+            ..Default::default()
+        });
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
 
@@ -180,8 +181,7 @@ impl Engine {
         world.insert_resource(rasterizer);
         world.insert_resource(raytracer);
         world.insert_resource(WindowResource(window.clone()));
-        world.insert_resource(StaticDataDirtyFlag(true));
-        world.insert_resource(LightDirtyFlag(true));
+
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
         world.insert_resource(EngineConfiguration::default());
@@ -203,8 +203,8 @@ impl Engine {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.window_size = new_size;
-        if let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
-            config.reset_raytracer = true;
+        if let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>() {
+            flags.raytracer_reset = true;
         }
 
         // Update camera aspect ratio
@@ -277,9 +277,9 @@ impl Engine {
 
         if camera_controller.is_cursor_locked()
             && camera_controller.has_camera_moved()
-            && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>()
+            && let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>()
         {
-            config.reset_raytracer = true;
+            flags.raytracer_reset = true;
         }
     }
 
@@ -289,23 +289,10 @@ impl Engine {
             camera_controller.process_mouse(delta.0, delta.1);
 
             if camera_controller.is_cursor_locked()
-                && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>()
+                && let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>()
             {
-                config.reset_raytracer = true;
+                flags.raytracer_reset = true;
             }
-        }
-    }
-
-    pub fn get_target_frame_time(&self) -> f32 {
-        self.world
-            .get_resource::<EngineConfiguration>()
-            .unwrap()
-            .target_frame_time
-    }
-
-    pub fn reset_raytracer(&mut self) {
-        if let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
-            config.reset_raytracer = true;
         }
     }
 }
@@ -329,7 +316,6 @@ pub struct EngineConfiguration {
     pub raytracer_max_frames: u32,
     pub is_raytracer_enabled: bool,
     pub show_bvh: bool,
-    pub reset_raytracer: bool,
 }
 
 impl ecs::Resource for EngineConfiguration {}
@@ -344,7 +330,6 @@ impl Default for EngineConfiguration {
             raytracer_max_frames: 256,
             is_raytracer_enabled: false,
             show_bvh: false,
-            reset_raytracer: false,
         }
     }
 }
