@@ -5,33 +5,33 @@ edition = "2024"
 default-run = "app"
 
 [dependencies]
-bytemuck = { version = "1.18.0", features = ["derive"] }
+bytemuck = { version = "1.21.0", features = ["derive"] }
 ecs = { path = "../ecs" }
 egui = "0.32"
 egui-wgpu = "0.32"
 gltf = { version = "1.4" }
-log = "0.4.22"
+log = "0.4"
 maths = { path = "../maths" }
 transform-gizmo-egui = { workspace = true }
-wesl = { version = "0.1.2" }
+wesl = { version = "0.1" }
 wgpu = "25"
 winit = "0.30"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 egui-winit = "0.32"
-env_logger = "0.11.5"
-image = { version = "0.25.2", default-features = false, features = ["png"] }
-pollster = "0.3.0"
+env_logger = "0.11"
+image = { version = "0.25", default-features = false, features = ["png"] }
+pollster = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.7"
-console_log = "1.0.0"
+console_error_panic_hook = "0.1"
+console_log = "1.0"
 egui-winit = { version = "0.32", default-features = false }
-fern = "0.6.2"
+fern = "0.7"
 wgpu = { version = "25", features = ["webgpu"] }
-wasm-bindgen = "=0.2.100"
-wasm-bindgen-futures = "0.4.42"
-web-sys = { version = "0.3.69", features = [
+wasm-bindgen = "=0.2.105"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
     "Location",
     "Blob",
     "RequestInit",

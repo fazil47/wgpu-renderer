@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.100
+        run: cargo install wasm-bindgen-cli --version 0.2.105
       - name: Install wasm-unknown-unknown target
         run: rustup target add wasm32-unknown-unknown
       - name: Build
