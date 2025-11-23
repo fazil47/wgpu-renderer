@@ -13,6 +13,9 @@ use std::{
 
 pub trait GltfMeshExt {
     fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String>;
+    #[cfg(target_arch = "wasm32")]
+    async fn from_gltf_url(world: &mut World, url: &str) -> Result<Vec<Entity>, String>;
+    fn from_gltf_bytes(world: &mut World, bytes: &[u8]) -> Result<Vec<Entity>, String>;
 }
 
 struct GltfContext<'a> {
@@ -26,59 +29,106 @@ struct GltfContext<'a> {
 impl GltfMeshExt for Mesh {
     fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String> {
         let (document, buffers, _) = gltf::import(path).map_err(|err| err.to_string())?;
+        process_gltf_data(world, document, buffers)
+    }
 
-        let mut materials = Vec::new();
-        for material in document.materials() {
-            let pbr = material.pbr_metallic_roughness();
-            let base_color = pbr.base_color_factor();
-            let alpha_mode = material.alpha_mode();
+    #[cfg(target_arch = "wasm32")]
+    async fn from_gltf_url(world: &mut World, url: &str) -> Result<Vec<Entity>, String> {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen_futures::JsFuture;
+        use web_sys::{Request, RequestInit, RequestMode, Response};
 
-            let alpha = match alpha_mode {
-                AlphaMode::Opaque => 1.0,
-                AlphaMode::Mask => 1.0,
-                AlphaMode::Blend => base_color[3],
-            };
+        let mut opts = RequestInit::new();
+        opts.set_method("GET");
+        opts.set_mode(RequestMode::Cors);
 
-            let rgba = RGBA::new([base_color[0], base_color[1], base_color[2], alpha]);
-            let material_entity = world.create_entity();
-            world.add_component(
-                material_entity,
-                Material::new(rgba, material.double_sided()),
-            );
+        let request = Request::new_with_str_and_init(url, &opts)
+            .map_err(|e| format!("Failed to create request: {e:?}"))?;
 
-            if let Some(name) = derive_material_name(&material) {
-                world.add_component(material_entity, Name::new(name));
-            }
+        let window = web_sys::window().ok_or("No window object")?;
+        let resp_value = JsFuture::from(window.fetch_with_request(&request))
+            .await
+            .map_err(|e| format!("Fetch failed: {e:?}"))?;
 
-            materials.push(material_entity);
-        }
+        let resp: Response = resp_value
+            .dyn_into()
+            .map_err(|_| "Response is not a Response object")?;
 
-        let mut mesh_entities = Vec::new();
-        let mut node_entities: HashMap<usize, Entity> = HashMap::new();
-        let mut processed_nodes: HashSet<usize> = HashSet::new();
+        let array_buffer = JsFuture::from(
+            resp.array_buffer()
+                .map_err(|e| format!("Failed to get array buffer: {e:?}"))?,
+        )
+        .await
+        .map_err(|e| format!("Failed to await array buffer: {e:?}"))?;
 
-        let mut context = GltfContext {
-            buffers: &buffers,
-            materials: &materials,
-            mesh_entities: &mut mesh_entities,
-            node_entities: &mut node_entities,
-            processed_nodes: &mut processed_nodes,
+        let uint8_array = js_sys::Uint8Array::new(&array_buffer);
+        let bytes = uint8_array.to_vec();
+
+        Self::from_gltf_bytes(world, &bytes)
+    }
+
+    fn from_gltf_bytes(world: &mut World, bytes: &[u8]) -> Result<Vec<Entity>, String> {
+        let (document, buffers, _) = gltf::import_slice(bytes).map_err(|err| err.to_string())?;
+        process_gltf_data(world, document, buffers)
+    }
+}
+
+fn process_gltf_data(
+    world: &mut World,
+    document: gltf::Document,
+    buffers: Vec<gltf::buffer::Data>,
+) -> Result<Vec<Entity>, String> {
+    let mut materials = Vec::new();
+    for material in document.materials() {
+        let pbr = material.pbr_metallic_roughness();
+        let base_color = pbr.base_color_factor();
+        let alpha_mode = material.alpha_mode();
+
+        let alpha = match alpha_mode {
+            AlphaMode::Opaque => 1.0,
+            AlphaMode::Mask => 1.0,
+            AlphaMode::Blend => base_color[3],
         };
 
-        if let Some(default_scene) = document.default_scene() {
-            for node in default_scene.nodes() {
-                process_node(world, node, None, &mut context)?;
-            }
-        } else {
-            for scene in document.scenes() {
-                for node in scene.nodes() {
-                    process_node(world, node, None, &mut context)?;
-                }
-            }
+        let rgba = RGBA::new([base_color[0], base_color[1], base_color[2], alpha]);
+        let material_entity = world.create_entity();
+        world.add_component(
+            material_entity,
+            Material::new(rgba, material.double_sided()),
+        );
+
+        if let Some(name) = derive_material_name(&material) {
+            world.add_component(material_entity, Name::new(name));
         }
 
-        Ok(mesh_entities)
+        materials.push(material_entity);
     }
+
+    let mut mesh_entities = Vec::new();
+    let mut node_entities: HashMap<usize, Entity> = HashMap::new();
+    let mut processed_nodes: HashSet<usize> = HashSet::new();
+
+    let mut context = GltfContext {
+        buffers: &buffers,
+        materials: &materials,
+        mesh_entities: &mut mesh_entities,
+        node_entities: &mut node_entities,
+        processed_nodes: &mut processed_nodes,
+    };
+
+    if let Some(default_scene) = document.default_scene() {
+        for node in default_scene.nodes() {
+            process_node(world, node, None, &mut context)?;
+        }
+    } else {
+        for scene in document.scenes() {
+            for node in scene.nodes() {
+                process_node(world, node, None, &mut context)?;
+            }
+        }
+    }
+
+    Ok(mesh_entities)
 }
 
 fn process_node(

@@ -70,6 +70,16 @@ pub(crate) fn run_wasm(shell: Shell, mut args: Arguments) -> anyhow::Result<()> 
             .with_context(|| format!("Failed to copy static file \"{}\"", file.display()))?;
     }
 
+    let assets_dir = shell.current_dir().join("assets");
+    if assets_dir.exists() {
+        log::info!("copying assets directory");
+        // xshell doesn't have recursive copy for dirs easily, use cp
+        xshell::cmd!(shell, "cp -r assets target/generated/")
+            .quiet()
+            .run()
+            .context("Failed to copy assets")?;
+    }
+
     if !no_serve {
         log::info!("serving on port 8000");
 

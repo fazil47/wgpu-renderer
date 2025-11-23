@@ -1,7 +1,7 @@
 # WPGU-Renderer
 
 A rasterizer and raytracer renderer written in Rust using the
-[wgpu](https://github.com/gfx-rs/wgpu) library. The wasm version is currently broken.
+[wgpu](https://github.com/gfx-rs/wgpu) library.
 
 ![Demo](demo.png)
 
