@@ -12,5 +12,8 @@ fi
 echo "Running cargo fmt..."
 cargo fmt --all
 
+# Re-stage all Rust files that were modified
+git diff --name-only --cached | grep '\.rs$' | xargs git add
+
 echo "Code formatting check passed."
 exit 0
