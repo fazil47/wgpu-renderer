@@ -1,4 +1,4 @@
-import super::super::probe_lighting::util::{
+import package::probe_lighting::util::{
     ProbeGridConfig,
     sample_probe_lighting,
     is_probe_lighting_disabled,

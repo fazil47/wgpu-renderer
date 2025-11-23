@@ -1,8 +1,8 @@
-import super::super::util::{
+import package::util::{
     encodeRGBA,
     decodeRGBA,
 };
-import super::util::{
+import package::raytracer::util::{
     sample_radiance_with_lighting,
     MAX_BOUNCES,
     MAX_LOW_FRAME_BOUNCES,

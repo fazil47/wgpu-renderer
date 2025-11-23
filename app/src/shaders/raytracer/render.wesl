@@ -1,4 +1,4 @@
-import super::super::util::decodeRGBA;
+import package::util::decodeRGBA;
 
 @group(0) @binding(0) @if(wasm) var result: texture_storage_2d<r32float, read>;
 @group(0) @binding(0) @else var result: texture_storage_2d<rgba8unorm, read>;

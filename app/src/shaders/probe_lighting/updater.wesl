@@ -1,10 +1,10 @@
-import super::util::{
+import package::probe_lighting::util::{
     SHCoefficients,
     ProbeGridConfig,
     probe_index_to_world_pos,
     probe_index_to_tex_coords,
 };
-import super::super::raytracer::util::{
+import package::raytracer::util::{
     sample_radiance_with_lighting,
     MAX_BOUNCES
 };

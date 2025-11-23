@@ -1,4 +1,4 @@
-import super::util::{ProbeGridConfig, sample_probe_lighting};
+import package::probe_lighting::util::{ProbeGridConfig, sample_probe_lighting};
 
 struct Camera {
     view_proj: mat4x4<f32>,
