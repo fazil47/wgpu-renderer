@@ -47,8 +47,8 @@ impl ecs::Resource for SelectedEntity {}
 #[derive(Default)]
 pub struct RaytracerFrameState {
     pub frame_count: u32,
-    pub frames_till_next_compute: u32,
-    pub accumulator: f32,
+    pub frames_to_skip: u32,
+    pub pending_skip_calculation: bool,
 }
 
 impl ecs::Resource for RaytracerFrameState {}
@@ -121,7 +121,10 @@ impl Engine {
         }
 
         world.insert_resource(camera_controller);
-        world.insert_resource(Time { delta_time: 0.0 });
+        world.insert_resource(Time {
+            delta_time: 0.0,
+            elapsed_time: 0.0,
+        });
         world.insert_resource(StaticDataDirtyFlag(true)); // Initial update required
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
@@ -245,6 +248,7 @@ impl Engine {
         // Update Time resource
         if let Some(mut time) = self.world.get_resource_mut::<Time>() {
             time.delta_time = self.stat.delta_time;
+            time.elapsed_time += self.stat.delta_time;
         }
 
         // Run schedules

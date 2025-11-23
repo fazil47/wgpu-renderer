@@ -95,43 +95,47 @@ pub fn render_system(world: &mut World) {
     {
         // We need mutable access to RaytracerFrameState
         let mut frame_state = world.get_resource_mut::<RaytracerFrameState>().unwrap();
-        let delta_time = world
-            .get_resource::<crate::time::Time>()
-            .unwrap()
-            .delta_time;
 
-        frame_state.accumulator += delta_time;
+        // If we computed last frame, calculate how many frames to skip based on how long it took
+        if frame_state.pending_skip_calculation {
+            let delta_time = world
+                .get_resource::<crate::time::Time>()
+                .unwrap()
+                .delta_time;
 
-        let should_compute = reset_raytracer || frame_state.accumulator >= target_frame_time;
+            // Calculate frames to skip: (compute_time / target_frame_time)
+            // We subtract 1 because the current frame is already one frame after the compute
+            let skips = (delta_time / target_frame_time).floor() as u32;
+            frame_state.frames_to_skip = skips.saturating_sub(1);
+            frame_state.pending_skip_calculation = false;
+        }
 
-        if raytracer_enabled
-            && (should_compute
-                || (frame_state.frame_count < raytracer_max_frames
-                    && frame_state.frames_till_next_compute == 0))
-        {
-            if should_compute {
-                frame_state.accumulator = 0.0;
-            }
+        if frame_state.frames_to_skip > 0 {
+            frame_state.frames_to_skip -= 1;
+        } else {
+            let should_compute = reset_raytracer || frame_state.frame_count < raytracer_max_frames;
 
-            // We need mutable access to Raytracer
-            if let Some(raytracer) = world.get_resource::<Raytracer>() {
-                raytracer.update_frame_count(&wgpu.queue, frame_state.frame_count);
+            if raytracer_enabled && should_compute {
+                if let Some(raytracer) = world.get_resource::<Raytracer>() {
+                    raytracer.update_frame_count(&wgpu.queue, frame_state.frame_count);
 
-                // Dispatch compute
-                let window_size = winit::dpi::PhysicalSize::new(
-                    wgpu.surface_config.width,
-                    wgpu.surface_config.height,
-                );
+                    let window_size = winit::dpi::PhysicalSize::new(
+                        wgpu.surface_config.width,
+                        wgpu.surface_config.height,
+                    );
 
-                raytracer.compute(&window_size, &wgpu.device, &wgpu.queue);
+                    raytracer.compute(&window_size, &wgpu.device, &wgpu.queue);
 
-                frame_state.frame_count += 1;
+                    frame_state.frame_count += 1;
+                    frame_state.pending_skip_calculation = true;
+                }
             }
         }
 
         if reset_raytracer {
             frame_state.frame_count = 0;
-            frame_state.frames_till_next_compute = 0;
+            frame_state.frames_to_skip = 0;
+            frame_state.pending_skip_calculation = false;
         }
     }
 
