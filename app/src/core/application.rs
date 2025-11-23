@@ -17,7 +17,10 @@ use crate::utils::load_icon;
 
 use crate::core::engine::Engine;
 
-pub struct StateInitializationEvent(Engine);
+pub enum StateInitializationEvent {
+    Initialize(Box<Engine>),
+    ForceResize,
+}
 
 #[allow(clippy::large_enum_variant)]
 pub enum State {
@@ -64,6 +67,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
                         .expect("failed to set tabindex");
                     dst.append_child(&canvas).ok()?;
                     canvas.focus().expect("Unable to focus on canvas");
+
                     Some(())
                 })
                 .expect("Couldn't append canvas to document body.");
@@ -84,7 +88,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
                 let engine = engine_future.await;
 
                 event_loop_proxy
-                    .send_event(StateInitializationEvent(engine))
+                    .send_event(StateInitializationEvent::Initialize(Box::new(engine)))
                     .unwrap_or_else(|_| {
                         panic!("Failed to send initialization event");
                     });
@@ -96,7 +100,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             let engine = pollster::block_on(engine_future);
 
             self.event_loop_proxy
-                .send_event(StateInitializationEvent(engine))
+                .send_event(StateInitializationEvent::Initialize(Box::new(engine)))
                 .unwrap_or_else(|_| {
                     panic!("Failed to send initialization event");
                 });
@@ -104,11 +108,30 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: StateInitializationEvent) {
-        log::info!("Received initialization event");
+        match event {
+            StateInitializationEvent::Initialize(engine) => {
+                log::info!("Received initialization event");
+                engine.window.request_redraw();
 
-        let engine = event.0;
-        engine.window.request_redraw();
-        self.application_state = State::Initialized(engine);
+                // Force resize to fix initial canvas size on WASM
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = self
+                        .event_loop_proxy
+                        .send_event(StateInitializationEvent::ForceResize);
+                }
+
+                self.application_state = State::Initialized(*engine);
+            }
+            StateInitializationEvent::ForceResize => {
+                if let State::Initialized(ref mut engine) = self.application_state {
+                    let size = engine.window.inner_size();
+                    log::info!("Force resize to: {}x{}", size.width, size.height);
+                    engine.resize(size);
+                    engine.window.request_redraw();
+                }
+            }
+        }
     }
 
     fn window_event(

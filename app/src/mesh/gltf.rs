@@ -14,6 +14,7 @@ use std::{
 pub trait GltfMeshExt {
     fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String>;
     #[cfg(target_arch = "wasm32")]
+    #[allow(async_fn_in_trait)]
     async fn from_gltf_url(world: &mut World, url: &str) -> Result<Vec<Entity>, String>;
     fn from_gltf_bytes(world: &mut World, bytes: &[u8]) -> Result<Vec<Entity>, String>;
 }
@@ -38,7 +39,7 @@ impl GltfMeshExt for Mesh {
         use wasm_bindgen_futures::JsFuture;
         use web_sys::{Request, RequestInit, RequestMode, Response};
 
-        let mut opts = RequestInit::new();
+        let opts = RequestInit::new();
         opts.set_method("GET");
         opts.set_mode(RequestMode::Cors);
 
