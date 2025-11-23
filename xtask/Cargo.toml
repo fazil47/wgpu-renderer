@@ -8,7 +8,7 @@ publish = false
 # The dependencies in this config have no transitive dependencies.
 anyhow = "1.0"
 env_logger = { version = "0.11", default-features = false }
-regex-lite = "0.1"
+
 log = "0.4"
 pico-args = { version = "0.5", features = [
     "eq-separator",

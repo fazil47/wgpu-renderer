@@ -3,4 +3,5 @@ members = ["app", "xtask", "maths", "ecs"]
 resolver = "2"
 
 [workspace.dependencies]
+bytemuck = { version = "1.21.0", features = ["derive"] }
 transform-gizmo-egui = { git = "https://github.com/fazil47/transform-gizmo", package = "transform-gizmo-egui" }
