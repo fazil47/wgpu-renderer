@@ -52,7 +52,7 @@ pub fn render_system(world: &mut World) {
 
     // Check LightDirtyFlag
     let light_dirty = world
-        .get_resource::<crate::core::engine::LightDirtyFlag>()
+        .get_resource::<crate::lighting::LightDirtyFlag>()
         .map(|f| f.0)
         .unwrap_or(false);
 

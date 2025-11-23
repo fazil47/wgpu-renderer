@@ -8,7 +8,7 @@ pub fn reset_dirty_flags_system(world: &mut World) {
     }
 
     // Reset light dirty flag
-    if let Some(mut flag) = world.get_resource_mut::<crate::core::engine::LightDirtyFlag>() {
+    if let Some(mut flag) = world.get_resource_mut::<crate::lighting::LightDirtyFlag>() {
         flag.0 = false;
     }
 

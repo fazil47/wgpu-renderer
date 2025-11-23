@@ -168,7 +168,7 @@ pub fn ui_system(world: &mut World) {
     }
 
     if is_light_dirty
-        && let Some(mut flag) = world.get_resource_mut::<crate::core::engine::LightDirtyFlag>()
+        && let Some(mut flag) = world.get_resource_mut::<crate::lighting::LightDirtyFlag>()
     {
         flag.0 = true;
     }

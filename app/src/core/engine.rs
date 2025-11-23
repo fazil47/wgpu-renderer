@@ -13,11 +13,12 @@ use winit::{
 use crate::{
     camera::Camera,
     input::CameraController,
-    lighting::DirectionalLight,
+    lighting::{DirectionalLight, LightDirtyFlag},
     material::{DefaultMaterialEntity, Material},
     mesh::Mesh,
     time::Time,
     transform::{GlobalTransform, Transform},
+    ui::UiState,
 };
 use ecs::{Entity, World};
 use maths::Vec3;
@@ -175,12 +176,13 @@ impl Engine {
         world.insert_resource(egui);
         world.insert_resource(rasterizer);
         world.insert_resource(raytracer);
+        world.insert_resource(WindowResource(window.clone()));
+        world.insert_resource(StaticDataDirtyFlag(true));
+        world.insert_resource(LightDirtyFlag(true));
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
         world.insert_resource(EngineConfiguration::default());
-        world.insert_resource(crate::ui::UiState::default());
-        world.insert_resource(LightDirtyFlag(true)); // Start dirty to ensure initial update
-        world.insert_resource(WindowResource(window.clone()));
+        world.insert_resource(UiState::default());
 
         Self {
             window,
@@ -327,10 +329,6 @@ pub struct EngineConfiguration {
 }
 
 impl ecs::Resource for EngineConfiguration {}
-
-#[derive(Default)]
-pub struct LightDirtyFlag(pub bool);
-impl ecs::Resource for LightDirtyFlag {}
 
 pub struct WindowResource(pub std::sync::Arc<winit::window::Window>);
 impl ecs::Resource for WindowResource {}
