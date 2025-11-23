@@ -271,10 +271,12 @@ impl Engine {
         let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
         camera_controller.process_events(event);
 
-        if camera_controller.is_cursor_locked() && camera_controller.has_camera_moved()
-            && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
-                config.reset_raytracer = true;
-            }
+        if camera_controller.is_cursor_locked()
+            && camera_controller.has_camera_moved()
+            && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>()
+        {
+            config.reset_raytracer = true;
+        }
     }
 
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
@@ -283,9 +285,10 @@ impl Engine {
             camera_controller.process_mouse(delta.0, delta.1);
 
             if camera_controller.is_cursor_locked()
-                && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>() {
-                    config.reset_raytracer = true;
-                }
+                && let Some(mut config) = self.world.get_resource_mut::<EngineConfiguration>()
+            {
+                config.reset_raytracer = true;
+            }
         }
     }
 
@@ -326,9 +329,6 @@ pub struct EngineConfiguration {
 }
 
 impl ecs::Resource for EngineConfiguration {}
-
-
-
 
 #[derive(Default)]
 pub struct LightDirtyFlag(pub bool);

@@ -3,9 +3,9 @@ use crate::core::engine::{
 };
 use crate::lighting::DirectionalLight;
 use crate::rendering::rasterizer::Rasterizer;
+use crate::ui::UiState;
 use crate::ui::egui::RendererEgui;
 use crate::ui::mesh_hierarchy::{build_mesh_hierarchy, draw_mesh_hierarchy};
-use crate::ui::UiState;
 use ecs::World;
 
 pub fn ui_system(world: &mut World) {
@@ -105,26 +105,26 @@ pub fn ui_system(world: &mut World) {
                                 if let Some(light_entity) = light_entities.first()
                                     && let Some(mut light) =
                                         world.get_component_mut::<DirectionalLight>(*light_entity)
-                                    {
-                                        let sun_azi_changed = ui
-                                            .add(
-                                                egui::Slider::new(&mut light.azimuth, 0.0..=360.0)
-                                                    .text("Sun Azimuth"),
-                                            )
-                                            .changed();
-                                        let sun_alt_changed = ui
-                                            .add(
-                                                egui::Slider::new(&mut light.altitude, 0.0..=90.0)
-                                                    .text("Sun Altitude"),
-                                            )
-                                            .changed();
+                                {
+                                    let sun_azi_changed = ui
+                                        .add(
+                                            egui::Slider::new(&mut light.azimuth, 0.0..=360.0)
+                                                .text("Sun Azimuth"),
+                                        )
+                                        .changed();
+                                    let sun_alt_changed = ui
+                                        .add(
+                                            egui::Slider::new(&mut light.altitude, 0.0..=90.0)
+                                                .text("Sun Altitude"),
+                                        )
+                                        .changed();
 
-                                        if sun_azi_changed || sun_alt_changed {
-                                            light.recalculate();
-                                            is_light_dirty = true;
-                                            reset_raytracer = true;
-                                        }
+                                    if sun_azi_changed || sun_alt_changed {
+                                        light.recalculate();
+                                        is_light_dirty = true;
+                                        reset_raytracer = true;
                                     }
+                                }
                             });
 
                             // Run probe UI
@@ -168,7 +168,8 @@ pub fn ui_system(world: &mut World) {
     }
 
     if is_light_dirty
-        && let Some(mut flag) = world.get_resource_mut::<crate::core::engine::LightDirtyFlag>() {
-            flag.0 = true;
-        }
+        && let Some(mut flag) = world.get_resource_mut::<crate::core::engine::LightDirtyFlag>()
+    {
+        flag.0 = true;
+    }
 }

@@ -227,6 +227,4 @@ pub fn render_system(world: &mut World) {
     // 6. Submit and Present
     wgpu.queue.submit(std::iter::once(render_encoder.finish()));
     surface_texture.present();
-
-    // 7. Frame Throttling (Raytracer) is handled in step 3 by skipping dispatch
 }
