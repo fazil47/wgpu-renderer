@@ -27,9 +27,6 @@ use maths::Vec3;
 use crate::mesh::gltf::GltfMeshExt;
 
 pub struct Engine {
-    // The window must be declared after the wgpu surface so
-    // it gets dropped after it as the surface contains
-    // unsafe references to the window's resources.
     pub window: Arc<Window>,
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub world: World,
