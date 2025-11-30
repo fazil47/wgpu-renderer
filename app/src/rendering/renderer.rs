@@ -6,10 +6,10 @@ use crate::{
 use ecs::World;
 
 pub fn renderer_update_system(world: &mut World) {
-    // Check if static data is dirty
+    // Check if geometry or transforms are dirty
     let is_dirty = world
         .get_resource::<crate::core::flags::DirtyFlags>()
-        .map(|f| f.static_data)
+        .map(|f| f.geometry || f.transforms)
         .unwrap_or(false);
 
     if !is_dirty {

@@ -143,7 +143,7 @@ pub fn ui_system(world: &mut World) {
     if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
         if has_transform_changed {
             flags.raytracer_reset = true;
-            flags.static_data = true;
+            flags.transforms = true;
         }
         if bake_requested {
             flags.probe_bake_requested = true;

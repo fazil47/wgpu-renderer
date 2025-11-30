@@ -12,6 +12,10 @@ struct Camera {
 struct VertexInput {
     @location(0) position: vec4f,
     @location(1) normal: vec4f,
+    @location(2) transform_0: vec4f,
+    @location(3) transform_1: vec4f,
+    @location(4) transform_2: vec4f,
+    @location(5) transform_3: vec4f,
 };
 
 struct VertexOutput {
@@ -45,9 +49,20 @@ var<uniform> material_color: vec4f;
 fn vs_main(model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    out.position = camera_uniform.view_proj * model.position;
-    out.world_position = model.position.xyz;
-    out.normal = model.normal.xyz;
+    let model_transform = mat4x4<f32>(
+        model.transform_0,
+        model.transform_1,
+        model.transform_2,
+        model.transform_3,
+    );
+
+    // Apply model transform to position and normal
+    let world_pos = model_transform * model.position;
+    let world_normal = model_transform * model.normal;
+
+    out.position = camera_uniform.view_proj * world_pos;
+    out.world_position = world_pos.xyz;
+    out.normal = world_normal.xyz;
 
     return out;
 }

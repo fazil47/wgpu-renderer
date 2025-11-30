@@ -120,7 +120,8 @@ impl Engine {
             elapsed_time: 0.0,
         });
         world.insert_resource(DirtyFlags {
-            static_data: true,
+            geometry: true,
+            transforms: true,
             lights: true,
             ..Default::default()
         });

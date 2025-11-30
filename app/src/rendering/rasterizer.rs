@@ -18,13 +18,6 @@ use crate::{
 };
 use ecs::{Entity, World};
 
-pub struct GpuMesh {
-    vertex_buffer: Buffer,
-    vertex_count: u32,
-    index_buffer: Option<(Buffer, u32)>,
-    material_entity: Option<Entity>,
-}
-
 // Rasterizer vertex type
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -53,6 +46,41 @@ impl From<Vertex> for GpuVertex {
             normal: val.normal.to_array(),
         }
     }
+}
+
+// Per-instance transform data (mat4 as four vec4 columns)
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InstanceTransform {
+    pub col0: [f32; 4],
+    pub col1: [f32; 4],
+    pub col2: [f32; 4],
+    pub col3: [f32; 4],
+}
+
+impl InstanceTransform {
+    const ATTRIBS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+        2 => Float32x4,
+        3 => Float32x4,
+        4 => Float32x4,
+        5 => Float32x4
+    ];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+pub struct GpuMesh {
+    vertex_buffer: Buffer,
+    instance_buffer: Buffer,
+    vertex_count: u32,
+    index_buffer: Option<(Buffer, u32)>,
+    material_entity: Option<Entity>,
 }
 
 pub struct Rasterizer {
@@ -121,6 +149,7 @@ impl Rasterizer {
             .vertex_shader(&rasterizer_shader, "vs_main")
             .fragment_shader(&rasterizer_shader, "fs_main")
             .vertex_buffer(GpuVertex::desc())
+            .vertex_buffer(InstanceTransform::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
             .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
@@ -135,6 +164,7 @@ impl Rasterizer {
             .vertex_shader(&rasterizer_shader, "vs_main")
             .fragment_shader(&rasterizer_shader, "fs_main")
             .vertex_buffer(GpuVertex::desc())
+            .vertex_buffer(InstanceTransform::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(None)
             .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
@@ -278,7 +308,9 @@ impl Rasterizer {
             }
 
             rpass.set_bind_group(2, material_bind_group, &[]);
+
             rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
 
             if let Some((buffer, count)) = mesh.index_buffer.as_ref() {
                 rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -423,20 +455,12 @@ impl Extract for Rasterizer {
         for entity in renderables {
             let global_transform = world.extract_global_transform_component(entity)?;
             let mesh = world.extract_mesh_component(entity)?;
-            let transform_matrix = global_transform.matrix;
 
+            // Store vertices in local space (no transform applied)
             let vertices: Vec<GpuVertex> = mesh
                 .vertices()
                 .iter()
-                .map(|v| {
-                    let position = transform_matrix * v.position;
-                    let normal = transform_matrix * v.normal;
-
-                    GpuVertex {
-                        position: position.to_array(),
-                        normal: normal.to_array(),
-                    }
-                })
+                .map(|v| GpuVertex::from(*v))
                 .collect();
 
             let vertex_buffer: Buffer = device
@@ -457,8 +481,22 @@ impl Extract for Rasterizer {
                 )
             });
 
+            // Instance buffer holding the model transform
+            let matrix = global_transform.matrix.to_cols_array_2d();
+            let instance_transform = InstanceTransform {
+                col0: matrix[0],
+                col1: matrix[1],
+                col2: matrix[2],
+                col3: matrix[3],
+            };
+            let instance_buffer = device
+                .buffer()
+                .label("Entity Mesh Instance Buffer")
+                .vertex(&[instance_transform]);
+
             gpu_meshes.push(GpuMesh {
                 vertex_buffer,
+                instance_buffer,
                 vertex_count,
                 index_buffer,
                 material_entity: mesh.material_entity,
