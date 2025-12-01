@@ -1,3 +1,5 @@
+import package::util::inverse_mat4;
+
 import runtime::constants::MATERIAL_STRIDE;
 import runtime::constants::VERTEX_STRIDE;
 import runtime::constants::VERTEX_NORMAL_OFFSET;
@@ -32,17 +34,13 @@ struct BlasInfo {
 }
 
 struct InstanceData {
-    world_from_local_0: vec4f,
-    world_from_local_1: vec4f,
-    world_from_local_2: vec4f,
-    world_from_local_3: vec4f,
-    local_from_world_0: vec4f,
-    local_from_world_1: vec4f,
-    local_from_world_2: vec4f,
-    local_from_world_3: vec4f,
+    world_matrix_0: vec4f,
+    world_matrix_1: vec4f,
+    world_matrix_2: vec4f,
+    world_matrix_3: vec4f,
     blas_index: u32,
     // We use 3 u32s instead of vec3u to avoid 16-byte alignment padding.
-    // Rust struct is 144 bytes, vec3u would make this 160 bytes.
+    // Rust struct is 80 bytes, vec3u would make this 96 bytes.
     _pad0: u32,
     _pad1: u32,
     _pad2: u32,
@@ -362,27 +360,22 @@ fn trace_tlas(ray_world: Ray) -> HitInfo {
                     continue;
                 }
 
-                let local_from_world = mat4x4<f32>(
-                    instance.local_from_world_0,
-                    instance.local_from_world_1,
-                    instance.local_from_world_2,
-                    instance.local_from_world_3,
+                let world_matrix = mat4x4<f32>(
+                    instance.world_matrix_0,
+                    instance.world_matrix_1,
+                    instance.world_matrix_2,
+                    instance.world_matrix_3,
                 );
-                let world_from_local = mat4x4<f32>(
-                    instance.world_from_local_0,
-                    instance.world_from_local_1,
-                    instance.world_from_local_2,
-                    instance.world_from_local_3,
-                );
+                let inverse_world_matrix = inverse_mat4(world_matrix);
 
-                let origin_local = (local_from_world * vec4f(ray_world.origin, 1.0)).xyz;
-                let direction_local = (local_from_world * vec4f(ray_world.direction, 0.0)).xyz;
+                let origin_local = (inverse_world_matrix * vec4f(ray_world.origin, 1.0)).xyz;
+                let direction_local = (inverse_world_matrix * vec4f(ray_world.direction, 0.0)).xyz;
                 let local_ray = create_ray(origin_local, normalize(direction_local));
 
                 let hit_local = trace_blas(local_ray, mesh, nearest_hit_info.t);
                 if hit_local.did_hit {
-                    let world_hit = (world_from_local * vec4f(hit_local.p, 1.0)).xyz;
-                    let world_normal = normalize((vec4f(hit_local.normal, 0.0) * local_from_world).xyz);
+                    let world_hit = (world_matrix * vec4f(hit_local.p, 1.0)).xyz;
+                    let world_normal = normalize(world_matrix * vec4f(hit_local.normal, 0.0)).xyz;
                     let world_t = length(world_hit - ray_world.origin);
 
                     if world_t < nearest_hit_info.t {

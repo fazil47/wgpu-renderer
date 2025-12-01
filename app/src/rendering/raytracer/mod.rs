@@ -115,17 +115,14 @@ pub const RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET: u32 =
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RaytracerInstance {
     pub world_matrix: [[f32; 4]; 4],
-    pub inverse_world_matrix: [[f32; 4]; 4],
     pub blas_index: u32,
     pub _padding: [u32; 3],
 }
 
 impl RaytracerInstance {
     pub fn new(world_matrix: Mat4, blas_index: u32) -> Self {
-        let inverse_world_matrix = world_matrix.inverse();
         Self {
             world_matrix: world_matrix.to_cols_array_2d(),
-            inverse_world_matrix: inverse_world_matrix.to_cols_array_2d(),
             blas_index,
             _padding: [0; 3],
         }
@@ -136,7 +133,6 @@ impl Default for RaytracerInstance {
     fn default() -> Self {
         Self {
             world_matrix: Mat4::IDENTITY.to_cols_array_2d(),
-            inverse_world_matrix: Mat4::IDENTITY.to_cols_array_2d(),
             blas_index: 0,
             _padding: [0; 3],
         }
