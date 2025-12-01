@@ -905,7 +905,7 @@ impl Extract for Raytracer {
             let transform_matrix = global_transform.matrix;
             instances.push(RaytracerInstance::new(transform_matrix, blas_index));
 
-            let instance_index = instances.len() as u32;
+            let instance_index = (instances.len() as u32).saturating_sub(1);
             let blas_lines = build_bvh_debug_lines(&blas);
             blas_lines_per_instance.push((instance_index, blas_lines));
         }
