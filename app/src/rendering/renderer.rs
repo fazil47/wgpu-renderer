@@ -6,6 +6,8 @@ use crate::{
 use ecs::World;
 
 pub fn renderer_update_system(world: &mut World) {
+    // TODO: If only transform has changed then only extract transform
+
     // Check if geometry or transforms are dirty
     let is_dirty = world
         .get_resource::<crate::core::flags::DirtyFlags>()
