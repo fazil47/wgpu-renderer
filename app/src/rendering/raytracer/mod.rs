@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     mem::{offset_of, size_of},
 };
-use wesl::include_wesl;
 use wgpu::Device;
 
 use crate::{
@@ -10,7 +9,7 @@ use crate::{
     mesh::Vertex,
     rendering::{
         extract::{Extract, ExtractionError, WorldExtractExt},
-        raytracer::bvh::{build_bvh, build_bvh_debug_lines},
+        raytracer::bvh::{Aabb, BvhNode, build_blas, build_bvh_debug_lines, build_tlas},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
 };
@@ -68,11 +67,15 @@ const BVH_LEAF_COLOR: [f32; 4] = [1.0, 0.4, 0.2, 1.0];
 pub struct RaytracerBvhLineVertex {
     pub position: [f32; 4],
     pub color: [f32; 4],
+    pub instance_index: u32,
 }
 
 impl RaytracerBvhLineVertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+    const ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
+        0 => Float32x4,
+        1 => Float32x4,
+        2 => Uint32
+    ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
@@ -82,10 +85,11 @@ impl RaytracerBvhLineVertex {
         }
     }
 
-    pub fn from_vec3(position: Vec3, color: [f32; 4]) -> Self {
+    pub fn from_vec3(position: Vec3, color: [f32; 4], instance_index: u32) -> Self {
         Self {
             position: [position.x, position.y, position.z, 1.0],
             color,
+            instance_index,
         }
     }
 
@@ -93,6 +97,7 @@ impl RaytracerBvhLineVertex {
         Self {
             position: [0.0, 0.0, 0.0, 1.0],
             color: [0.0, 0.0, 0.0, 0.0],
+            instance_index: 0,
         }
     }
 }
@@ -105,6 +110,72 @@ pub const RAYTRACE_VERTEX_NORMAL_OFFSET: u32 =
     (offset_of!(RaytracerVertex, normal) / size_of::<f32>()) as u32;
 pub const RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET: u32 =
     (offset_of!(RaytracerVertex, material_index) / size_of::<f32>()) as u32;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerInstance {
+    pub world_matrix: [[f32; 4]; 4],
+    pub inverse_world_matrix: [[f32; 4]; 4],
+    pub blas_index: u32,
+    pub _padding: [u32; 3],
+}
+
+impl RaytracerInstance {
+    pub fn new(world_matrix: Mat4, blas_index: u32) -> Self {
+        let inverse_world_matrix = world_matrix.inverse();
+        Self {
+            world_matrix: world_matrix.to_cols_array_2d(),
+            inverse_world_matrix: inverse_world_matrix.to_cols_array_2d(),
+            blas_index,
+            _padding: [0; 3],
+        }
+    }
+}
+
+impl Default for RaytracerInstance {
+    fn default() -> Self {
+        Self {
+            world_matrix: Mat4::IDENTITY.to_cols_array_2d(),
+            inverse_world_matrix: Mat4::IDENTITY.to_cols_array_2d(),
+            blas_index: 0,
+            _padding: [0; 3],
+        }
+    }
+}
+
+// Since there will be one BLAS per unique mesh, we need to store the BLAS info for each of those meshes
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RaytracerBlasInfo {
+    pub node_offset: u32,
+    pub node_count: u32,
+    pub primitive_offset: u32,
+    pub primitive_count: u32,
+    pub vertex_offset: u32,
+    pub index_offset: u32,
+    pub _padding: [u32; 2],
+}
+
+impl RaytracerBlasInfo {
+    pub fn new(
+        node_offset: u32,
+        node_count: u32,
+        primitive_offset: u32,
+        primitive_count: u32,
+        vertex_offset: u32,
+        index_offset: u32,
+    ) -> Self {
+        Self {
+            node_offset,
+            node_count,
+            primitive_offset,
+            primitive_count,
+            vertex_offset,
+            index_offset,
+            _padding: [0; 2],
+        }
+    }
+}
 
 #[cfg(target_arch = "wasm32")]
 use wgpu::TextureFormat::R32Float as RaytracerTextureFormat;
@@ -138,23 +209,23 @@ impl Raytracer {
     pub fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device
             .bind_group_layout()
-            .label("Raytracer Compute Materials Bind Group Layout")
+            .label("Raytracer Materials Bind Group Layout")
             .storage(0, wgpu::ShaderStages::COMPUTE, true)
-            .uniform(1, wgpu::ShaderStages::COMPUTE)
             .build()
     }
 
     pub fn create_mesh_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device
             .bind_group_layout()
-            .label("Raytracer Compute Meshes Bind Group Layout")
+            .label("Raytracer Mesh Bind Group Layout")
             .storage(0, wgpu::ShaderStages::COMPUTE, true)
-            .uniform(1, wgpu::ShaderStages::COMPUTE)
-            .uniform(2, wgpu::ShaderStages::COMPUTE)
-            .uniform(3, wgpu::ShaderStages::COMPUTE)
+            .storage(1, wgpu::ShaderStages::COMPUTE, true)
+            .storage(2, wgpu::ShaderStages::COMPUTE, true)
+            .storage(3, wgpu::ShaderStages::COMPUTE, true)
             .storage(4, wgpu::ShaderStages::COMPUTE, true)
             .storage(5, wgpu::ShaderStages::COMPUTE, true)
             .storage(6, wgpu::ShaderStages::COMPUTE, true)
+            .storage(7, wgpu::ShaderStages::COMPUTE, true)
             .build()
     }
 
@@ -249,10 +320,17 @@ impl Raytracer {
             indices,
             bvh_lines,
             bvh_line_vertex_count,
-            bvh_nodes,
-            bvh_node_count,
-            bvh_primitive_indices,
-            bvh_primitive_count,
+            blas_nodes,
+            blas_node_count,
+            blas_primitive_indices,
+            blas_primitive_count,
+            blas_info,
+            tlas_nodes,
+            tlas_node_count,
+            tlas_primitive_indices,
+            tlas_primitive_count,
+            instances,
+            instance_count,
         } = self.extract(device, world)?;
 
         self.buffers.materials = materials;
@@ -260,10 +338,17 @@ impl Raytracer {
         self.buffers.indices = indices;
         self.buffers.bvh_lines = bvh_lines;
         self.buffers.bvh_line_vertex_count = bvh_line_vertex_count;
-        self.buffers.bvh_nodes = bvh_nodes;
-        self.buffers.bvh_node_count = bvh_node_count;
-        self.buffers.bvh_primitive_indices = bvh_primitive_indices;
-        self.buffers.bvh_primitive_count = bvh_primitive_count;
+        self.buffers.blas_nodes = blas_nodes;
+        self.buffers.blas_node_count = blas_node_count;
+        self.buffers.blas_primitive_indices = blas_primitive_indices;
+        self.buffers.blas_primitive_count = blas_primitive_count;
+        self.buffers.blas_info = blas_info;
+        self.buffers.tlas_nodes = tlas_nodes;
+        self.buffers.tlas_node_count = tlas_node_count;
+        self.buffers.tlas_primitive_indices = tlas_primitive_indices;
+        self.buffers.tlas_primitive_count = tlas_primitive_count;
+        self.buffers.instances = instances;
+        self.buffers.instance_count = instance_count;
 
         self.buffers
             .lighting
@@ -377,15 +462,23 @@ impl RaytracerShaders {
         let render = device
             .shader()
             .label("Raytracer Render Shader")
-            .wesl(include_wesl!("raytracer-render").into());
+            .define("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
+            .compile_wesl("package::raytracer::render");
         let compute = device
             .shader()
             .label("Raytracer Compute Shader")
-            .wesl(include_wesl!("raytracer-compute").into());
+            .define("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
+            .define("VERTEX_STRIDE", RAYTRACE_VERTEX_STRIDE)
+            .define("VERTEX_NORMAL_OFFSET", RAYTRACE_VERTEX_NORMAL_OFFSET)
+            .define(
+                "VERTEX_MATERIAL_OFFSET",
+                RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET,
+            )
+            .compile_wesl("package::raytracer::compute");
         let bvh_lines = device
             .shader()
             .label("Raytracer BVH Line Shader")
-            .wesl(include_wesl!("raytracer-bvh-lines").into());
+            .compile_wesl("package::raytracer::bvh_lines");
 
         Self {
             render,
@@ -398,20 +491,23 @@ impl RaytracerShaders {
 pub struct RaytracerBuffers {
     // Material buffers
     pub materials: wgpu::Buffer,
-    pub material_stride: wgpu::Buffer,
 
     // Mesh buffers
     pub vertices: wgpu::Buffer,
-    pub vertex_stride: wgpu::Buffer,
-    pub vertex_normal_offset: wgpu::Buffer,
-    pub vertex_material_offset: wgpu::Buffer,
     pub indices: wgpu::Buffer,
     pub bvh_lines: wgpu::Buffer,
     pub bvh_line_vertex_count: u32,
-    pub bvh_nodes: wgpu::Buffer,
-    pub bvh_node_count: u32,
-    pub bvh_primitive_indices: wgpu::Buffer,
-    pub bvh_primitive_count: u32,
+    pub blas_nodes: wgpu::Buffer,
+    pub blas_node_count: u32,
+    pub blas_primitive_indices: wgpu::Buffer,
+    pub blas_primitive_count: u32,
+    pub blas_info: wgpu::Buffer,
+    pub tlas_nodes: wgpu::Buffer,
+    pub tlas_node_count: u32,
+    pub tlas_primitive_indices: wgpu::Buffer,
+    pub tlas_primitive_count: u32,
+    pub instances: wgpu::Buffer,
+    pub instance_count: u32,
 
     // Other buffers
     pub lighting: LightingBuffers,
@@ -431,11 +527,6 @@ impl RaytracerBuffers {
             .label("Raytracer Materials Buffer")
             .storage(&initial_materials);
 
-        let material_stride = device
-            .buffer()
-            .label("Raytracer Material Stride Buffer")
-            .uniform(&RAYTRACE_MATERIAL_STRIDE);
-
         let initial_vertices = vec![RaytracerVertex {
             position: [0.0, 0.0, 0.0, 1.0],
             normal: [0.0, 1.0, 0.0, 0.0],
@@ -447,21 +538,6 @@ impl RaytracerBuffers {
             .buffer()
             .label("Raytracer Vertices Buffer")
             .storage(&initial_vertices);
-
-        let vertex_stride = device
-            .buffer()
-            .label("Raytracer Vertex Stride Buffer")
-            .uniform(&RAYTRACE_VERTEX_STRIDE);
-
-        let vertex_normal_offset = device
-            .buffer()
-            .label("Raytracer Vertex Normal Offset Buffer")
-            .uniform(&RAYTRACE_VERTEX_NORMAL_OFFSET);
-
-        let vertex_material_offset = device
-            .buffer()
-            .label("Raytracer Vertex Material Offset Buffer")
-            .uniform(&RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET);
 
         let indices = device
             .buffer()
@@ -477,17 +553,37 @@ impl RaytracerBuffers {
             .label("Raytracer BVH Line Buffer")
             .vertex(&initial_bvh_lines);
 
-        let initial_bvh_node = [bvh::BvhNode::default()];
-        let bvh_nodes = device
+        let initial_bvh_node = [BvhNode::default()];
+        let blas_nodes = device
             .buffer()
-            .label("Raytracer BVH Node Buffer")
+            .label("Raytracer BLAS Node Buffer")
             .storage(&initial_bvh_node);
 
         let initial_bvh_primitive_indices = [0u32];
-        let bvh_primitive_indices = device
+        let blas_primitive_indices = device
             .buffer()
-            .label("Raytracer BVH Primitive Indices Buffer")
+            .label("Raytracer BLAS Primitive Indices Buffer")
             .storage(&initial_bvh_primitive_indices);
+
+        let blas_info = device
+            .buffer()
+            .label("Raytracer BLAS Info Buffer")
+            .storage(&[RaytracerBlasInfo::default()]);
+
+        let tlas_nodes = device
+            .buffer()
+            .label("Raytracer TLAS Node Buffer")
+            .storage(&[BvhNode::default()]);
+
+        let tlas_primitive_indices = device
+            .buffer()
+            .label("Raytracer TLAS Primitive Indices Buffer")
+            .storage(&[0u32]);
+
+        let instances = device
+            .buffer()
+            .label("Raytracer TLAS Instance Buffer")
+            .storage(&[RaytracerInstance::default()]);
 
         let lighting = LightingBuffers::new(device, "Raytracer");
         let camera = CameraBuffers::new(device, "Raytracer");
@@ -500,18 +596,21 @@ impl RaytracerBuffers {
 
         Self {
             materials: materials_buffer,
-            material_stride,
             vertices,
-            vertex_stride,
-            vertex_normal_offset,
-            vertex_material_offset,
             indices,
             bvh_lines,
             bvh_line_vertex_count: 0,
-            bvh_nodes,
-            bvh_node_count: 0,
-            bvh_primitive_indices,
-            bvh_primitive_count: 0,
+            blas_nodes,
+            blas_node_count: 0,
+            blas_primitive_indices,
+            blas_primitive_count: 0,
+            blas_info,
+            tlas_nodes,
+            tlas_node_count: 0,
+            tlas_primitive_indices,
+            tlas_primitive_count: 0,
+            instances,
+            instance_count: 0,
             lighting,
             camera,
             frame_count,
@@ -596,6 +695,7 @@ impl RaytracerBindGroupLayouts {
             .bind_group_layout()
             .label("Raytracer BVH Line Camera Bind Group Layout")
             .uniform(0, wgpu::ShaderStages::VERTEX)
+            .storage(1, wgpu::ShaderStages::VERTEX, true)
             .build();
         Self {
             render,
@@ -632,18 +732,18 @@ impl RaytracerBindGroups {
             .bind_group(&bgl.compute_materials)
             .label("Raytracer Compute Material Bind Group")
             .buffer(0, &buffers.materials)
-            .buffer(1, &buffers.material_stride)
             .build();
         let compute_mesh = device
             .bind_group(&bgl.compute_meshes)
             .label("Raytracer Compute Mesh Bind Group")
             .buffer(0, &buffers.vertices)
-            .buffer(1, &buffers.vertex_stride)
-            .buffer(2, &buffers.vertex_normal_offset)
-            .buffer(3, &buffers.vertex_material_offset)
-            .buffer(4, &buffers.indices)
-            .buffer(5, &buffers.bvh_nodes)
-            .buffer(6, &buffers.bvh_primitive_indices)
+            .buffer(1, &buffers.indices)
+            .buffer(2, &buffers.blas_nodes)
+            .buffer(3, &buffers.blas_primitive_indices)
+            .buffer(4, &buffers.blas_info)
+            .buffer(5, &buffers.tlas_nodes)
+            .buffer(6, &buffers.instances)
+            .buffer(7, &buffers.tlas_primitive_indices)
             .build();
         let compute_lights = device
             .bind_group(&bgl.compute_lights)
@@ -662,6 +762,7 @@ impl RaytracerBindGroups {
             .bind_group(&bgl.bvh_lines_camera)
             .label("Raytracer BVH Line Camera Bind Group")
             .buffer(0, &buffers.camera.view_projection)
+            .buffer(1, &buffers.instances)
             .build();
         Self {
             render,
@@ -706,10 +807,17 @@ pub struct RaytracerExtractedBuffers {
     pub indices: wgpu::Buffer,
     pub bvh_lines: wgpu::Buffer,
     pub bvh_line_vertex_count: u32,
-    pub bvh_nodes: wgpu::Buffer,
-    pub bvh_node_count: u32,
-    pub bvh_primitive_indices: wgpu::Buffer,
-    pub bvh_primitive_count: u32,
+    pub blas_nodes: wgpu::Buffer,
+    pub blas_node_count: u32,
+    pub blas_primitive_indices: wgpu::Buffer,
+    pub blas_primitive_count: u32,
+    pub blas_info: wgpu::Buffer,
+    pub tlas_nodes: wgpu::Buffer,
+    pub tlas_node_count: u32,
+    pub tlas_primitive_indices: wgpu::Buffer,
+    pub tlas_primitive_count: u32,
+    pub instances: wgpu::Buffer,
+    pub instance_count: u32,
 }
 
 impl Extract for Raytracer {
@@ -740,11 +848,19 @@ impl Extract for Raytracer {
         let default_material_index = default_material_index.unwrap();
 
         let renderables = world.get_renderables();
+
+        // Aggregated buffers
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
-        let mut vertex_offset = 0u32;
+        let mut blas_nodes = Vec::new();
+        let mut blas_primitive_indices = Vec::new();
+        let mut blas_infos = Vec::new();
+        let mut instances = Vec::new();
 
-        // Extract and combine all mesh data
+        // Debug lines
+        let mut blas_lines_per_instance: Vec<(u32, Vec<bvh::BvhDebugLine>)> = Vec::new();
+
+        // Build per-entity BLAS and TLAS leaves (one BLAS per renderable for simplicity)
         for entity in renderables {
             let global_transform = world.extract_global_transform_component(entity)?;
             let mesh = world.extract_mesh_component(entity)?;
@@ -755,56 +871,130 @@ impl Extract for Raytracer {
             } else {
                 default_material_index
             };
+
+            let mesh_vertices: Vec<RaytracerVertex> = mesh
+                .vertices()
+                .iter()
+                .map(|vertex| RaytracerVertex::from_vertex(vertex, material_index, Mat4::IDENTITY))
+                .collect();
+
+            let mesh_indices: Vec<u32> = match mesh.indices() {
+                Some(mesh_indices) => mesh_indices.to_vec(),
+                None => (0..mesh.vertices().len() as u32).collect(),
+            };
+
+            let blas = build_blas(&mesh_vertices, &mesh_indices);
+            let blas_index = blas_infos.len() as u32;
+            let node_offset = blas_nodes.len() as u32;
+            let node_count = blas.nodes.len() as u32;
+            let primitive_offset = blas_primitive_indices.len() as u32;
+            let primitive_count = blas.primitive_indices.len() as u32;
+            blas_nodes.extend_from_slice(&blas.nodes);
+            blas_primitive_indices.extend_from_slice(&blas.primitive_indices);
+
+            let vertex_offset = vertices.len() as u32;
+            vertices.extend_from_slice(&mesh_vertices);
+            let index_offset = indices.len() as u32;
+            indices.extend_from_slice(&mesh_indices);
+
+            blas_infos.push(RaytracerBlasInfo::new(
+                node_offset,
+                node_count,
+                primitive_offset,
+                primitive_count,
+                vertex_offset,
+                index_offset,
+            ));
+
             let transform_matrix = global_transform.matrix;
+            instances.push(RaytracerInstance::new(transform_matrix, blas_index));
 
-            for vertex in mesh.vertices() {
-                let raytracer_vertex =
-                    RaytracerVertex::from_vertex(vertex, material_index, transform_matrix);
-                vertices.push(raytracer_vertex);
-            }
-
-            match mesh.indices() {
-                Some(mesh_indices) => {
-                    for &index in mesh_indices {
-                        indices.push(index + vertex_offset);
-                    }
-                }
-
-                None => {
-                    for index in 0..mesh.vertices().len() {
-                        indices.push(index as u32 + vertex_offset);
-                    }
-                }
-            }
-
-            vertex_offset += mesh.vertices().len() as u32;
+            let instance_index = instances.len() as u32;
+            let blas_lines = build_bvh_debug_lines(&blas);
+            blas_lines_per_instance.push((instance_index, blas_lines));
         }
 
-        let material_buffer = device
-            .buffer()
-            .label("Raytracer Materials Buffer")
-            .storage(&materials);
-        let vertices_buffer = device
-            .buffer()
-            .label("Raytracer Vertices Buffer")
-            .storage(&vertices);
-        let indices_buffer = device
-            .buffer()
-            .label("Raytracer Indices Buffer")
-            .storage(&indices);
+        // Build TLAS using world-space bounds of each instance
+        let mut instance_bounds: Vec<(Vec3, Vec3, u32)> = Vec::new();
+        for (instance_index, instance) in instances.iter().enumerate() {
+            let blas_index = instance.blas_index as usize;
+            let blas_info = &blas_infos[blas_index];
+            let bounds = if blas_info.node_count == 0 {
+                (Vec3::ZERO, Vec3::ZERO)
+            } else {
+                let node = &blas_nodes[blas_info.node_offset as usize];
+                (
+                    Vec3::new(node.bounds_min[0], node.bounds_min[1], node.bounds_min[2]),
+                    Vec3::new(node.bounds_max[0], node.bounds_max[1], node.bounds_max[2]),
+                )
+            };
+            let world_matrix = Mat4::from_cols_array_2d(instance.world_matrix);
+            let aabb = Aabb::new(bounds.0, bounds.1).transform(world_matrix);
+            instance_bounds.push((aabb.min, aabb.max, instance_index as u32));
+        }
 
-        let bvh = build_bvh(&vertices, &indices);
-        let debug_lines = build_bvh_debug_lines(&bvh);
-        let mut line_vertices = Vec::with_capacity(debug_lines.len() * 2);
+        let tlas_bvh = build_tlas(&instance_bounds);
+        let tlas_node_count = tlas_bvh.nodes.len() as u32;
+        let tlas_nodes_buffer = if tlas_bvh.nodes.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer TLAS Node Buffer")
+                .storage(&[BvhNode::default()])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer TLAS Node Buffer")
+                .storage(&tlas_bvh.nodes)
+        };
+        let tlas_primitive_count = tlas_bvh.primitive_indices.len() as u32;
+        let tlas_primitive_indices_buffer = if tlas_bvh.primitive_indices.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer TLAS Primitive Indices Buffer")
+                .storage(&[0u32])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer TLAS Primitive Indices Buffer")
+                .storage(&tlas_bvh.primitive_indices)
+        };
 
-        for line in debug_lines {
+        // TLAS debug lines (world space, no transform)
+        let tlas_debug_lines = build_bvh_debug_lines(&tlas_bvh);
+        let mut line_vertices = Vec::new();
+        for line in tlas_debug_lines {
             let color = if line.is_leaf {
                 BVH_LEAF_COLOR
             } else {
                 BVH_INTERIOR_COLOR
             };
-            line_vertices.push(RaytracerBvhLineVertex::from_vec3(line.start, color));
-            line_vertices.push(RaytracerBvhLineVertex::from_vec3(line.end, color));
+            line_vertices.push(RaytracerBvhLineVertex::from_vec3(
+                line.start,
+                color,
+                u32::MAX,
+            ));
+            line_vertices.push(RaytracerBvhLineVertex::from_vec3(line.end, color, u32::MAX));
+        }
+
+        // BLAS debug lines (object space, transformed on GPU per instance)
+        for (instance_index, lines) in blas_lines_per_instance {
+            for line in lines {
+                let color = if line.is_leaf {
+                    BVH_LEAF_COLOR
+                } else {
+                    BVH_INTERIOR_COLOR
+                };
+                line_vertices.push(RaytracerBvhLineVertex::from_vec3(
+                    line.start,
+                    color,
+                    instance_index,
+                ));
+                line_vertices.push(RaytracerBvhLineVertex::from_vec3(
+                    line.end,
+                    color,
+                    instance_index,
+                ));
+            }
         }
 
         let (bvh_line_buffer, bvh_line_vertex_count) = if line_vertices.is_empty() {
@@ -819,31 +1009,65 @@ impl Extract for Raytracer {
             create_bvh_lines_vertex_buffer(device, &line_vertices)
         };
 
-        let bvh_node_count = bvh.nodes.len() as u32;
-        let bvh_primitive_count = bvh.primitive_indices.len() as u32;
+        let material_buffer = device
+            .buffer()
+            .label("Raytracer Materials Buffer")
+            .storage(&materials);
+        let vertices_buffer = device
+            .buffer()
+            .label("Raytracer Vertices Buffer")
+            .storage(&vertices);
+        let indices_buffer = device
+            .buffer()
+            .label("Raytracer Indices Buffer")
+            .storage(&indices);
 
-        let bvh_nodes_buffer = if bvh.nodes.is_empty() {
+        let blas_nodes_buffer = if blas_nodes.is_empty() {
             device
                 .buffer()
-                .label("Raytracer BVH Node Buffer")
-                .storage(&[bvh::BvhNode::default()])
+                .label("Raytracer BLAS Node Buffer")
+                .storage(&[BvhNode::default()])
         } else {
             device
                 .buffer()
-                .label("Raytracer BVH Node Buffer")
-                .storage(&bvh.nodes)
+                .label("Raytracer BLAS Node Buffer")
+                .storage(&blas_nodes)
         };
 
-        let bvh_primitives_buffer = if bvh.primitive_indices.is_empty() {
+        let blas_primitives_buffer = if blas_primitive_indices.is_empty() {
             device
                 .buffer()
-                .label("Raytracer BVH Primitive Indices Buffer")
+                .label("Raytracer BLAS Primitive Indices Buffer")
                 .storage(&[0u32])
         } else {
             device
                 .buffer()
-                .label("Raytracer BVH Primitive Indices Buffer")
-                .storage(&bvh.primitive_indices)
+                .label("Raytracer BLAS Primitive Indices Buffer")
+                .storage(&blas_primitive_indices)
+        };
+
+        let blas_info_buffer = if blas_infos.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer BLAS Info Buffer")
+                .storage(&[RaytracerBlasInfo::default()])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer BLAS Info Buffer")
+                .storage(&blas_infos)
+        };
+
+        let instances_buffer = if instances.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer TLAS Instance Buffer")
+                .storage(&[RaytracerInstance::default()])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer TLAS Instance Buffer")
+                .storage(&instances)
         };
 
         Ok(RaytracerExtractedBuffers {
@@ -852,10 +1076,17 @@ impl Extract for Raytracer {
             indices: indices_buffer,
             bvh_lines: bvh_line_buffer,
             bvh_line_vertex_count,
-            bvh_nodes: bvh_nodes_buffer,
-            bvh_node_count,
-            bvh_primitive_indices: bvh_primitives_buffer,
-            bvh_primitive_count,
+            blas_nodes: blas_nodes_buffer,
+            blas_node_count: blas_nodes.len() as u32,
+            blas_primitive_indices: blas_primitives_buffer,
+            blas_primitive_count: blas_primitive_indices.len() as u32,
+            blas_info: blas_info_buffer,
+            tlas_nodes: tlas_nodes_buffer,
+            tlas_node_count,
+            tlas_primitive_indices: tlas_primitive_indices_buffer,
+            tlas_primitive_count,
+            instances: instances_buffer,
+            instance_count: instances.len() as u32,
         })
     }
 }
