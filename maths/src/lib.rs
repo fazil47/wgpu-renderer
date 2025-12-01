@@ -62,6 +62,13 @@ impl Vec3 {
         )
     }
 
+    pub const fn min(a: Self, b: Self) -> Self {
+        Self::new(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z))
+    }
+    pub const fn max(a: Self, b: Self) -> Self {
+        Self::new(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z))
+    }
+
     pub const fn extend(&self, w: f32) -> Vec4 {
         Vec4::new(self.x, self.y, self.z, w)
     }

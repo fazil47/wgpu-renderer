@@ -50,13 +50,13 @@ impl BvhPrimitive {
         let mut bounds_min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
         let mut bounds_max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
 
-        bounds_min = vec3_min(bounds_min, p0);
-        bounds_min = vec3_min(bounds_min, p1);
-        bounds_min = vec3_min(bounds_min, p2);
+        bounds_min = Vec3::min(bounds_min, p0);
+        bounds_min = Vec3::min(bounds_min, p1);
+        bounds_min = Vec3::min(bounds_min, p2);
 
-        bounds_max = vec3_max(bounds_max, p0);
-        bounds_max = vec3_max(bounds_max, p1);
-        bounds_max = vec3_max(bounds_max, p2);
+        bounds_max = Vec3::max(bounds_max, p0);
+        bounds_max = Vec3::max(bounds_max, p1);
+        bounds_max = Vec3::max(bounds_max, p2);
 
         let centroid = (bounds_min + bounds_max) * 0.5;
 
@@ -84,8 +84,8 @@ impl Aabb {
     }
 
     fn grow_with(&mut self, bounds: &Aabb) {
-        self.min = vec3_min(self.min, bounds.min);
-        self.max = vec3_max(self.max, bounds.max);
+        self.min = Vec3::min(self.min, bounds.min);
+        self.max = Vec3::max(self.max, bounds.max);
     }
 
     fn from_primitive(primitive: &BvhPrimitive) -> Self {
@@ -231,14 +231,6 @@ fn extent_component(vec: Vec3, axis: usize) -> f32 {
         1 => vec.y,
         _ => vec.z,
     }
-}
-
-fn vec3_min(a: Vec3, b: Vec3) -> Vec3 {
-    Vec3::new(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z))
-}
-
-fn vec3_max(a: Vec3, b: Vec3) -> Vec3 {
-    Vec3::new(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z))
 }
 
 fn vertex_position(vertex: &RaytracerVertex) -> Vec3 {
