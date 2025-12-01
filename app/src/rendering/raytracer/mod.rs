@@ -462,23 +462,23 @@ impl RaytracerShaders {
         let render = device
             .shader()
             .label("Raytracer Render Shader")
-            .define("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
-            .compile_wesl("package::raytracer::render");
+            .define_u32("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
+            .wesl_runtime("package::raytracer::render");
         let compute = device
             .shader()
             .label("Raytracer Compute Shader")
-            .define("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
-            .define("VERTEX_STRIDE", RAYTRACE_VERTEX_STRIDE)
-            .define("VERTEX_NORMAL_OFFSET", RAYTRACE_VERTEX_NORMAL_OFFSET)
-            .define(
+            .define_u32("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
+            .define_u32("VERTEX_STRIDE", RAYTRACE_VERTEX_STRIDE)
+            .define_u32("VERTEX_NORMAL_OFFSET", RAYTRACE_VERTEX_NORMAL_OFFSET)
+            .define_u32(
                 "VERTEX_MATERIAL_OFFSET",
                 RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET,
             )
-            .compile_wesl("package::raytracer::compute");
+            .wesl_runtime("package::raytracer::compute");
         let bvh_lines = device
             .shader()
             .label("Raytracer BVH Line Shader")
-            .compile_wesl("package::raytracer::bvh_lines");
+            .wesl_runtime("package::raytracer::bvh_lines");
 
         Self {
             render,

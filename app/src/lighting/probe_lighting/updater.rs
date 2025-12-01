@@ -1,6 +1,10 @@
-use wesl::include_wesl;
-
-use crate::rendering::wgpu::WgpuExt;
+use crate::rendering::{
+    raytracer::{
+        RAYTRACE_MATERIAL_STRIDE, RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET,
+        RAYTRACE_VERTEX_NORMAL_OFFSET, RAYTRACE_VERTEX_STRIDE,
+    },
+    wgpu::WgpuExt,
+};
 
 /// Compute pipeline for updating probe coefficients
 pub struct ProbeUpdatePipeline {
@@ -18,7 +22,14 @@ impl ProbeUpdatePipeline {
         let shader = device
             .shader()
             .label("Probe Update Compute Shader")
-            .wesl(include_wesl!("probe-updater").into());
+            .define_u32("MATERIAL_STRIDE", RAYTRACE_MATERIAL_STRIDE)
+            .define_u32("VERTEX_STRIDE", RAYTRACE_VERTEX_STRIDE)
+            .define_u32("VERTEX_NORMAL_OFFSET", RAYTRACE_VERTEX_NORMAL_OFFSET)
+            .define_u32(
+                "VERTEX_MATERIAL_OFFSET",
+                RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET,
+            )
+            .wesl_runtime("package::probe_lighting::updater");
 
         let probe_bind_group_layout = device
             .bind_group_layout()

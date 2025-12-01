@@ -1,3 +1,8 @@
+import runtime::constants::MATERIAL_STRIDE;
+import runtime::constants::VERTEX_STRIDE;
+import runtime::constants::VERTEX_NORMAL_OFFSET;
+import runtime::constants::VERTEX_MATERIAL_OFFSET;
+
 const MAX_BOUNCES: u32 = 3u;
 const MAX_LOW_FRAME_BOUNCES: u32 = 2u;
 const LOW_BOUNCE_FRAMES: u32 = 4u;
@@ -44,19 +49,15 @@ struct InstanceData {
 }
 
 @group(0) @binding(0) var<storage, read> materials: array<f32>;
-@group(0) @binding(1) var<uniform> material_stride: u32;
 
 @group(1) @binding(0) var<storage, read> vertices: array<f32>;
-@group(1) @binding(1) var<uniform> vertex_stride: u32;
-@group(1) @binding(2) var<uniform> vertex_normal_offset: u32;
-@group(1) @binding(3) var<uniform> vertex_material_offset: u32;
-@group(1) @binding(4) var<storage, read> indices: array<u32>;
-@group(1) @binding(5) var<storage, read> blas_nodes: array<BvhNode>;
-@group(1) @binding(6) var<storage, read> blas_primitive_indices: array<u32>;
-@group(1) @binding(7) var<storage, read> blas_info: array<BlasInfo>;
-@group(1) @binding(8) var<storage, read> tlas_nodes: array<BvhNode>;
-@group(1) @binding(9) var<storage, read> instances: array<InstanceData>;
-@group(1) @binding(10) var<storage, read> tlas_primitive_indices: array<u32>;
+@group(1) @binding(1) var<storage, read> indices: array<u32>;
+@group(1) @binding(2) var<storage, read> blas_nodes: array<BvhNode>;
+@group(1) @binding(3) var<storage, read> blas_primitive_indices: array<u32>;
+@group(1) @binding(4) var<storage, read> blas_info: array<BlasInfo>;
+@group(1) @binding(5) var<storage, read> tlas_nodes: array<BvhNode>;
+@group(1) @binding(6) var<storage, read> instances: array<InstanceData>;
+@group(1) @binding(7) var<storage, read> tlas_primitive_indices: array<u32>;
 
 @group(2) @binding(0) var<uniform> sun_direction: vec3f;
 
@@ -91,14 +92,6 @@ struct HitInfo {
     v: f32, // Barycentric coordinates v
     w: f32, // Barycentric coordinates w
     instance_index: u32,
-}
-
-struct SceneParams {
-    material_stride: u32,
-    vertex_stride: u32,
-    vertex_normal_offset: u32,
-    vertex_material_offset: u32,
-    sun_direction: vec3f,
 }
 
 fn create_ray(origin: vec3f, direction: vec3f) -> Ray {
@@ -166,8 +159,8 @@ fn get_interpolated_color(hit_info: HitInfo, triangle: Triangle) -> vec3f {
     return color.rgb;
 }
 
-fn get_sky_color(ray: Ray, params: SceneParams) -> vec4f {
-    var sun_intensity = max(0.0, dot(params.sun_direction, ray.direction));
+fn get_sky_color(ray: Ray) -> vec4f {
+    var sun_intensity = max(0.0, dot(sun_direction, ray.direction));
     sun_intensity = pow(sun_intensity, 32.0);
     return vec4f(sun_intensity, sun_intensity, sun_intensity, 1.0);
 }
@@ -184,18 +177,23 @@ fn random_in_hemisphere(normal: vec3f, seed: vec3f) -> vec3f {
     return normalize(normal + random_dir);
 }
 
-fn get_triangle_data(primitive_index: u32, mesh_info: BlasInfo, params: SceneParams) -> Triangle {
-    let tri_index = mesh_info.index_offset + primitive_index * 3u;
+// Gets the triangle at index `primitive_index` of the mesh's triangle list
+// and retrieves its data from the global triangles data.
+fn get_triangle_data(mesh: BlasInfo, primitive_index: u32) -> Triangle {
+    let triangle_index = blas_primitive_indices[mesh.primitive_offset + primitive_index];
+    let tri_index = mesh.index_offset + triangle_index * 3u;
+
     var triangle: Triangle;
-    triangle.a = get_vertex(indices[tri_index + 0u], mesh_info, params);
-    triangle.b = get_vertex(indices[tri_index + 1u], mesh_info, params);
-    triangle.c = get_vertex(indices[tri_index + 2u], mesh_info, params);
+    triangle.a = get_vertex(indices[tri_index + 0u], mesh);
+    triangle.b = get_vertex(indices[tri_index + 1u], mesh);
+    triangle.c = get_vertex(indices[tri_index + 2u], mesh);
+
     return triangle;
 }
 
-fn get_vertex(index: u32, mesh_info: BlasInfo, params: SceneParams) -> Vertex {
-    let vertex_index = mesh_info.vertex_offset + index;
-    let base = vertex_index * params.vertex_stride;
+fn get_vertex(index: u32, mesh: BlasInfo) -> Vertex {
+    let vertex_index = mesh.vertex_offset + index;
+    let base = vertex_index * VERTEX_STRIDE;
 
     var vertex: Vertex;
     vertex.position = vec4f(
@@ -205,12 +203,12 @@ fn get_vertex(index: u32, mesh_info: BlasInfo, params: SceneParams) -> Vertex {
         vertices[base + 3u],
     );
     vertex.normal = vec4f(
-        vertices[base + params.vertex_normal_offset + 0u],
-        vertices[base + params.vertex_normal_offset + 1u],
-        vertices[base + params.vertex_normal_offset + 2u],
-        vertices[base + params.vertex_normal_offset + 3u],
+        vertices[base + VERTEX_NORMAL_OFFSET + 0u],
+        vertices[base + VERTEX_NORMAL_OFFSET + 1u],
+        vertices[base + VERTEX_NORMAL_OFFSET + 2u],
+        vertices[base + VERTEX_NORMAL_OFFSET + 3u],
     );
-    let material_index: u32 = u32(vertices[base + params.vertex_material_offset]);
+    let material_index: u32 = u32(vertices[base + VERTEX_MATERIAL_OFFSET]);
     let material = get_material(material_index);
     vertex.color = material.color;
     return vertex;
@@ -219,10 +217,10 @@ fn get_vertex(index: u32, mesh_info: BlasInfo, params: SceneParams) -> Vertex {
 fn get_material(index: u32) -> Material {
     var material: Material;
     material.color = vec4f(
-        materials[index * material_stride + 0u],
-        materials[index * material_stride + 1u],
-        materials[index * material_stride + 2u],
-        materials[index * material_stride + 3u],
+        materials[index * MATERIAL_STRIDE + 0u],
+        materials[index * MATERIAL_STRIDE + 1u],
+        materials[index * MATERIAL_STRIDE + 2u],
+        materials[index * MATERIAL_STRIDE + 3u],
     );
     return material;
 }
@@ -288,15 +286,15 @@ fn push_children(
     }
 }
 
-fn trace_blas(ray: Ray, mesh_info: BlasInfo, params: SceneParams, t_max: f32) -> HitInfo {
+fn trace_blas(ray: Ray, mesh: BlasInfo, t_max: f32) -> HitInfo {
     var stack: array<u32, 64u>;
     var stack_size: u32 = 0u;
 
-    if mesh_info.node_count == 0u || arrayLength(&blas_nodes) == 0u {
+    if mesh.node_count == 0u || arrayLength(&blas_nodes) == 0u {
         return HitInfo(false, FLT_MAX, 0u, vec3f(0.0), vec3f(0.0), 0.0, 0.0, 0.0, 0u);
     }
 
-    push_stack(&stack, &stack_size, mesh_info.node_offset);
+    push_stack(&stack, &stack_size, mesh.node_offset);
 
     var nearest_hit_info: HitInfo;
     nearest_hit_info.did_hit = false;
@@ -315,25 +313,24 @@ fn trace_blas(ray: Ray, mesh_info: BlasInfo, params: SceneParams, t_max: f32) ->
             let start = node.first_primitive;
             let end = start + node.primitive_count;
             for (var i = start; i < end; i = i + 1u) {
-                let tri_index = blas_primitive_indices[mesh_info.primitive_offset + i];
-                let triangle: Triangle = get_triangle_data(tri_index, mesh_info, params);
+                let triangle: Triangle = get_triangle_data(mesh, i);
                 let hit_info: HitInfo = get_triangle_intersection_mt(triangle, ray);
 
                 if hit_info.did_hit && hit_info.t < nearest_hit_info.t {
                     nearest_hit_info = hit_info;
-                    nearest_hit_info.i = tri_index;
+                    nearest_hit_info.i = i;
                 }
             }
         } else {
             // Interior node, push children
-            push_children(node, mesh_info.node_offset, &stack, &stack_size);
+            push_children(node, mesh.node_offset, &stack, &stack_size);
         }
     }
 
     return nearest_hit_info;
 }
 
-fn trace_tlas(ray_world: Ray, params: SceneParams) -> HitInfo {
+fn trace_tlas(ray_world: Ray) -> HitInfo {
     var stack: array<u32, 64u>;
     var stack_size: u32 = 0u;
 
@@ -382,7 +379,7 @@ fn trace_tlas(ray_world: Ray, params: SceneParams) -> HitInfo {
                 let direction_local = (local_from_world * vec4f(ray_world.direction, 0.0)).xyz;
                 let local_ray = create_ray(origin_local, normalize(direction_local));
 
-                let hit_local = trace_blas(local_ray, mesh, params, nearest_hit_info.t);
+                let hit_local = trace_blas(local_ray, mesh, nearest_hit_info.t);
                 if hit_local.did_hit {
                     let world_hit = (world_from_local * vec4f(hit_local.p, 1.0)).xyz;
                     let world_normal = normalize((vec4f(hit_local.normal, 0.0) * local_from_world).xyz);
@@ -412,20 +409,12 @@ fn trace_tlas(ray_world: Ray, params: SceneParams) -> HitInfo {
     return nearest_hit_info;
 }
 
-fn get_interpolated_color_from_hit(hit_info: HitInfo, mesh_info: BlasInfo, params: SceneParams) -> vec4f {
-    let triangle: Triangle = get_triangle_data(hit_info.i, mesh_info, params);
+fn get_interpolated_color_from_hit(hit_info: HitInfo, mesh: BlasInfo) -> vec4f {
+    let triangle: Triangle = get_triangle_data(mesh, hit_info.i);
     return vec4f(get_interpolated_color(hit_info, triangle), 1.0);
 }
 
 fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u32, bounce_seed: f32) -> vec4f {
-    let scene_params = SceneParams(
-        material_stride,
-        vertex_stride,
-        vertex_normal_offset,
-        vertex_material_offset,
-        sun_direction,
-    );
-
     var ray = create_ray(origin, direction);
     var ray_color = vec4f(0.0);
     var ray_throughput = vec4f(1.0);
@@ -437,10 +426,10 @@ fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u
             break;
         }
 
-        let hit_info: HitInfo = trace_tlas(ray, scene_params);
+        let hit_info: HitInfo = trace_tlas(ray);
         if hit_info.did_hit {
-            let mesh_info = blas_info[instances[hit_info.instance_index].blas_index];
-            let tri_color = get_interpolated_color_from_hit(hit_info, mesh_info, scene_params);
+            let mesh = blas_info[instances[hit_info.instance_index].blas_index];
+            let tri_color = get_interpolated_color_from_hit(hit_info, mesh);
             ray_color += tri_color * ray_throughput;
             ray_throughput *= tri_color;
 
@@ -451,9 +440,9 @@ fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u
         } else {
             if bounce == 0u {
                 // If ray misses all triangles, return the sky color
-                ray_color = get_sky_color(ray, scene_params);
+                ray_color = get_sky_color(ray);
             } else {
-                let ray_sun_intensity = max(0.0, dot(scene_params.sun_direction, ray.direction)) * SUN_INTENSITY;
+                let ray_sun_intensity = max(0.0, dot(sun_direction, ray.direction)) * SUN_INTENSITY;
                 ray_color *= ray_sun_intensity * ray_throughput;
             }
 

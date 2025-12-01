@@ -1,4 +1,7 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::path::Path;
+use wesl::{FileResolver, Router, VirtualResolver, Wesl};
 use wgpu::{Texture, util::DeviceExt};
 
 // Re-export commonly used types
@@ -275,6 +278,7 @@ impl<'a> SamplerBuilder<'a> {
 pub struct ShaderBuilder<'a> {
     device: &'a Device,
     label: Option<&'a str>,
+    u32_defines: HashMap<String, String>,
 }
 
 impl<'a> ShaderBuilder<'a> {
@@ -282,11 +286,17 @@ impl<'a> ShaderBuilder<'a> {
         Self {
             device,
             label: None,
+            u32_defines: HashMap::new(),
         }
     }
 
     pub fn label(mut self, label: &'a str) -> Self {
         self.label = Some(label);
+        self
+    }
+
+    pub fn define_u32(mut self, name: impl ToString, value: u32) -> Self {
+        self.u32_defines.insert(name.to_string(), value.to_string());
         self
     }
 
@@ -298,11 +308,47 @@ impl<'a> ShaderBuilder<'a> {
             })
     }
 
-    pub fn wesl(self, source: Cow<'a, str>) -> ShaderModule {
+    // Compile a WESL shader at build time
+    pub fn wesl_buildtime(self, source: Cow<'a, str>) -> ShaderModule {
         self.device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: self.label,
                 source: wgpu::ShaderSource::Wgsl(source),
+            })
+    }
+
+    // Compile a WESL shader at runtime
+    pub fn wesl_runtime(self, module_name: &str) -> ShaderModule {
+        let mut router = Router::new();
+        router.mount_resolver(
+            "package".parse().unwrap(),
+            FileResolver::new("app/src/shaders"),
+        );
+
+        if !self.u32_defines.is_empty() {
+            let mut resolver = VirtualResolver::new();
+            let mut defines = String::new();
+            for (name, value) in &self.u32_defines {
+                defines.push_str(&format!("const {}: u32 = {};\n", name, value));
+            }
+            resolver.add_module("runtime::constants".parse().unwrap(), defines.into());
+            router.mount_resolver("runtime".parse().unwrap(), resolver);
+        }
+
+        let mut compiler = Wesl::new(Path::new("app/src/shaders")).set_custom_resolver(router);
+        compiler.set_feature("wasm", cfg!(target_arch = "wasm32"));
+        let source = match compiler.compile(&module_name.parse().unwrap()) {
+            Ok(s) => s.to_string(),
+            Err(e) => {
+                eprintln!("Failed to compile WESL module '{module_name}': {e}");
+                panic!("WESL compilation failed");
+            }
+        };
+
+        self.device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: self.label,
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(source)),
             })
     }
 }

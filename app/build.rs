@@ -12,22 +12,6 @@ fn main() {
         "rasterizer-main",
     );
     resolver.build_artifact(
-        &ModulePath::from_str("package::raytracer::render").unwrap(),
-        "raytracer-render",
-    );
-    resolver.build_artifact(
-        &ModulePath::from_str("package::raytracer::compute").unwrap(),
-        "raytracer-compute",
-    );
-    resolver.build_artifact(
-        &ModulePath::from_str("package::raytracer::bvh_lines").unwrap(),
-        "raytracer-bvh-lines",
-    );
-    resolver.build_artifact(
-        &ModulePath::from_str("package::probe_lighting::updater").unwrap(),
-        "probe-updater",
-    );
-    resolver.build_artifact(
         &ModulePath::from_str("package::probe_lighting::visualization").unwrap(),
         "probe-visualization",
     );

@@ -108,7 +108,7 @@ impl Rasterizer {
             .device
             .shader()
             .label("Rasterizer Main Shader")
-            .wesl(include_wesl!("rasterizer-main").into());
+            .wesl_buildtime(include_wesl!("rasterizer-main").into());
 
         let other_bind_group_layout = wgpu
             .device

@@ -67,7 +67,7 @@ impl ProbeVisualization {
             .device
             .shader()
             .label("Probe Visualization Shader")
-            .wesl(include_wesl!("probe-visualization").into());
+            .wesl_buildtime(include_wesl!("probe-visualization").into());
 
         // Camera bind group layout (Group 0)
         let camera_bind_group_layout = wgpu
