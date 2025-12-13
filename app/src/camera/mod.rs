@@ -110,7 +110,7 @@ impl Camera {
          *      so the fourth column is chosen to produce w_c = -z for any input point. The -1 sitting in the
          *      third-row/fourth-column slot is what multiplies the incoming w=1 to give w_c = -z. After the GPU
          *      divides by w_c, depth becomes z_ndc = z_c / w_c.
-         *   4) We require z_ndc = -1 at z = -near and z_ndc = 1 at z = -far so the clip depth range matches the API.
+         *   4) We require z_ndc = -1 (FIXME: shouldn't this be 0?) at z = -near and z_ndc = 1 at z = -far so the clip depth range matches the API.
          *      Let z_c = A*z + B. Solving the two equations
          *          (A * -near + B) / near = -1
          *          (A * -far  + B) / far  =  1
