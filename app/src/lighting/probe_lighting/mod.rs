@@ -1,3 +1,4 @@
+pub mod systems;
 pub mod updater;
 pub mod visualization;
 

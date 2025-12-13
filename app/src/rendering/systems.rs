@@ -1,10 +1,13 @@
+use ecs::World;
+
 use crate::core::engine::{EngineConfiguration, RaytracerFrameState, WindowResource};
-use crate::rendering::rasterizer::Rasterizer;
-use crate::rendering::raytracer::Raytracer;
-use crate::rendering::wgpu::WgpuResources;
 use crate::ui::UiState;
 use crate::ui::egui::RendererEgui;
-use ecs::World;
+use crate::{
+    camera::Camera,
+    lighting::DirectionalLight,
+    rendering::{rasterizer::Rasterizer, raytracer::Raytracer, wgpu::WgpuResources},
+};
 
 pub fn render_system(world: &mut World) {
     // 1. Get resources
@@ -218,4 +221,53 @@ pub fn render_system(world: &mut World) {
     // 6. Submit and Present
     wgpu.queue.submit(std::iter::once(render_encoder.finish()));
     surface_texture.present();
+}
+
+pub fn update_system(world: &mut World) {
+    // TODO: If only transform has changed then only extract transform
+
+    // Check if geometry or transforms are dirty
+    let is_dirty = world
+        .get_resource::<crate::core::flags::DirtyFlags>()
+        .map(|f| f.geometry || f.transforms)
+        .unwrap_or(false);
+
+    if !is_dirty {
+        return;
+    }
+
+    // Find camera and sun light entities
+    let camera_entity = world
+        .get_entities_with::<Camera>()
+        .into_iter()
+        .next()
+        .expect("No camera entity found");
+
+    let sun_light_entity = world
+        .get_entities_with::<DirectionalLight>()
+        .into_iter()
+        .next()
+        .expect("No sun light entity found");
+
+    let wgpu = world.get_resource::<WgpuResources>().unwrap();
+
+    if let Some(mut rasterizer) = world.get_resource_mut::<Rasterizer>() {
+        let _ = rasterizer.update_render_data(
+            &wgpu.device,
+            &wgpu.queue,
+            world,
+            camera_entity,
+            sun_light_entity,
+        );
+    }
+
+    if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>() {
+        let _ = raytracer.update_render_data(
+            &wgpu.device,
+            &wgpu.queue,
+            world,
+            camera_entity,
+            sun_light_entity,
+        );
+    }
 }

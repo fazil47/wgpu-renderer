@@ -1,7 +1,7 @@
 pub mod extract;
 pub mod rasterizer;
 pub mod raytracer;
-pub mod renderer;
+pub mod systems;
 pub mod wgpu;
 
 pub use extract::{Extract, ExtractionError, WorldExtractExt};

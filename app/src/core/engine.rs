@@ -129,19 +129,19 @@ impl Engine {
         world.insert_resource(RaytracerFrameState::default());
 
         let mut input_schedule = ecs::Schedule::new();
-        input_schedule.add_system(crate::input::camera_controller::camera_controller_system);
+        input_schedule.add_system(crate::input::systems::camera_controller_system);
 
         let mut update_schedule = ecs::Schedule::new();
-        update_schedule.add_system(crate::systems::ui_system::ui_system);
-        update_schedule.add_system(crate::transform::calculate_global_position_system);
-        update_schedule.add_system(crate::rendering::renderer::renderer_update_system);
+        update_schedule.add_system(crate::transform::systems::calculate_global_position_system);
+        update_schedule.add_system(crate::rendering::systems::update_system);
+        update_schedule.add_system(crate::ui::systems::ui_system);
 
         let mut render_schedule = ecs::Schedule::new();
-        render_schedule.add_system(crate::systems::probe_baking_system::probe_baking_system);
-        render_schedule.add_system(crate::systems::render_system::render_system);
+        render_schedule.add_system(crate::lighting::probe_lighting::systems::probe_baking_system);
+        render_schedule.add_system(crate::rendering::systems::render_system);
 
         let mut cleanup_schedule = ecs::Schedule::new();
-        cleanup_schedule.add_system(crate::systems::scene_system::reset_dirty_flags_system);
+        cleanup_schedule.add_system(crate::core::systems::reset_dirty_flags_system);
 
         // Create rendering resources separately
         let wgpu = crate::rendering::wgpu::WgpuResources::new(window.clone(), &window_size).await;

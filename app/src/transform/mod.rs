@@ -1,3 +1,5 @@
+pub mod systems;
+
 use ecs::{Component, Entity};
 use maths::{Mat4, Quat, Vec3};
 
@@ -117,66 +119,4 @@ impl From<transform_gizmo_egui::math::Transform> for Transform {
             parent: None,
         }
     }
-}
-
-pub fn calculate_global_position_system(world: &mut ecs::World) {
-    let is_dirty = world
-        .get_resource::<crate::core::flags::DirtyFlags>()
-        .map(|f| f.transforms)
-        .unwrap_or(false);
-
-    if !is_dirty {
-        return;
-    }
-
-    let mut cache: std::collections::HashMap<Entity, Mat4> = std::collections::HashMap::new();
-    let mut visiting: std::collections::HashSet<Entity> = std::collections::HashSet::new();
-
-    for entity in world.get_entities_with::<Transform>() {
-        let _ = compute_global_transform(world, entity, &mut cache, &mut visiting);
-    }
-}
-
-fn compute_global_transform(
-    world: &ecs::World,
-    entity: Entity,
-    cache: &mut std::collections::HashMap<Entity, Mat4>,
-    visiting: &mut std::collections::HashSet<Entity>,
-) -> Result<Mat4, String> {
-    if let Some(matrix) = cache.get(&entity) {
-        return Ok(*matrix);
-    }
-
-    if !visiting.insert(entity) {
-        return Err(format!(
-            "Transform hierarchy cycle detected at entity {entity:?}"
-        ));
-    }
-
-    let transform = *world
-        .get_component::<Transform>(entity)
-        .ok_or_else(|| format!("Entity {entity:?} missing component: Transform"))?;
-
-    let local_matrix = transform.get_matrix();
-
-    let global_matrix = if let Some(parent) = transform.parent {
-        if !world.has_component::<Transform>(parent) {
-            return Err(format!("Entity {parent:?} missing component: Transform"));
-        }
-
-        let parent_matrix = compute_global_transform(world, parent, cache, visiting)?;
-        parent_matrix * local_matrix
-    } else {
-        local_matrix
-    };
-
-    visiting.remove(&entity);
-
-    cache.insert(entity, global_matrix);
-
-    if let Some(mut global_transform) = world.get_component_mut::<GlobalTransform>(entity) {
-        *global_transform = GlobalTransform::from_matrix(global_matrix);
-    }
-
-    Ok(global_matrix)
 }
