@@ -164,14 +164,20 @@ impl Engine {
         }
 
         let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu, &window_size);
-        if let Err(err) = raytracer.update_render_data(
+        match raytracer.update_render_data(
             &wgpu.device,
             &wgpu.queue,
             &world,
             camera_entity,
             sun_light_entity,
         ) {
-            eprintln!("Failed to update raytracer render data: {err}");
+            Ok(Some(tlas_bvh)) => {
+                world.insert_resource(crate::rendering::TlasBvh::new(tlas_bvh));
+            }
+            Ok(None) => {}
+            Err(err) => {
+                eprintln!("Failed to update raytracer render data: {err}");
+            }
         }
 
         world.insert_resource(wgpu);

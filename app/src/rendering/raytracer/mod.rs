@@ -16,7 +16,7 @@ use crate::{
 use ecs::{Entity, World};
 use maths::{Mat4, Vec3};
 
-mod bvh;
+pub mod bvh;
 
 // Raytracer-specific vertex and material types
 #[repr(C)]
@@ -309,7 +309,7 @@ impl Raytracer {
         world: &World,
         camera_entity: Entity,
         sun_light_entity: Entity,
-    ) -> Result<(), ExtractionError> {
+    ) -> Result<Option<bvh::Bvh>, ExtractionError> {
         let RaytracerExtractedBuffers {
             materials,
             vertices,
@@ -327,6 +327,7 @@ impl Raytracer {
             tlas_primitive_count,
             instances,
             instance_count,
+            tlas_bvh,
         } = self.extract(device, world)?;
 
         self.buffers.materials = materials;
@@ -356,7 +357,7 @@ impl Raytracer {
         self.bind_groups =
             RaytracerBindGroups::new(device, &self.bind_group_layouts, &self.buffers);
 
-        Ok(())
+        Ok(Some(tlas_bvh))
     }
 
     pub fn resize(&mut self, new_size: &winit::dpi::PhysicalSize<u32>, wgpu: &WgpuResources) {
@@ -814,6 +815,7 @@ pub struct RaytracerExtractedBuffers {
     pub tlas_primitive_count: u32,
     pub instances: wgpu::Buffer,
     pub instance_count: u32,
+    pub tlas_bvh: bvh::Bvh,
 }
 
 impl Extract for Raytracer {
@@ -1083,6 +1085,7 @@ impl Extract for Raytracer {
             tlas_primitive_count,
             instances: instances_buffer,
             instance_count: instances.len() as u32,
+            tlas_bvh,
         })
     }
 }

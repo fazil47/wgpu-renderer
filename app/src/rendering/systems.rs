@@ -249,25 +249,33 @@ pub fn update_system(world: &mut World) {
         .next()
         .expect("No sun light entity found");
 
-    let wgpu = world.get_resource::<WgpuResources>().unwrap();
+    let mut tlas_bvh_to_insert = None;
 
-    if let Some(mut rasterizer) = world.get_resource_mut::<Rasterizer>() {
-        let _ = rasterizer.update_render_data(
-            &wgpu.device,
-            &wgpu.queue,
-            world,
-            camera_entity,
-            sun_light_entity,
-        );
+    {
+        let wgpu = world.get_resource::<WgpuResources>().unwrap();
+        if let Some(mut rasterizer) = world.get_resource_mut::<Rasterizer>() {
+            let _ = rasterizer.update_render_data(
+                &wgpu.device,
+                &wgpu.queue,
+                world,
+                camera_entity,
+                sun_light_entity,
+            );
+        }
+        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>() {
+            if let Ok(Some(tlas_bvh)) = raytracer.update_render_data(
+                &wgpu.device,
+                &wgpu.queue,
+                world,
+                camera_entity,
+                sun_light_entity,
+            ) {
+                tlas_bvh_to_insert = Some(tlas_bvh);
+            }
+        }
     }
 
-    if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>() {
-        let _ = raytracer.update_render_data(
-            &wgpu.device,
-            &wgpu.queue,
-            world,
-            camera_entity,
-            sun_light_entity,
-        );
+    if let Some(tlas_bvh) = tlas_bvh_to_insert {
+        world.insert_resource(crate::rendering::TlasBvh::new(tlas_bvh));
     }
 }
