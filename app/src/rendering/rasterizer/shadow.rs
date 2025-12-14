@@ -117,4 +117,8 @@ impl ShadowRenderTexture {
     pub fn get_sampler(&self) -> &wgpu::Sampler {
         &self.sampler
     }
+
+    pub fn get_light_matrix_buffer(&self) -> &wgpu::Buffer {
+        &self.light_buffer
+    }
 }

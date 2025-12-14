@@ -9,6 +9,10 @@ struct Camera {
     view_proj: mat4x4<f32>,
 };
 
+struct LightMatrix {
+    view_proj: mat4x4<f32>,
+};
+
 struct VertexInput {
     @location(0) position: vec4f,
     @location(1) normal: vec4f,
@@ -22,6 +26,7 @@ struct VertexOutput {
     @builtin(position) position: vec4f, // Clip space position
     @location(0) world_position: vec3f,
     @location(1) normal: vec3f,
+    @location(2) light_space_pos: vec3f, // xy: shadow map UV, z: depth for comparison
 }
 
 @group(0) @binding(0)
@@ -32,6 +37,8 @@ var<uniform> sun_direction: vec3f;
 var shadow_map_sampler: sampler_comparison;
 @group(0) @binding(3)
 var shadow_map: texture_depth_2d;
+@group(0) @binding(4)
+var<uniform> light_matrix: LightMatrix;
 
 @group(1) @binding(0)
 var<uniform> probe_grid_config: ProbeGridConfig;
@@ -68,13 +75,28 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     out.world_position = world_pos.xyz;
     out.normal = world_normal.xyz;
 
+    // Calculate light space position for shadow mapping
+    let light_space_position = light_matrix.view_proj * world_pos;
+    // light_space_position.z is already in NDC [0, 1] after projection (orthographic, w=1)
+    let light_ndc_depth = light_space_position.z;
+    // Map NDC xy from [-1, 1] to UV [0, 1] and flip Y for texture coordinates
+    let shadow_map_uv = light_space_position.xy * vec2f(0.5, -0.5) + vec2f(0.5, 0.5);
+    
+    out.light_space_pos = vec3f(shadow_map_uv, light_ndc_depth);
+
     return out;
 }
 
 @fragment
 fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
-    // Traditional direct lighting with a minimum intensity of 0.01
-    let direct_light: f32 = max(0.0, dot(vert_output.normal, -sun_direction));
+    let shadow = textureSampleCompare(
+        shadow_map,
+        shadow_map_sampler,
+        vert_output.light_space_pos.xy,
+        vert_output.light_space_pos.z
+    );
+
+    let direct_light: f32 = max(0.0, dot(vert_output.normal, -sun_direction)) * shadow;
     let traditional_lighting = vec3f(max(direct_light, 0.01));
 
     if (is_probe_lighting_disabled(probe_grid_config)) {
