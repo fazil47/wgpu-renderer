@@ -1,3 +1,4 @@
+mod blit_to_screen;
 mod shadow;
 
 use std::{collections::HashMap, mem::size_of};
@@ -17,6 +18,7 @@ use crate::{
     rendering::{
         WorldExtractExt,
         extract::{Extract, ExtractionError},
+        rasterizer::{blit_to_screen::BlitToScreen, shadow::ShadowRenderTexture},
         raytracer::Raytracer,
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources, render_pass},
     },
@@ -103,7 +105,9 @@ pub struct Rasterizer {
     probe_updater: ProbeUpdatePipeline,
     probe_visualization: ProbeVisualization,
     probe_updater_light_bgl: BindGroupLayout,
-    shadow_render_texture: shadow::ShadowRenderTexture,
+    shadow_render_texture: ShadowRenderTexture,
+    debug_shadow_render_texture: bool,
+    _blit_to_screen: BlitToScreen, // For debugging render textures
 }
 
 impl ecs::Resource for Rasterizer {}
@@ -187,7 +191,7 @@ impl Rasterizer {
 
         let camera_buffers = CameraBuffers::new(&wgpu.device, "Rasterizer");
         let lighting_buffers = LightingBuffers::new(&wgpu.device, "Rasterizer");
-        let shadow_render_texture = shadow::ShadowRenderTexture::new(&wgpu.device);
+        let shadow_render_texture = ShadowRenderTexture::new(&wgpu.device);
 
         let other_bind_group = wgpu
             .device
@@ -218,6 +222,13 @@ impl Rasterizer {
             &probe_updater_light_bgl,
         );
 
+        let mut _blit_to_screen = BlitToScreen::new(&wgpu.device, swapchain_format);
+        _blit_to_screen.set_texture_view(
+            &wgpu.device,
+            shadow_render_texture.get_shadow_map_view(),
+            true,
+        );
+
         Self {
             gpu_meshes: Vec::new(),
             camera_buffers,
@@ -234,6 +245,8 @@ impl Rasterizer {
             probe_updater,
             probe_updater_light_bgl,
             shadow_render_texture,
+            debug_shadow_render_texture: false,
+            _blit_to_screen,
         }
     }
 
@@ -291,9 +304,15 @@ impl Rasterizer {
         surface_texture_view: &wgpu::TextureView,
         default_material_entity: Entity,
     ) {
-        // TODO: Only render if the directional light has changed
+        // TODO: Only render shadow map if the directional light has changed
         self.shadow_render_texture
             .render(render_encoder, &self.gpu_meshes);
+
+        if self.debug_shadow_render_texture {
+            self._blit_to_screen
+                .render(render_encoder, surface_texture_view);
+            return;
+        }
 
         let mut rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")

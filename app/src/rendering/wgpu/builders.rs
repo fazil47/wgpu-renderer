@@ -1,6 +1,6 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
+use std::{borrow::Cow, collections::HashSet};
 use wesl::{FileResolver, Router, VirtualResolver, Wesl};
 use wgpu::{Texture, util::DeviceExt};
 
@@ -279,6 +279,7 @@ pub struct ShaderBuilder<'a> {
     device: &'a Device,
     label: Option<&'a str>,
     u32_defines: HashMap<String, String>,
+    features: HashSet<String>,
 }
 
 impl<'a> ShaderBuilder<'a> {
@@ -287,6 +288,7 @@ impl<'a> ShaderBuilder<'a> {
             device,
             label: None,
             u32_defines: HashMap::new(),
+            features: HashSet::new(),
         }
     }
 
@@ -297,6 +299,11 @@ impl<'a> ShaderBuilder<'a> {
 
     pub fn define_u32(mut self, name: impl ToString, value: u32) -> Self {
         self.u32_defines.insert(name.to_string(), value.to_string());
+        self
+    }
+
+    pub fn set_feature(mut self, feature: &str) -> Self {
+        self.features.insert(feature.to_string());
         self
     }
 
@@ -337,6 +344,11 @@ impl<'a> ShaderBuilder<'a> {
 
         let mut compiler = Wesl::new(Path::new("app/src/shaders")).set_custom_resolver(router);
         compiler.set_feature("wasm", cfg!(target_arch = "wasm32"));
+
+        for feature in &self.features {
+            compiler.set_feature(feature, true);
+        }
+
         let source = match compiler.compile(&module_name.parse().unwrap()) {
             Ok(s) => s.to_string(),
             Err(e) => {
