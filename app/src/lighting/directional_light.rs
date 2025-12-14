@@ -9,6 +9,7 @@ pub struct DirectionalLight {
     pub direction: Vec3, // from light to scene
     pub azimuth: f32,
     pub altitude: f32,
+    pub near: f32,
 }
 
 impl DirectionalLight {
@@ -17,6 +18,7 @@ impl DirectionalLight {
             direction: Vec3::ZERO,
             azimuth,
             altitude,
+            near: 0.001,
         };
         light.recalculate();
         light
@@ -68,16 +70,15 @@ impl DirectionalLight {
     /// Gets the light's orthographic projection matrix
     pub fn get_light_projection_matrix(&self, scene_radius: f32) -> maths::Mat4 {
         let size = 2.0 * scene_radius;
-        let near = 0.001;
         let far = scene_radius * 2.0;
-        let depth = far - near;
+        let depth = far - self.near;
 
         // Orthographic projection for WebGPU (depth range [0, 1])
         maths::Mat4::from_cols(
             maths::Vec4::new(2.0 / size, 0.0, 0.0, 0.0),
             maths::Vec4::new(0.0, 2.0 / size, 0.0, 0.0),
             maths::Vec4::new(0.0, 0.0, -1.0 / depth, 0.0),
-            maths::Vec4::new(0.0, 0.0, -near / depth, 1.0),
+            maths::Vec4::new(0.0, 0.0, -self.near / depth, 1.0),
         )
     }
 
