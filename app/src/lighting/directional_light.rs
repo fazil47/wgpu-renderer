@@ -1,5 +1,7 @@
-use ecs::Component;
+use ecs::{Component, World};
 use maths::Vec3;
+
+use crate::rendering::TlasBvh;
 
 /// Directional light component
 #[derive(Debug, Clone)]
@@ -83,7 +85,15 @@ impl DirectionalLight {
     }
 
     /// Gets the light's view-projection matrix
-    pub fn get_light_matrix(&self, scene_center: Vec3, scene_radius: f32) -> maths::Mat4 {
+    pub fn get_light_matrix(&self, world: &World) -> maths::Mat4 {
+        let tlas = world.get_resource::<TlasBvh>().unwrap();
+        let [x_max, y_max, z_max, _] = tlas.bvh.nodes[0].bounds_max;
+        let [x_min, y_min, z_min, _] = tlas.bvh.nodes[0].bounds_min;
+        let scene_max = Vec3::new(x_max, y_max, z_max);
+        let scene_min = Vec3::new(x_min, y_min, z_min);
+        let scene_center = (scene_max + scene_min) / 2.0; // min + (max - min) / 2.0
+        let scene_radius = (scene_max - scene_min).length() / 2.0;
+
         let view = self.get_light_view_matrix(scene_center, scene_radius);
         let projection = self.get_light_projection_matrix(scene_radius);
         projection * view
