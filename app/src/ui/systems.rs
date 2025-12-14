@@ -90,10 +90,6 @@ pub fn ui_system(world: &mut World) {
 
                             // Lighting controls
                             ui.collapsing("Lighting", |ui| {
-                                // We need to find the sun light entity.
-                                // Since we don't have direct access to sun_light_entity ID,
-                                // we query for DirectionalLight component.
-                                // Assuming single directional light for now.
                                 let light_entities = world.get_entities_with::<DirectionalLight>();
                                 if let Some(light_entity) = light_entities.first()
                                     && let Some(mut light) =
@@ -107,7 +103,7 @@ pub fn ui_system(world: &mut World) {
                                         .changed();
                                     let sun_alt_changed = ui
                                         .add(
-                                            egui::Slider::new(&mut light.altitude, 0.0..=90.0)
+                                            egui::Slider::new(&mut light.altitude, 0.0..=360.0)
                                                 .text("Sun Altitude"),
                                         )
                                         .changed();
