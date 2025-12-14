@@ -36,7 +36,7 @@ impl DirectionalLight {
 
     /// Gets the light's view matrix
     pub fn get_light_view_matrix(&self, scene_center: Vec3, scene_radius: f32) -> maths::Mat4 {
-        // Position the light camera behind the scene
+        // Position the light camera away from the scene at the direction of the light
         let light_position = scene_center - (self.direction.normalized() * scene_radius);
 
         // Build basis vectors
