@@ -158,7 +158,7 @@ fn get_interpolated_color(hit_info: HitInfo, triangle: Triangle) -> vec3f {
 }
 
 fn get_sky_color(ray: Ray) -> vec4f {
-    var sun_intensity = max(0.0, dot(sun_direction, ray.direction));
+    var sun_intensity = max(0.0, dot(-sun_direction, ray.direction));
     sun_intensity = pow(sun_intensity, 32.0);
     return vec4f(sun_intensity, sun_intensity, sun_intensity, 1.0);
 }
@@ -435,7 +435,7 @@ fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u
                 // If ray misses all triangles, return the sky color
                 ray_color = get_sky_color(ray);
             } else {
-                let ray_sun_intensity = max(0.0, dot(sun_direction, ray.direction)) * SUN_INTENSITY;
+                let ray_sun_intensity = max(0.0, dot(-sun_direction, ray.direction)) * SUN_INTENSITY;
                 ray_color *= ray_sun_intensity * ray_throughput;
             }
 

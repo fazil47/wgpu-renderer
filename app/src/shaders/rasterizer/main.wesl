@@ -70,7 +70,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
     // Traditional direct lighting with a minimum intensity of 0.01
-    let direct_light: f32 = max(0.0, dot(vert_output.normal, sun_direction));
+    let direct_light: f32 = max(0.0, dot(vert_output.normal, -sun_direction));
     let traditional_lighting = vec3f(max(direct_light, 0.01));
 
     if (is_probe_lighting_disabled(probe_grid_config)) {

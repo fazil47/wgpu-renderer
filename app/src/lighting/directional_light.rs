@@ -6,7 +6,7 @@ use crate::rendering::TlasBvh;
 /// Directional light component
 #[derive(Debug, Clone)]
 pub struct DirectionalLight {
-    pub direction: Vec3,
+    pub direction: Vec3, // from light to scene
     pub azimuth: f32,
     pub altitude: f32,
 }
@@ -26,7 +26,7 @@ impl DirectionalLight {
         let azi_rad = self.azimuth.to_radians();
         let alt_rad = self.altitude.to_radians();
 
-        self.direction = Vec3::new(
+        self.direction = -Vec3::new(
             azi_rad.sin() * alt_rad.cos(),
             alt_rad.sin(),
             azi_rad.cos() * alt_rad.cos(),
