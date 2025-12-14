@@ -262,16 +262,16 @@ pub fn update_system(world: &mut World) {
                 sun_light_entity,
             );
         }
-        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>() {
-            if let Ok(Some(tlas_bvh)) = raytracer.update_render_data(
+        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>()
+            && let Ok(Some(tlas_bvh)) = raytracer.update_render_data(
                 &wgpu.device,
                 &wgpu.queue,
                 world,
                 camera_entity,
                 sun_light_entity,
-            ) {
-                tlas_bvh_to_insert = Some(tlas_bvh);
-            }
+            )
+        {
+            tlas_bvh_to_insert = Some(tlas_bvh);
         }
     }
 

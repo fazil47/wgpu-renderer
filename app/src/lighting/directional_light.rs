@@ -1,5 +1,5 @@
 use ecs::{Component, World};
-use maths::Vec3;
+use maths::{Quat, Vec3};
 
 use crate::rendering::TlasBvh;
 
@@ -39,18 +39,15 @@ impl DirectionalLight {
         // Position the light camera away from the scene at the direction of the light
         let light_position = scene_center - (self.direction.normalized() * scene_radius);
 
+        // Use a quaternion to find the basis vectors
+        let from = Vec3::FORWARD;
+        let to = self.direction.normalized();
+        let quat = Quat::from_rotation_arc(from, to);
+
         // Build basis vectors
-        let forward = self.direction.normalized();
-
-        // Handle edge case where forward is parallel to world up
-        let world_up = if forward.y.abs() > 0.99 {
-            Vec3::new(1.0, 0.0, 0.0)
-        } else {
-            Vec3::Y
-        };
-
-        let right = forward.cross(world_up).normalized();
-        let up = right.cross(forward).normalized();
+        let forward = quat.rotate_vec3(Vec3::FORWARD);
+        let right = quat.rotate_vec3(Vec3::RIGHT);
+        let up = quat.rotate_vec3(Vec3::UP);
 
         // Construct view matrix, which is the inverse of the transformation matrix
         // since view matrix undoes the camera transformation. Inverse is the transpose

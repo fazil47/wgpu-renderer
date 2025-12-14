@@ -15,6 +15,9 @@ impl Vec3 {
     pub const X: Self = Self::new(1.0, 0.0, 0.0);
     pub const Y: Self = Self::new(0.0, 1.0, 0.0);
     pub const Z: Self = Self::new(0.0, 0.0, 1.0);
+    pub const UP: Self = Self::new(0.0, 1.0, 0.0);
+    pub const RIGHT: Self = Self::new(1.0, 0.0, 0.0);
+    pub const FORWARD: Self = Self::new(0.0, 0.0, -1.0);
 
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
@@ -706,6 +709,39 @@ impl Quat {
         };
 
         quat.normalize()
+    }
+
+    pub fn from_rotation_arc(from: Vec3, to: Vec3) -> Self {
+        let from = from.normalized();
+        let to = to.normalized();
+
+        let dot = from.dot(to);
+
+        // Handle 180° rotation case
+        if dot < -0.999999 {
+            // Find perpendicular axis
+            let axis = if from.x.abs() < 0.9 {
+                from.cross(Vec3::X)
+            } else {
+                from.cross(Vec3::Y)
+            }
+            .normalized();
+            return Self::from_axis_angle(axis, std::f32::consts::PI);
+        }
+
+        let axis = from.cross(to);
+        let w = (from.length() * to.length()).sqrt() + dot;
+
+        Self::new(axis.x, axis.y, axis.z, w).normalize()
+    }
+
+    pub fn rotate_vec3(&self, vec: Vec3) -> Vec3 {
+        // Efficient formula: v' = v + 2 * q.xyz × (q.xyz × v + q.w * v)
+        let qv = Vec3::new(self.x, self.y, self.z);
+        let uv = qv.cross(vec);
+        let uuv = qv.cross(uv);
+
+        vec + ((uv * self.w) + uuv) * 2.0
     }
 }
 
