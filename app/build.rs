@@ -15,4 +15,8 @@ fn main() {
         &ModulePath::from_str("package::probe_lighting::visualization").unwrap(),
         "probe-visualization",
     );
+    resolver.build_artifact(
+        &ModulePath::from_str("package::rasterizer::shadow_mapping").unwrap(),
+        "shadow-mapping",
+    );
 }

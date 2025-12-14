@@ -28,6 +28,10 @@ struct VertexOutput {
 var<uniform> camera_uniform: Camera;
 @group(0) @binding(1)
 var<uniform> sun_direction: vec3f;
+@group(0) @binding(2)
+var shadow_map_sampler: sampler_comparison;
+@group(0) @binding(3)
+var shadow_map: texture_depth_2d;
 
 @group(1) @binding(0)
 var<uniform> probe_grid_config: ProbeGridConfig;

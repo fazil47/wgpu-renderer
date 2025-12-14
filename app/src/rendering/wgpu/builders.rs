@@ -507,6 +507,20 @@ impl<'a> BindGroupLayoutBuilder<'a> {
         self
     }
 
+    pub fn texture_depth(mut self, binding: u32, visibility: ShaderStages) -> Self {
+        self.entries.push(wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Depth,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+        self
+    }
+
     pub fn storage_texture_2d(
         mut self,
         binding: u32,

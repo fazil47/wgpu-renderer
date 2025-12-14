@@ -1,12 +1,17 @@
+mod shadow;
+
 use std::{collections::HashMap, mem::size_of};
 use wesl::include_wesl;
 use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, RenderPipeline};
 
 use crate::{
-    lighting::probe_lighting::{
-        Dimensions, ProbeGrid, ProbeGridConfig,
-        updater::ProbeUpdatePipeline,
-        visualization::{ProbeUIResult, ProbeVisualization},
+    lighting::{
+        DirectionalLight,
+        probe_lighting::{
+            Dimensions, ProbeGrid, ProbeGridConfig,
+            updater::ProbeUpdatePipeline,
+            visualization::{ProbeUIResult, ProbeVisualization},
+        },
     },
     mesh::Vertex,
     rendering::{
@@ -98,6 +103,7 @@ pub struct Rasterizer {
     probe_updater: ProbeUpdatePipeline,
     probe_visualization: ProbeVisualization,
     probe_updater_light_bgl: BindGroupLayout,
+    shadow_render_texture: shadow::ShadowRenderTexture,
 }
 
 impl ecs::Resource for Rasterizer {}
@@ -116,6 +122,8 @@ impl Rasterizer {
             .label("Rasterizer Other Bind Group Layout")
             .uniform(0, wgpu::ShaderStages::VERTEX)
             .uniform(1, wgpu::ShaderStages::FRAGMENT)
+            .comparison_sampler(2, wgpu::ShaderStages::FRAGMENT)
+            .texture_depth(3, wgpu::ShaderStages::FRAGMENT)
             .build();
         let material_bgl = wgpu
             .device
@@ -179,6 +187,7 @@ impl Rasterizer {
 
         let camera_buffers = CameraBuffers::new(&wgpu.device, "Rasterizer");
         let lighting_buffers = LightingBuffers::new(&wgpu.device, "Rasterizer");
+        let shadow_render_texture = shadow::ShadowRenderTexture::new(&wgpu.device);
 
         let other_bind_group = wgpu
             .device
@@ -186,6 +195,8 @@ impl Rasterizer {
             .label("Rasterizer Other Bind Group")
             .buffer(0, &camera_buffers.view_projection)
             .buffer(1, &lighting_buffers.sun_direction)
+            .sampler(2, shadow_render_texture.get_sampler())
+            .texture(3, shadow_render_texture.get_shadow_map_view())
             .build();
 
         let probe_visualization =
@@ -222,6 +233,7 @@ impl Rasterizer {
             probe_visualization,
             probe_updater,
             probe_updater_light_bgl,
+            shadow_render_texture,
         }
     }
 
@@ -259,9 +271,14 @@ impl Rasterizer {
             .update_from_world(queue, world, camera_entity);
     }
 
-    pub fn update_light(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
+    pub fn update_light(&mut self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
         self.lighting_buffers
             .update_from_world(queue, world, sun_light_entity);
+
+        if let Some(light) = world.get_component::<DirectionalLight>(sun_light_entity) {
+            self.shadow_render_texture
+                .update_light(queue, world, &light);
+        }
     }
 
     pub fn get_depth_texture_view(&self) -> &wgpu::TextureView {
@@ -274,6 +291,10 @@ impl Rasterizer {
         surface_texture_view: &wgpu::TextureView,
         default_material_entity: Entity,
     ) {
+        // TODO: Only render if the directional light has changed
+        self.shadow_render_texture
+            .render(render_encoder, &self.gpu_meshes);
+
         let mut rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")
             .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
