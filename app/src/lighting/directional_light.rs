@@ -68,7 +68,7 @@ impl DirectionalLight {
     /// Gets the light's orthographic projection matrix
     pub fn get_light_projection_matrix(&self, scene_radius: f32) -> maths::Mat4 {
         let size = 2.0 * scene_radius;
-        let near = 0.1;
+        let near = 0.001;
         let far = scene_radius * 2.0;
         let depth = far - near;
 
