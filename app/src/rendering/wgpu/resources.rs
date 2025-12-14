@@ -34,10 +34,13 @@ impl WgpuResources {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Device"),
+                // TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES is native only
                 required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | wgpu::Features::FLOAT32_FILTERABLE,
-                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                required_limits: wgpu::Limits {
+                    max_storage_buffers_per_shader_stage: 10,
+                    ..wgpu::Limits::default().using_resolution(adapter.limits())
+                },
                 memory_hints: wgpu::MemoryHints::Performance,
                 trace: wgpu::Trace::default(),
             })

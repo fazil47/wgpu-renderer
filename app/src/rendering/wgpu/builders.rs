@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::{borrow::Cow, collections::HashSet};
-use wesl::{FileResolver, Router, VirtualResolver, Wesl};
+use wesl::{Router, VirtualResolver, Wesl};
 use wgpu::{Texture, util::DeviceExt};
 
 // Re-export commonly used types
@@ -327,10 +327,25 @@ impl<'a> ShaderBuilder<'a> {
     // Compile a WESL shader at runtime
     pub fn wesl_runtime(self, module_name: &str) -> ShaderModule {
         let mut router = Router::new();
-        router.mount_resolver(
-            "package".parse().unwrap(),
-            FileResolver::new("app/src/shaders"),
-        );
+
+        // For WASM, use VirtualResolver with embedded shaders since std::fs doesn't work
+        // For native, use FileResolver to read from filesystem
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut virtual_resolver = VirtualResolver::new();
+            for (module_path, source) in super::shader_sources::get_all_shader_sources() {
+                virtual_resolver.add_module(module_path.parse().unwrap(), source.into());
+            }
+            router.mount_resolver("package".parse().unwrap(), virtual_resolver);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            router.mount_resolver(
+                "package".parse().unwrap(),
+                wesl::FileResolver::new("app/src/shaders"),
+            );
+        }
 
         if !self.u32_defines.is_empty() {
             let mut resolver = VirtualResolver::new();
@@ -352,7 +367,14 @@ impl<'a> ShaderBuilder<'a> {
         let source = match compiler.compile(&module_name.parse().unwrap()) {
             Ok(s) => s.to_string(),
             Err(e) => {
-                eprintln!("Failed to compile WESL module '{module_name}': {e}");
+                eprintln!("Failed to compile WESL module '{module_name}':");
+                eprintln!("{e}");
+                #[cfg(target_arch = "wasm32")]
+                {
+                    web_sys::console::error_1(
+                        &format!("WESL compilation error for '{module_name}': {e}").into(),
+                    );
+                }
                 panic!("WESL compilation failed");
             }
         };

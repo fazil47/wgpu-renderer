@@ -25,7 +25,50 @@
 
 <body id="engine-root">
   <script type="module">
-    import(`./app.js`).then((module) => module.default());
+    // Check WebGPU support and adapter limits before loading the app
+    async function checkWebGPUSupport() {
+      if (!navigator.gpu) {
+        alert('WebGPU is not supported in your browser. Please use a browser that supports WebGPU (Chrome 113+, Edge 113+, or Safari 18+).');
+        return false;
+      }
+
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          alert('Failed to get WebGPU adapter. Your GPU may not support WebGPU.');
+          return false;
+        }
+
+        // Check storage buffer limits
+        const limits = adapter.limits;
+        if (limits.maxStorageBuffersPerShaderStage < 10) {
+          alert(`Your GPU supports only ${limits.maxStorageBuffersPerShaderStage} storage buffers per shader stage.\n\nThis application requires at least 10 storage buffers for compute shaders.\n\nPlease try a different device or GPU.`);
+          return false;
+        }
+
+        // Check required features
+        const features = adapter.features;
+        const requiredFeatures = ['float32-filterable'];
+        const missingFeatures = requiredFeatures.filter(feature => !features.has(feature));
+        
+        if (missingFeatures.length > 0) {
+          alert(`Your GPU is missing required WebGPU features:\n\n${missingFeatures.join('\n')}\n\nThis application requires these features to render correctly.\n\nPlease try a different device or GPU.`);
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        alert(`WebGPU initialization error: ${error.message}`);
+        return false;
+      }
+    }
+
+    // Check compatibility before loading the app
+    checkWebGPUSupport().then((supported) => {
+      if (supported) {
+        import(`./app.js`).then((module) => module.default());
+      }
+    });
   </script>
 </body>
 
