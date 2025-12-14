@@ -18,8 +18,8 @@ pub fn camera_controller_system(world: &mut World) {
         // Move the camera based on input
         let (forward, right, up) = {
             let forward = camera.forward.normalized();
-            let right = forward.cross(Vec3::Y).normalized();
-            let up = Vec3::Y; // Always use world up for movement
+            let up = camera.up.normalized();
+            let right = forward.cross(up).normalized();
             (forward, right, up)
         };
 
