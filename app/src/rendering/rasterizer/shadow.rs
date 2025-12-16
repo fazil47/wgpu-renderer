@@ -4,7 +4,7 @@ use crate::{
     lighting::DirectionalLight,
     rendering::{
         GpuVertex,
-        rasterizer::GpuMesh,
+        rasterizer::{GpuMesh, InstanceTransform},
         wgpu::{QueueExt, WgpuExt, render_pass},
     },
 };
@@ -65,6 +65,7 @@ impl ShadowRenderTexture {
             .layout(&pipeline_layout)
             .vertex_shader(&shader, "vs_main")
             .vertex_buffer(GpuVertex::desc())
+            .vertex_buffer(InstanceTransform::desc())
             .depth_test(
                 wgpu::TextureFormat::Depth32Float,
                 wgpu::CompareFunction::Less,
@@ -100,6 +101,7 @@ impl ShadowRenderTexture {
 
         for gpu_mesh in gpu_meshes {
             rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(1, gpu_mesh.instance_buffer.slice(..));
 
             if let Some((buffer, count)) = gpu_mesh.index_buffer.as_ref() {
                 rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
