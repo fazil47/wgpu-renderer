@@ -75,9 +75,15 @@ impl ShadowRenderTexture {
             .vertex_shader(&shader, "vs_main")
             .vertex_buffer(GpuVertex::desc())
             .vertex_buffer(InstanceTransform::desc())
-            .depth_test(
+            .cull_mode(Some(wgpu::Face::Back))
+            .depth_test_with_bias(
                 wgpu::TextureFormat::Depth32Float,
                 wgpu::CompareFunction::Less,
+                wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 3.0,
+                    clamp: 0.0,
+                },
             )
             .build()
             .unwrap();

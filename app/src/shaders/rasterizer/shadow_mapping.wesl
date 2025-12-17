@@ -1,7 +1,7 @@
 @group(0) @binding(0) var<uniform> light_matrix: mat4x4<f32>;
 @group(0) @binding(1) var<uniform> light_direction: vec4f;
 
-const NORMAL_BIAS: f32 = -0.05;
+const NORMAL_BIAS: f32 = -0.00; // Even the tiniest amount is giving me light leaks
 
 struct VertexInput {
     @location(0) position: vec4f,

@@ -839,6 +839,22 @@ impl<'a> RenderPipelineBuilder<'a> {
         self.depth_test(format, CompareFunction::Less)
     }
 
+    pub fn depth_test_with_bias(
+        mut self,
+        format: TextureFormat,
+        compare: CompareFunction,
+        bias: wgpu::DepthBiasState,
+    ) -> Self {
+        self.depth_stencil = Some(wgpu::DepthStencilState {
+            format,
+            depth_write_enabled: true,
+            depth_compare: compare,
+            stencil: wgpu::StencilState::default(),
+            bias,
+        });
+        self
+    }
+
     pub fn cull_mode(mut self, cull_mode: Option<Face>) -> Self {
         self.primitive.cull_mode = cull_mode;
         self
