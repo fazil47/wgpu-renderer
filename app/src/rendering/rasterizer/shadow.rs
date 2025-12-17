@@ -15,6 +15,7 @@ pub struct ShadowRenderTexture {
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     light_buffer: wgpu::Buffer,
+    light_direction_buffer: wgpu::Buffer,
 }
 
 impl ShadowRenderTexture {
@@ -44,14 +45,22 @@ impl ShadowRenderTexture {
             .label("Shadow Light Buffer")
             .uniform(&dummy_light_data);
 
+        let dummy_light_direction = [0.0; 4];
+        let light_direction_buffer = device
+            .buffer()
+            .label("Shadow Light Direction Buffer")
+            .uniform(&dummy_light_direction);
+
         let bind_group_layout = device
             .bind_group_layout()
             .label("Shadow Render Bind Group Layout")
             .uniform(0, wgpu::ShaderStages::VERTEX)
+            .uniform(1, wgpu::ShaderStages::VERTEX)
             .build();
         let bind_group = device
             .bind_group(&bind_group_layout)
             .buffer(0, &light_buffer)
+            .buffer(1, &light_direction_buffer)
             .build();
 
         let pipeline_layout = device
@@ -79,6 +88,7 @@ impl ShadowRenderTexture {
             pipeline,
             bind_group,
             light_buffer,
+            light_direction_buffer,
         }
     }
 
@@ -88,6 +98,10 @@ impl ShadowRenderTexture {
             0,
             &light.get_light_matrix(world).to_cols_array_2d(),
         );
+
+        let dir = light.direction.to_array();
+        let dir4 = [dir[0], dir[1], dir[2], 0.0];
+        queue.write_buffer_data(&self.light_direction_buffer, 0, &dir4);
     }
 
     pub fn render(&self, render_encoder: &mut wgpu::CommandEncoder, gpu_meshes: &Vec<GpuMesh>) {

@@ -96,12 +96,8 @@ impl LightingBuffers {
             world.get_component::<crate::lighting::DirectionalLight>(sun_light_entity)
         {
             let dir = light.direction.to_array();
-            let direction_vec4 = [dir[0], dir[1], dir[2], 0.0]; // Convert Vec3 to Vec4
-            queue.write_buffer(
-                &self.sun_direction,
-                0,
-                bytemuck::cast_slice(&[direction_vec4]),
-            );
+            let dir4 = [dir[0], dir[1], dir[2], 0.0]; // Convert Vec3 to Vec4
+            queue.write_buffer(&self.sun_direction, 0, bytemuck::cast_slice(&[dir4]));
         }
     }
 }
