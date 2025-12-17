@@ -61,12 +61,14 @@ struct InstanceData {
 
 struct Material {
     color: vec4f,
+    emissive: vec4f,
 }
 
 struct Vertex {
     position: vec4f,
     normal: vec4f,
     color: vec4f,
+    emissive: vec4f,
 }
 
 struct Triangle {
@@ -210,6 +212,8 @@ fn get_vertex(index: u32, mesh: BlasInfo) -> Vertex {
     let material_index: u32 = u32(vertices[base + VERTEX_MATERIAL_OFFSET]);
     let material = get_material(material_index);
     vertex.color = material.color;
+    vertex.emissive = material.emissive;
+
     return vertex;
 }
 
@@ -220,6 +224,12 @@ fn get_material(index: u32) -> Material {
         materials[index * MATERIAL_STRIDE + 1u],
         materials[index * MATERIAL_STRIDE + 2u],
         materials[index * MATERIAL_STRIDE + 3u],
+    );
+    material.emissive = vec4f(
+        materials[index * MATERIAL_STRIDE + 4u],
+        materials[index * MATERIAL_STRIDE + 5u],
+        materials[index * MATERIAL_STRIDE + 6u],
+        materials[index * MATERIAL_STRIDE + 7u],
     );
     return material;
 }
@@ -299,7 +309,7 @@ fn trace_blas(ray: Ray, mesh: BlasInfo, t_max: f32) -> HitInfo {
     nearest_hit_info.did_hit = false;
     nearest_hit_info.t = t_max;
 
-    while (stack_size > 0u) {
+    while stack_size > 0u {
         let node_index = pop_stack(&stack, &stack_size);
         let node = blas_nodes[node_index];
 
@@ -341,7 +351,7 @@ fn trace_tlas(ray_world: Ray) -> HitInfo {
 
     var nearest_hit_info = HitInfo(false, FLT_MAX, 0u, vec3f(0.0), vec3f(0.0), 0.0, 0.0, 0.0, 0u);
 
-    while (stack_size > 0u) {
+    while stack_size > 0u {
         let node_index = pop_stack(&stack, &stack_size);
         let node = tlas_nodes[node_index];
 
@@ -423,8 +433,17 @@ fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u
         let hit_info: HitInfo = trace_tlas(ray);
         if hit_info.did_hit {
             let mesh = blas_info[instances[hit_info.instance_index].blas_index];
+            let triangle = get_triangle_data(mesh, hit_info.i);
+
+            let emissive = triangle.a.emissive;
+            let is_emissive = emissive.r > 0.0 || emissive.g > 0.0 || emissive.b > 0.0;
+            if is_emissive {
+                // Emissive triangles are light sources, add their contribution and terminate
+                ray_color += vec4f(emissive.rgb, 1.0) * ray_throughput;
+                break;
+            }
+
             let tri_color = get_interpolated_color_from_hit(hit_info, mesh);
-            ray_color += tri_color * ray_throughput;
             ray_throughput *= tri_color;
 
             ray = create_ray(
@@ -436,10 +455,10 @@ fn sample_radiance_with_lighting(origin: vec3f, direction: vec3f, max_bounces: u
                 // If ray misses all triangles, return the sky color
                 ray_color = get_sky_color(ray);
             } else {
+                // If the bounced ray hits the sky, add the N dot L contribution
                 let ray_sun_intensity = max(0.0, dot(-sun_direction, ray.direction)) * SUN_INTENSITY;
-                ray_color *= ray_sun_intensity * ray_throughput;
+                ray_color += vec4f(vec3f(ray_sun_intensity), 1.0) * ray_throughput;
             }
-
             break;
         }
     }

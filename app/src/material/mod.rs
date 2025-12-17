@@ -26,13 +26,15 @@ impl RGBA {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Material {
     pub color: RGBA,
+    pub emissive: RGBA,
     pub double_sided: bool,
 }
 
 impl Material {
-    pub fn new(color: RGBA, double_sided: bool) -> Self {
+    pub fn new(color: RGBA, emissive: RGBA, double_sided: bool) -> Self {
         Self {
             color,
+            emissive,
             double_sided,
         }
     }

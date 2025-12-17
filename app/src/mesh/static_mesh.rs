@@ -27,7 +27,7 @@ pub trait StaticMeshExt {
 
 impl StaticMeshExt for Mesh {
     fn triangle(world: &mut World) -> Entity {
-        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), RGBA::default(), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
         insert_name(world, material_entity, "Octahedron Material");
@@ -63,7 +63,7 @@ impl StaticMeshExt for Mesh {
     }
 
     fn pentagon(world: &mut World) -> Entity {
-        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), RGBA::default(), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
 
@@ -103,7 +103,7 @@ impl StaticMeshExt for Mesh {
     }
 
     fn cube(world: &mut World) -> Entity {
-        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), RGBA::default(), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
 
@@ -165,7 +165,7 @@ impl StaticMeshExt for Mesh {
     }
 
     fn octahedron(world: &mut World) -> Entity {
-        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
+        let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), RGBA::default(), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
 
@@ -219,7 +219,7 @@ impl StaticMeshExt for Mesh {
     }
 
     fn cornell_box(world: &mut World) -> Vec<Entity> {
-        let left_material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), false);
+        let left_material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), RGBA::default(), false);
         let left_material_entity = world.create_entity();
         world.add_component(left_material_entity, left_material.clone());
         insert_name(world, left_material_entity, "Cornell Box Left Material");
@@ -247,7 +247,7 @@ impl StaticMeshExt for Mesh {
             Some(left_material_entity),
         );
 
-        let right_material = Material::new(RGBA::new([0.0, 1.0, 0.0, 1.0]), false);
+        let right_material = Material::new(RGBA::new([0.0, 1.0, 0.0, 1.0]), RGBA::default(), false);
         let right_material_entity = world.create_entity();
         world.add_component(right_material_entity, right_material.clone());
         insert_name(world, right_material_entity, "Cornell Box Right Material");
@@ -275,7 +275,7 @@ impl StaticMeshExt for Mesh {
             Some(right_material_entity),
         );
 
-        let other_material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]), false);
+        let other_material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]), RGBA::default(), false);
         let other_material_entity = world.create_entity();
         world.add_component(other_material_entity, other_material.clone());
         insert_name(world, other_material_entity, "Cornell Box Neutral Material");
@@ -370,7 +370,7 @@ impl StaticMeshExt for Mesh {
     }
 
     fn sphere(world: &mut World) -> Entity {
-        let material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]), false);
+        let material = Material::new(RGBA::new([1.0, 1.0, 1.0, 1.0]), RGBA::default(), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
         insert_name(world, material_entity, "Sphere Material");

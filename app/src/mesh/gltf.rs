@@ -92,10 +92,19 @@ fn process_gltf_data(
         };
 
         let rgba = RGBA::new([base_color[0], base_color[1], base_color[2], alpha]);
+
+        let emissive_factor = material.emissive_factor();
+        let emissive = RGBA::new([
+            emissive_factor[0],
+            emissive_factor[1],
+            emissive_factor[2],
+            1.0,
+        ]);
+
         let material_entity = world.create_entity();
         world.add_component(
             material_entity,
-            Material::new(rgba, material.double_sided()),
+            Material::new(rgba, emissive, material.double_sided()),
         );
 
         if let Some(name) = derive_material_name(&material) {

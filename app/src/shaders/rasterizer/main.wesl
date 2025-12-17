@@ -55,6 +55,8 @@ var probe_atlas_l1z: texture_3d<f32>;
 
 @group(2) @binding(0)
 var<uniform> material_color: vec4f;
+@group(2) @binding(1)
+var<uniform> material_emissive: vec4f;
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
@@ -100,7 +102,9 @@ fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
     let traditional_lighting = vec3f(max(direct_light, 0.01));
 
     if (is_probe_lighting_disabled(probe_grid_config)) {
-        return vec4f(traditional_lighting * material_color.rgb, material_color.a);
+        let lit_color = traditional_lighting * material_color.rgb;
+        let final_color = lit_color + material_emissive.rgb;
+        return vec4f(final_color, material_color.a);
     }
 
     // Probe-based global illumination
@@ -120,5 +124,7 @@ fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
     }
 
     let combined_lighting = mix(traditional_lighting, probe_lighting, probe_grid_config.probe_lighting_mix);
-    return vec4f(combined_lighting * material_color.rgb, material_color.a);
+    let lit_color = combined_lighting * material_color.rgb;
+    let final_color = lit_color + material_emissive.rgb;
+    return vec4f(final_color, material_color.a);
 }

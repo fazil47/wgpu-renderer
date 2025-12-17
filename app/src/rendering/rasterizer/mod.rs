@@ -135,6 +135,7 @@ impl Rasterizer {
             .bind_group_layout()
             .label("Rasterizer Material Bind Group Layout")
             .uniform(0, wgpu::ShaderStages::FRAGMENT)
+            .uniform(1, wgpu::ShaderStages::FRAGMENT)
             .build();
 
         let probe_grid_config = ProbeGridConfig::default();
@@ -471,16 +472,23 @@ impl Extract for Rasterizer {
         for entity in materials {
             let material = world.extract_material_component(entity)?;
             let color_array = material.color.to_array();
+            let emissive_array = material.emissive.to_array();
 
-            let material_buffer = device
+            let color_buffer = device
                 .buffer()
-                .label("Material Buffer")
+                .label("Material Color Buffer")
                 .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
                 .uniform(&color_array);
+            let emissive_buffer = device
+                .buffer()
+                .label("Material Emissive Buffer")
+                .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
+                .uniform(&emissive_array);
             let material_bind_group = device
                 .bind_group(&self.material_bgl)
                 .label("Material Bind Group")
-                .buffer(0, &material_buffer)
+                .buffer(0, &color_buffer)
+                .buffer(1, &emissive_buffer)
                 .build();
 
             material_bind_groups

@@ -43,18 +43,14 @@ impl RaytracerVertex {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RaytracerMaterial {
     pub color: [f32; 4],
+    pub emissive: [f32; 4],
 }
 
 impl RaytracerMaterial {
     pub fn from_material(material: &Material) -> Self {
         Self {
             color: material.color.to_array(),
-        }
-    }
-
-    pub fn from_mesh_material(material: &Material) -> Self {
-        Self {
-            color: material.color.to_array(),
+            emissive: material.emissive.to_array(),
         }
     }
 }
@@ -517,6 +513,7 @@ impl RaytracerBuffers {
     fn new(device: &wgpu::Device, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
         let initial_materials = vec![RaytracerMaterial {
             color: [1.0, 1.0, 1.0, 1.0],
+            emissive: [0.0, 0.0, 0.0, 0.0],
         }];
 
         let materials_buffer = device
