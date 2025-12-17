@@ -119,8 +119,7 @@ fn get_triangle_intersection_mt(triangle: Triangle, ray: Ray) -> HitInfo {
 
     // Hits backface
     if det < 0.0 {
-        hit_info.did_hit = false;
-        return hit_info;
+        hit_info.normal = -hit_info.normal;
     }
 
     let tvec: vec3f = ray.origin - triangle.c.position.xyz;
