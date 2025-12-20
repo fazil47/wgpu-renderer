@@ -130,11 +130,11 @@ impl Engine {
 
         let mut input_schedule = ecs::Schedule::new();
         input_schedule.add_system(crate::input::systems::camera_controller_system);
+        input_schedule.add_system(crate::ui::systems::ui_system);
 
         let mut update_schedule = ecs::Schedule::new();
         update_schedule.add_system(crate::transform::systems::calculate_global_position_system);
         update_schedule.add_system(crate::rendering::systems::update_system);
-        update_schedule.add_system(crate::ui::systems::ui_system);
 
         let mut render_schedule = ecs::Schedule::new();
         render_schedule.add_system(crate::lighting::probe_lighting::systems::probe_baking_system);
