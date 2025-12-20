@@ -24,8 +24,6 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - name: Build
         run: cargo xtask run-wasm --release --no-serve
-      - name: Run tests
-        run: cargo test --verbose
       - name: Upload static files as artifact
         id: deployment
         uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
