@@ -1,3 +1,4 @@
+import runtime::constants::SHADOW_MAP_SIZE;
 import package::probe_lighting::util::{
     ProbeGridConfig,
     sample_probe_lighting,
@@ -89,14 +90,24 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     return out;
 }
 
+// TODO: implement bilinear PCF where multiple texels are sampled with a single tap by sampling at half texel offsets
+fn sample_shadow_pcf(uv: vec2f, depth: f32) -> f32 {
+    let texel_size = 1.0 / f32(SHADOW_MAP_SIZE);
+    var shadow = 0.0;
+    
+    // 5-tap cross pattern
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv, depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(texel_size, 0.0), depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(-texel_size, 0.0), depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, texel_size), depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, -texel_size), depth);
+    
+    return shadow / 5.0;
+}
+
 @fragment
 fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
-    let shadow = textureSampleCompare(
-        shadow_map,
-        shadow_map_sampler,
-        vert_output.light_space_pos.xy,
-        vert_output.light_space_pos.z
-    );
+    let shadow = sample_shadow_pcf(vert_output.light_space_pos.xy, vert_output.light_space_pos.z);
 
     let direct_light: f32 = max(0.0, dot(vert_output.normal, -sun_direction)) * shadow;
     let traditional_lighting = vec3f(max(direct_light, 0.01));

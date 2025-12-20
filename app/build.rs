@@ -8,10 +8,6 @@ fn main() {
     let mut resolver = wesl::Wesl::new("src/shaders");
     resolver.set_feature("wasm", is_wasm);
     resolver.build_artifact(
-        &ModulePath::from_str("package::rasterizer::main").unwrap(),
-        "rasterizer-main",
-    );
-    resolver.build_artifact(
         &ModulePath::from_str("package::probe_lighting::visualization").unwrap(),
         "probe-visualization",
     );

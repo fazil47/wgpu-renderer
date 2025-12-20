@@ -2,7 +2,6 @@ mod blit_to_screen;
 mod shadow;
 
 use std::{collections::HashMap, mem::size_of};
-use wesl::include_wesl;
 use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, RenderPipeline};
 
 use crate::{
@@ -118,7 +117,8 @@ impl Rasterizer {
             .device
             .shader()
             .label("Rasterizer Main Shader")
-            .wesl_buildtime(include_wesl!("rasterizer-main").into());
+            .define_u32("SHADOW_MAP_SIZE", shadow::SHADOW_MAP_SIZE)
+            .wesl_runtime("package::rasterizer::main");
 
         let other_bind_group_layout = wgpu
             .device

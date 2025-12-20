@@ -9,6 +9,8 @@ use crate::{
     },
 };
 
+pub const SHADOW_MAP_SIZE: u32 = 2048;
+
 pub struct ShadowRenderTexture {
     view: wgpu::TextureView,
     sampler: wgpu::Sampler,
@@ -23,7 +25,7 @@ impl ShadowRenderTexture {
         let texture = device
             .texture()
             .label("Shadow Render Texture Ping")
-            .size_2d(2048, 2048)
+            .size_2d(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE)
             .format(wgpu::TextureFormat::Depth32Float)
             .usage(wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING)
             .build();
