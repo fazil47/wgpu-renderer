@@ -642,7 +642,7 @@ impl Quat {
         Self::new(arr[0], arr[1], arr[2], arr[3])
     }
 
-    pub fn normalize(&self) -> Self {
+    pub fn normalized(&self) -> Self {
         let length = (self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt();
         if length == 0.0 {
             return Self::IDENTITY;
@@ -659,7 +659,7 @@ impl Quat {
     pub fn from_rotation_y(angle: f32) -> Self {
         let half_angle = angle * 0.5;
 
-        Self::new(0.0, half_angle.sin(), 0.0, half_angle.cos()).normalize()
+        Self::new(0.0, half_angle.sin(), 0.0, half_angle.cos()).normalized()
     }
 
     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Self {
@@ -673,7 +673,7 @@ impl Quat {
             axis.z * sin_half_angle,
             cos_half_angle,
         )
-        .normalize()
+        .normalized()
     }
 
     pub const fn inverse(self) -> Self {
@@ -708,7 +708,7 @@ impl Quat {
             Self::new((m13 + m31) / s, (m23 + m32) / s, 0.25 * s, (m21 - m12) / s)
         };
 
-        quat.normalize()
+        quat.normalized()
     }
 
     pub fn from_rotation_arc(from: Vec3, to: Vec3) -> Self {
@@ -732,40 +732,40 @@ impl Quat {
         let axis = from.cross(to);
         let w = (from.length() * to.length()).sqrt() + dot;
 
-        Self::new(axis.x, axis.y, axis.z, w).normalize()
+        Self::new(axis.x, axis.y, axis.z, w).normalized()
     }
 
-    pub fn rotate_vec3(&self, vec: Vec3) -> Vec3 {
-        // Efficient formula: v' = v + 2 * q.xyz × (q.xyz × v + q.w * v)
-        let qv = Vec3::new(self.x, self.y, self.z);
-        let uv = qv.cross(vec);
-        let uuv = qv.cross(uv);
+    pub fn get_axis(self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
+    }
 
-        vec + ((uv * self.w) + uuv) * 2.0
+    pub fn get_angle(self) -> f32 {
+        self.w.clamp(-1.0, 1.0).acos() * 2.0 // The half angle is stored internally, so double it and return
     }
 }
 
 impl Mul<Vec3> for Quat {
     type Output = Vec3;
 
+    // Rotate a vector by a quaternion using the formula q * v * q_inv
     fn mul(self, rhs: Vec3) -> Self::Output {
-        // The result is q * v * q_inv
-        let q_inv = self.inverse();
-
         let v = Quat::new(rhs.x, rhs.y, rhs.z, 0.0);
+        let q_inv = self.inverse();
+        let result = self * v * q_inv;
 
-        let qv = Quat::new(
-            self.w * v.x + self.x * v.w + self.y * v.z - self.z * v.y,
-            self.w * v.y + self.y * v.w + self.z * v.x - self.x * v.z,
-            self.w * v.z + self.z * v.w + self.x * v.y - self.y * v.x,
-            self.w * v.w - self.x * v.x - self.y * v.y - self.z * v.z,
-        );
+        result.get_axis()
+    }
+}
 
-        // This is q * v * q_inv, but without the w component since we don't need it and it's zero
-        Vec3::new(
-            qv.w * q_inv.x + qv.x * q_inv.w + qv.y * q_inv.z - qv.z * q_inv.y,
-            qv.w * q_inv.y + qv.y * q_inv.w + qv.z * q_inv.x - qv.x * q_inv.z,
-            qv.w * q_inv.z + qv.z * q_inv.w + qv.x * q_inv.y - qv.y * q_inv.x,
+impl Mul<Quat> for Quat {
+    type Output = Quat;
+
+    fn mul(self, rhs: Quat) -> Self::Output {
+        Quat::new(
+            self.w * rhs.x + self.x * rhs.w + self.y * rhs.z - self.z * rhs.y, // x
+            self.w * rhs.y + self.y * rhs.w + self.z * rhs.x - self.x * rhs.z, // y
+            self.w * rhs.z + self.z * rhs.w + self.x * rhs.y - self.y * rhs.x, // z
+            self.w * rhs.w - self.x * rhs.x - self.y * rhs.y - self.z * rhs.z, // w
         )
     }
 }

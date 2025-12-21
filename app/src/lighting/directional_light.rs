@@ -47,9 +47,9 @@ impl DirectionalLight {
         let quat = Quat::from_rotation_arc(from, to);
 
         // Build basis vectors
-        let forward = quat.rotate_vec3(Vec3::FORWARD);
-        let right = quat.rotate_vec3(Vec3::RIGHT);
-        let up = quat.rotate_vec3(Vec3::UP);
+        let forward = quat * Vec3::FORWARD;
+        let right = quat * Vec3::RIGHT;
+        let up = quat * Vec3::UP;
 
         // Construct view matrix, which is the inverse of the transformation matrix
         // since view matrix undoes the camera transformation. Inverse is the transpose
