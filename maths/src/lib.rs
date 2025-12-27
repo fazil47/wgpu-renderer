@@ -712,12 +712,14 @@ impl Quat {
     }
 
     pub fn from_rotation_arc(from: Vec3, to: Vec3) -> Self {
+        // Final quaternion required: q = (axis * sin(angle / 2), cos(angle / 2))
         let from = from.normalized();
         let to = to.normalized();
 
         let dot = from.dot(to);
 
         // Handle 180° rotation case
+        // The axis is from.cross(to).normalized(), but when from and to are parallel then the result is zero.
         if dot < -0.999999 {
             // Find perpendicular axis
             let axis = if from.x.abs() < 0.9 {
@@ -729,10 +731,31 @@ impl Quat {
             return Self::from_axis_angle(axis, std::f32::consts::PI);
         }
 
-        let axis = from.cross(to);
-        let w = (from.length() * to.length()).sqrt() + dot;
+        // To get (axis * sin(angle / 2), cos(angle / 2))
+        // axis = from.cross(to).normalized()
+        // half_angle = dot.acos() / 2.0
+        // Then q = (axis * sin(half_angle), cos(half_angle))
+        // But we can skip the trigonometric functions and
+        // calculate q as (axis * sin(angle), cos(angle)) and then normalize
+        // which is the same as (axis * sin(angle / 2), cos(angle / 2))
+        // q_temp = (axis * sin(angle), 1 + cos(angle))
+        // axis is a unit vector, so axis.x^2 + axis.y^2 + axis.z^2 = 1
+        // magnitude = sqrt(axis.x^2 * sin(angle)^2 + axis.y^2 * sin(angle)^2 + axis.z^2 * sin(angle)^2 + (1 + cos(angle))^2)
+        // sin(angle) = 2 * sin(angle / 2) * cos(angle / 2) [1]
+        // 1 + cos(angle) = 2 * cos(angle / 2)^2 [2]
+        // magnitude = sqrt((axis.x^2 + axis.y^2 + axis.z^2) * sin(angle)^2 + (1 + cos(angle))^2)
+        // magnitude = sqrt(sin(angle)^2 + (1 + cos(angle))^2) [axis is a unit vector]
+        // magnitude = sqrt(4 * sin(angle / 2)^2 * cos(angle / 2)^2 + 4 * cos(angle / 2)^4) [using 1 and 2]
+        // magnitude = sqrt(4 * cos(angle / 2)^2 * (sin(angle / 2)^2 + cos(angle / 2)^2))
+        // magnitude = sqrt(4 * cos(angle / 2)^2) [sin^2(theta) + cos^2(theta) = 1]
+        // magnitude = 2 * cos(angle / 2)
+        // q_temp.normalized() = (axis * sin(angle), 1 + cos(angle)) / (2 * cos(angle / 2))
+        // q_temp.normalized() = (axis * 2 * sin(angle / 2) * cos(angle / 2), 2 * cos^2(angle / 2)) / (2 * cos(angle / 2))
+        // q_temp.normalized() = (axis * sin(angle / 2), cos(angle / 2)) which is what we want
 
-        Self::new(axis.x, axis.y, axis.z, w).normalized()
+        let axis_sin = from.cross(to); // axis * sin(angle)
+        let w = 1.0 + dot;
+        Self::new(axis_sin.x, axis_sin.y, axis_sin.z, w).normalized()
     }
 
     pub fn get_axis(self) -> Vec3 {
