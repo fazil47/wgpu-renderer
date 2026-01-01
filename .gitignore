@@ -1,8 +1,9 @@
 /target
 .DS_Store
 
-# Claude
+# AI
 .claude/settings.local.json
+.gemini*
 
 # Scratchpad
 .scratchpad
