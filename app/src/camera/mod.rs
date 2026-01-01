@@ -1,6 +1,8 @@
 use ecs::Component;
 use maths::Vec3;
 
+// TODO: The transform is encoded in the Camera component. Should this be simplified by using a Transform component instead of the eye, forward and up fields?
+
 /// Camera component for view and projection calculations
 #[derive(Debug, Clone)]
 pub struct Camera {
