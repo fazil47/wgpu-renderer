@@ -1,6 +1,8 @@
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::ops::Div;
 
+use bytemuck::{Pod, Zeroable};
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct Vec3 {
@@ -151,7 +153,8 @@ impl From<(f32, f32, f32)> for Vec3 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+#[repr(C)]
 pub struct Vec4 {
     pub x: f32,
     pub y: f32,
@@ -161,6 +164,8 @@ pub struct Vec4 {
 
 impl Vec4 {
     pub const ZERO: Self = Self::new(0.0, 0.0, 0.0, 0.0);
+    pub const MIN: Self = Self::new(f32::MIN, f32::MIN, f32::MIN, f32::MIN);
+    pub const MAX: Self = Self::new(f32::MAX, f32::MAX, f32::MAX, f32::MAX);
 
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
@@ -182,12 +187,34 @@ impl Vec4 {
         [self.x, self.y, self.z, self.w]
     }
 
+    pub const fn min(&self, rhs: Self) -> Self {
+        Self::new(
+            self.x.min(rhs.x),
+            self.y.min(rhs.y),
+            self.z.min(rhs.z),
+            self.w.min(rhs.w),
+        )
+    }
+
+    pub const fn max(&self, rhs: Self) -> Self {
+        Self::new(
+            self.x.max(rhs.x),
+            self.y.max(rhs.y),
+            self.z.max(rhs.z),
+            self.w.max(rhs.w),
+        )
+    }
+
     pub const fn dot(&self, rhs: Self) -> f32 {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z + self.w * rhs.w
     }
 
     pub fn length(&self) -> f32 {
         (self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt()
+    }
+
+    pub fn xyz(&self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
     }
 
     pub fn normalize(&mut self) {
@@ -217,6 +244,32 @@ impl Vec4 {
     }
 }
 
+impl Add<Vec4> for Vec4 {
+    type Output = Self;
+
+    fn add(self, rhs: Vec4) -> Self::Output {
+        Self::new(
+            self.x + rhs.x,
+            self.y + rhs.y,
+            self.z + rhs.z,
+            self.w + rhs.w,
+        )
+    }
+}
+
+impl Sub<Vec4> for Vec4 {
+    type Output = Self;
+
+    fn sub(self, rhs: Vec4) -> Self::Output {
+        Self::new(
+            self.x - rhs.x,
+            self.y - rhs.y,
+            self.z - rhs.z,
+            self.w - rhs.w,
+        )
+    }
+}
+
 impl Mul<f32> for Vec4 {
     type Output = Self;
 
@@ -233,7 +286,8 @@ impl Div<f32> for Vec4 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+#[repr(C)]
 pub struct Mat4 {
     pub x_axis: Vec4,
     pub y_axis: Vec4,

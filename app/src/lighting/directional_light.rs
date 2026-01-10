@@ -1,7 +1,10 @@
 use ecs::{Component, World};
-use maths::{Quat, Vec3};
+use maths::{Mat4, Quat, Vec3, Vec4};
 
-use crate::rendering::TlasBvh;
+use crate::{camera::Camera, rendering::TlasBvh};
+
+pub const CASCADED_SHADOW_FRUSTUM_SPLITS: [f32; 3] = [10.0, 50.0, 200.0]; // Frustum bounds are camera near plane, 10, 50, 200 and camera far plane
+pub const CASCADED_SHADOW_NUM_CASCADES: usize = CASCADED_SHADOW_FRUSTUM_SPLITS.len() + 1;
 
 /// Directional light component
 #[derive(Debug, Clone)]
@@ -34,6 +37,27 @@ impl DirectionalLight {
             azi_rad.cos() * alt_rad.cos(),
         )
         .normalized();
+    }
+
+    /// Gets the light's rotation matrix
+    pub fn get_rotation_matrix(&self) -> maths::Mat4 {
+        let from = Vec3::FORWARD;
+        let to = self.direction.normalized();
+        let quat = Quat::from_rotation_arc(from, to);
+
+        // Basis vectors
+        let forward = to;
+        let right = quat * Vec3::RIGHT;
+        let up = quat * Vec3::UP;
+
+        // The z-column is made using the inverse of forward since +z direction should be towards the camera (so the inverse of forward)
+        // with +x to the right and +y to the top according to the right hand rule
+        Mat4::from_cols(
+            Vec4::new(right.x, right.y, right.z, 0.0),
+            Vec4::new(up.x, up.y, up.z, 0.0),
+            Vec4::new(-forward.x, -forward.y, -forward.z, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        )
     }
 
     /// Gets the light's view matrix
@@ -95,6 +119,100 @@ impl DirectionalLight {
         let view = self.get_light_view_matrix(scene_center, scene_radius);
         let projection = self.get_light_projection_matrix(scene_radius);
         projection * view
+    }
+
+    pub fn get_cascaded_light_matrices(
+        &self,
+        world: &World,
+    ) -> [maths::Mat4; CASCADED_SHADOW_NUM_CASCADES] {
+        let mut matrices = [Mat4::IDENTITY; CASCADED_SHADOW_NUM_CASCADES];
+
+        let camera_entities = world.get_entities_with::<Camera>();
+        let camera_entity = camera_entities.first().unwrap();
+        let camera = world.get_component::<Camera>(*camera_entity).unwrap();
+
+        let rotation_matrix = self.get_rotation_matrix();
+
+        let cascades = [
+            (camera.near, CASCADED_SHADOW_FRUSTUM_SPLITS[0]),
+            (
+                CASCADED_SHADOW_FRUSTUM_SPLITS[0],
+                CASCADED_SHADOW_FRUSTUM_SPLITS[1],
+            ),
+            (
+                CASCADED_SHADOW_FRUSTUM_SPLITS[1],
+                CASCADED_SHADOW_FRUSTUM_SPLITS[2],
+            ),
+            (CASCADED_SHADOW_FRUSTUM_SPLITS[2], camera.far),
+        ];
+
+        for (i, (start, end)) in cascades.iter().enumerate() {
+            let corners: [Vec4; 8] =
+                Self::get_frustum_corners(&camera, *start, *end).map(|p| rotation_matrix * p);
+
+            let (min, max) = {
+                let (mut min, mut max) = (Vec4::MAX, Vec4::MIN);
+
+                for corner in corners {
+                    min = corner.min(min);
+                    max = corner.max(max);
+                }
+
+                (min, max)
+            };
+            let center = (max + min) / 2.0;
+            let half_extent = (max - min) / 2.0;
+            let radius = half_extent.z;
+
+            let translation_matrix = Mat4::from_cols(
+                Vec4::ZERO,
+                Vec4::ZERO,
+                Vec4::ZERO,
+                Vec4::new(center.x, center.y, center.z - radius, 1.0),
+            );
+            let local_to_world = translation_matrix * rotation_matrix;
+            let view_matrix = local_to_world.inverse(); // view matrix takes a point from world space to the camera's local space
+            let projection_matrix = Mat4::from_cols(
+                Vec4::new(1.0 / half_extent.x, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 1.0 / half_extent.y, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, -1.0 / (2.0 * half_extent.z), 0.0),
+                Vec4::new(0.0, 0.0, 0.0, 1.0),
+            );
+
+            matrices[i] = projection_matrix * view_matrix;
+        }
+
+        matrices
+    }
+
+    // Get the cascade frustum corners in world space
+    fn get_frustum_corners(camera: &Camera, cascade_start: f32, cascade_end: f32) -> [Vec3; 8] {
+        let fov = camera.fov.to_radians() / 2.0; // Use half the vertical angle
+        let fov_tan = fov.tan();
+        let aspect = camera.aspect;
+
+        let nhh = cascade_start * fov_tan; // Near half height
+        let nhw = aspect * nhh; // Near half width
+
+        let fhh = cascade_end * fov_tan; // Far half height
+        let fhw = aspect * fhh; // Far half width
+
+        let ntl = Vec3::new(-nhw, nhh, cascade_start); // near top left
+        let nbl = Vec3::new(-nhw, -nhh, cascade_start); // near bottom left
+        let nbr = Vec3::new(nhw, -nhh, cascade_start); // near bottom right
+        let ntr = Vec3::new(nhw, nhh, cascade_start); // near top right
+
+        let ftl = Vec3::new(-fhw, fhh, cascade_end); // far top left
+        let fbl = Vec3::new(-fhw, -fhh, cascade_end); // far bottom left
+        let fbr = Vec3::new(fhw, -fhh, cascade_end); // far bottom right
+        let ftr = Vec3::new(fhw, fhh, cascade_end); // far top right
+
+        let forward = camera.forward;
+        let up = camera.up;
+        let right = forward.cross(up).normalized();
+
+        [ntl, nbl, nbr, ntr, ftl, fbl, fbr, ftr]
+            .map(|corner| camera.eye + forward * corner.z + right * corner.x + up * corner.y)
     }
 }
 
