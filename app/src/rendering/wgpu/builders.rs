@@ -109,6 +109,16 @@ impl<'a> TextureBuilder<'a> {
         self
     }
 
+    pub fn size_2d_array(mut self, width: u32, height: u32, layers: u32) -> Self {
+        self.size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: layers,
+        };
+        self.dimension = wgpu::TextureDimension::D2;
+        self
+    }
+
     pub fn size_3d(mut self, size: wgpu::Extent3d) -> Self {
         self.size = size;
         self.dimension = wgpu::TextureDimension::D3;
@@ -427,6 +437,15 @@ impl<'a> BufferBuilder<'a> {
             })
     }
 
+    pub fn uniform_bytes(self, data: &[u8]) -> Buffer {
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: self.label,
+                contents: data,
+                usage: self.usage | wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            })
+    }
+
     pub fn storage<T: bytemuck::Pod>(self, data: &[T]) -> Buffer {
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -499,6 +518,20 @@ impl<'a> BindGroupLayoutBuilder<'a> {
         self
     }
 
+    pub fn uniform_dynamic(mut self, binding: u32, visibility: ShaderStages) -> Self {
+        self.entries.push(wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+        self
+    }
+
     pub fn storage(mut self, binding: u32, visibility: ShaderStages, read_only: bool) -> Self {
         self.entries.push(wgpu::BindGroupLayoutEntry {
             binding,
@@ -527,6 +560,20 @@ impl<'a> BindGroupLayoutBuilder<'a> {
         self
     }
 
+    pub fn texture_2d_array(mut self, binding: u32, visibility: ShaderStages) -> Self {
+        self.entries.push(wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                multisampled: false,
+            },
+            count: None,
+        });
+        self
+    }
+
     pub fn texture_3d(mut self, binding: u32, visibility: ShaderStages) -> Self {
         self.entries.push(wgpu::BindGroupLayoutEntry {
             binding,
@@ -548,6 +595,20 @@ impl<'a> BindGroupLayoutBuilder<'a> {
             ty: wgpu::BindingType::Texture {
                 sample_type: wgpu::TextureSampleType::Depth,
                 view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+        self
+    }
+
+    pub fn texture_depth_2d_array(mut self, binding: u32, visibility: ShaderStages) -> Self {
+        self.entries.push(wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Depth,
+                view_dimension: wgpu::TextureViewDimension::D2Array,
                 multisampled: false,
             },
             count: None,
@@ -1057,6 +1118,7 @@ impl<'a> ComputePassBuilder<'a> {
 /// Extension trait for Queue operations
 pub trait QueueExt {
     fn write_buffer_data<T: bytemuck::Pod>(&self, buffer: &Buffer, offset: u64, data: &T);
+    fn write_buffer_bytes(&self, buffer: &Buffer, offset: u64, data: &[u8]);
     fn write_buffer_slice<T: bytemuck::Pod>(&self, buffer: &Buffer, offset: u64, data: &[T]);
 }
 
@@ -1067,6 +1129,10 @@ impl QueueExt for Queue {
             offset,
             bytemuck::cast_slice(std::slice::from_ref(data)),
         );
+    }
+
+    fn write_buffer_bytes(&self, buffer: &Buffer, offset: u64, data: &[u8]) {
+        self.write_buffer(buffer, offset, data);
     }
 
     fn write_buffer_slice<T: bytemuck::Pod>(&self, buffer: &Buffer, offset: u64, data: &[T]) {

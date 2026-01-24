@@ -2,6 +2,7 @@ use crate::core::engine::{
     EngineConfiguration, RaytracerFrameState, SelectedEntity, WindowResource,
 };
 use crate::lighting::DirectionalLight;
+use crate::lighting::directional_light::CASCADED_SHADOW_NUM_CASCADES;
 use crate::rendering::rasterizer::Rasterizer;
 use crate::ui::UiState;
 use crate::ui::egui::RendererEgui;
@@ -10,7 +11,14 @@ use ecs::World;
 
 pub fn ui_system(world: &mut World) {
     // 1. Extract resources
-    let (mut raytracer_enabled, mut raytracer_show_bvh, delta_time, frame_count) = {
+    let (
+        mut raytracer_enabled,
+        mut raytracer_show_bvh,
+        mut debug_shadow_maps,
+        mut shadow_map_cascade_to_debug,
+        delta_time,
+        frame_count,
+    ) = {
         let config = world.get_resource::<EngineConfiguration>().unwrap();
         let stat_delta_time = if let Some(time) = world.get_resource::<crate::time::Time>() {
             time.delta_time
@@ -25,6 +33,8 @@ pub fn ui_system(world: &mut World) {
         (
             config.is_raytracer_enabled,
             config.show_bvh,
+            config.debug_shadow_maps,
+            config.shadow_map_cascade_to_debug,
             stat_delta_time,
             frame_count,
         )
@@ -125,15 +135,31 @@ pub fn ui_system(world: &mut World) {
                                 ui.checkbox(&mut raytracer_enabled, "Enabled");
                                 ui.checkbox(&mut raytracer_show_bvh, "Show BVH");
                             });
+
+                            ui.collapsing("Shadow map", |ui| {
+                                ui.checkbox(&mut debug_shadow_maps, "View shadow map");
+
+                                let cascade_range = 0..=(CASCADED_SHADOW_NUM_CASCADES - 1);
+                                ui.add(
+                                    egui::Slider::new(
+                                        &mut shadow_map_cascade_to_debug,
+                                        cascade_range,
+                                    )
+                                    .text("Cascade"),
+                                );
+                            });
                         });
                 });
         })
     };
 
     // 3. Update state based on UI interactions
+    // FIXME: Explicitly setting the values like this shouldn't be necessary since egui takes mutable references
     if let Some(mut config) = world.get_resource_mut::<EngineConfiguration>() {
         config.is_raytracer_enabled = raytracer_enabled;
         config.show_bvh = raytracer_show_bvh;
+        config.debug_shadow_maps = debug_shadow_maps;
+        config.shadow_map_cascade_to_debug = shadow_map_cascade_to_debug;
     }
 
     if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {

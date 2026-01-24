@@ -320,6 +320,8 @@ pub struct EngineConfiguration {
     pub raytracer_max_frames: u32,
     pub is_raytracer_enabled: bool,
     pub show_bvh: bool,
+    pub debug_shadow_maps: bool,
+    pub shadow_map_cascade_to_debug: usize,
 }
 
 impl ecs::Resource for EngineConfiguration {}
@@ -334,6 +336,8 @@ impl Default for EngineConfiguration {
             raytracer_max_frames: 256,
             is_raytracer_enabled: false,
             show_bvh: false,
+            debug_shadow_maps: false,
+            shadow_map_cascade_to_debug: 0,
         }
     }
 }

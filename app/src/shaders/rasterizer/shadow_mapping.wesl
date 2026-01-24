@@ -36,5 +36,9 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let biased_pos = world_pos + world_normal * NORMAL_BIAS * bias_scale;
 
     output.position = light_matrix * vec4f(biased_pos, 1.0);
+
+    // Pancaking: clamp depth to 0.0 to prevent clipping of objects behind the light's near plane                                                      │
+    output.position.z = max(output.position.z, 0.0);
+
     return output;
 }

@@ -651,19 +651,6 @@ impl Mul<Mat4> for Mat4 {
     }
 }
 
-impl Mul<Vec3> for Mat4 {
-    type Output = Vec4;
-
-    fn mul(self, rhs: Vec3) -> Self::Output {
-        Vec4::new(
-            self.a1() * rhs.x + self.b1() * rhs.y + self.c1() * rhs.z,
-            self.a2() * rhs.x + self.b2() * rhs.y + self.c2() * rhs.z,
-            self.a3() * rhs.x + self.b3() * rhs.y + self.c3() * rhs.z,
-            1.0,
-        )
-    }
-}
-
 impl Mul<Vec4> for Mat4 {
     type Output = Vec4;
 

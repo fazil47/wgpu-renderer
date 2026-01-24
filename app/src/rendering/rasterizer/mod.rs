@@ -105,8 +105,8 @@ pub struct Rasterizer {
     probe_visualization: ProbeVisualization,
     probe_updater_light_bgl: BindGroupLayout,
     shadow_render_texture: ShadowRenderTexture,
-    debug_shadow_render_texture: bool,
     _blit_to_screen: BlitToScreen, // For debugging render textures
+    debug_shadow_maps: bool,
 }
 
 impl ecs::Resource for Rasterizer {}
@@ -127,7 +127,7 @@ impl Rasterizer {
             .uniform(0, wgpu::ShaderStages::VERTEX)
             .uniform(1, wgpu::ShaderStages::FRAGMENT)
             .comparison_sampler(2, wgpu::ShaderStages::FRAGMENT)
-            .texture_depth(3, wgpu::ShaderStages::FRAGMENT)
+            .texture_depth_2d_array(3, wgpu::ShaderStages::FRAGMENT)
             .uniform(4, wgpu::ShaderStages::VERTEX)
             .build();
         let material_bgl = wgpu
@@ -202,8 +202,8 @@ impl Rasterizer {
             .buffer(0, &camera_buffers.view_projection)
             .buffer(1, &lighting_buffers.sun_direction)
             .sampler(2, shadow_render_texture.get_sampler())
-            .texture(3, shadow_render_texture.get_shadow_map_view())
-            .buffer(4, shadow_render_texture.get_light_matrix_buffer())
+            .texture(3, shadow_render_texture.get_shadow_map_array_view())
+            .buffer(4, shadow_render_texture.get_light_matrices_buffer())
             .build();
 
         let probe_visualization =
@@ -225,10 +225,11 @@ impl Rasterizer {
             &probe_updater_light_bgl,
         );
 
+        let cascade_to_debug = 0;
         let mut _blit_to_screen = BlitToScreen::new(&wgpu.device, swapchain_format);
         _blit_to_screen.set_texture_view(
             &wgpu.device,
-            shadow_render_texture.get_shadow_map_view(),
+            &shadow_render_texture.get_shadow_map_layer_views()[cascade_to_debug],
             true,
         );
 
@@ -248,8 +249,8 @@ impl Rasterizer {
             probe_updater,
             probe_updater_light_bgl,
             shadow_render_texture,
-            debug_shadow_render_texture: false,
             _blit_to_screen,
+            debug_shadow_maps: false,
         }
     }
 
@@ -301,6 +302,20 @@ impl Rasterizer {
         &self.depth_texture.view
     }
 
+    pub fn update_debug_config(
+        &mut self,
+        device: &wgpu::Device,
+        debug_shadow_maps: bool,
+        shadow_map_cascade_to_debug: usize,
+    ) {
+        self._blit_to_screen.set_texture_view(
+            device,
+            &self.shadow_render_texture.get_shadow_map_layer_views()[shadow_map_cascade_to_debug],
+            true,
+        );
+        self.debug_shadow_maps = debug_shadow_maps;
+    }
+
     pub fn render(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
@@ -311,7 +326,7 @@ impl Rasterizer {
         self.shadow_render_texture
             .render(render_encoder, &self.gpu_meshes);
 
-        if self.debug_shadow_render_texture {
+        if self.debug_shadow_maps {
             self._blit_to_screen
                 .render(render_encoder, surface_texture_view);
             return;

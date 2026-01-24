@@ -132,6 +132,7 @@ impl DirectionalLight {
         let camera = world.get_component::<Camera>(*camera_entity).unwrap();
 
         let rotation_matrix = self.get_rotation_matrix();
+        let inverse_rotation_matrix = rotation_matrix.inverse();
 
         let cascades = [
             (camera.near, CASCADED_SHADOW_FRUSTUM_SPLITS[0]),
@@ -147,9 +148,11 @@ impl DirectionalLight {
         ];
 
         for (i, (start, end)) in cascades.iter().enumerate() {
-            let corners: [Vec4; 8] =
-                Self::get_frustum_corners(&camera, *start, *end).map(|p| rotation_matrix * p);
+            // Transform frustum corners to light space to compute tight AABB
+            let corners: [Vec4; 8] = Self::get_frustum_corners(&camera, *start, *end)
+                .map(|p| inverse_rotation_matrix * p.extend(1.0));
 
+            // Compute AABB in light space
             let (min, max) = {
                 let (mut min, mut max) = (Vec4::MAX, Vec4::MIN);
 
@@ -160,22 +163,30 @@ impl DirectionalLight {
 
                 (min, max)
             };
-            let center = (max + min) / 2.0;
-            let half_extent = (max - min) / 2.0;
-            let radius = half_extent.z;
 
+            let center_light = (max + min) / 2.0;
+            let half_extent_light = (max - min) / 2.0;
+            let radius = half_extent_light.z;
+
+            // Transform center back to world space
+            let center_world = (rotation_matrix * center_light).xyz();
+
+            // Translate from center_world then offset towards light direction by radius
+            let translation = center_world - (self.direction.normalized() * radius);
             let translation_matrix = Mat4::from_cols(
-                Vec4::ZERO,
-                Vec4::ZERO,
-                Vec4::ZERO,
-                Vec4::new(center.x, center.y, center.z - radius, 1.0),
+                Vec4::new(1.0, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 1.0, 0.0),
+                Vec4::new(translation.x, translation.y, translation.z, 1.0),
             );
             let local_to_world = translation_matrix * rotation_matrix;
             let view_matrix = local_to_world.inverse(); // view matrix takes a point from world space to the camera's local space
+
+            let depth = 2.0 * half_extent_light.z;
             let projection_matrix = Mat4::from_cols(
-                Vec4::new(1.0 / half_extent.x, 0.0, 0.0, 0.0),
-                Vec4::new(0.0, 1.0 / half_extent.y, 0.0, 0.0),
-                Vec4::new(0.0, 0.0, -1.0 / (2.0 * half_extent.z), 0.0),
+                Vec4::new(1.0 / half_extent_light.x, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 1.0 / half_extent_light.y, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, -1.0 / depth, 0.0),
                 Vec4::new(0.0, 0.0, 0.0, 1.0),
             );
 

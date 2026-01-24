@@ -12,13 +12,22 @@ use crate::{
 pub fn render_system(world: &mut World) {
     // 1. Get resources
     let wgpu = world.get_resource::<WgpuResources>().unwrap();
-    let (raytracer_enabled, raytracer_show_bvh, target_frame_time, raytracer_max_frames) = {
+    let (
+        raytracer_enabled,
+        raytracer_show_bvh,
+        target_frame_time,
+        raytracer_max_frames,
+        debug_shadow_maps,
+        shadow_map_cascade_to_debug,
+    ) = {
         let config = world.get_resource::<EngineConfiguration>().unwrap();
         (
             config.is_raytracer_enabled,
             config.show_bvh,
             config.target_frame_time,
             config.raytracer_max_frames,
+            config.debug_shadow_maps,
+            config.shadow_map_cascade_to_debug,
         )
     };
 
@@ -68,11 +77,16 @@ pub fn render_system(world: &mut World) {
     if let Some(mut rasterizer) = world.get_resource_mut::<Rasterizer>() {
         rasterizer.update_camera(&wgpu.queue, world, camera_entity);
 
-        if light_dirty {
-            rasterizer.update_light(&wgpu.queue, world, sun_light_entity);
-        }
+        // TODO: Check camera dirty (CSM depends on camera)
+        rasterizer.update_light(&wgpu.queue, world, sun_light_entity);
 
         rasterizer.update_probes(&wgpu.device, &wgpu.queue);
+
+        rasterizer.update_debug_config(
+            &wgpu.device,
+            debug_shadow_maps,
+            shadow_map_cascade_to_debug,
+        );
     }
 
     if light_dirty {

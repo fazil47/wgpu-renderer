@@ -37,7 +37,7 @@ var<uniform> sun_direction: vec3f;
 @group(0) @binding(2)
 var shadow_map_sampler: sampler_comparison;
 @group(0) @binding(3)
-var shadow_map: texture_depth_2d;
+var shadow_map: texture_depth_2d_array;
 @group(0) @binding(4)
 var<uniform> light_matrix: LightMatrix;
 
@@ -92,15 +92,16 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 // TODO: implement bilinear PCF where multiple texels are sampled with a single tap by sampling at half texel offsets
 fn sample_shadow_pcf(uv: vec2f, depth: f32) -> f32 {
+    let cascade_idx = 0u; // TODO: Determine the right cascade
     let texel_size = 1.0 / f32(SHADOW_MAP_SIZE);
     var shadow = 0.0;
     
     // 5-tap cross pattern
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv, depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(texel_size, 0.0), depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(-texel_size, 0.0), depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, texel_size), depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, -texel_size), depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv, cascade_idx, depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(texel_size, 0.0), cascade_idx, depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(-texel_size, 0.0), cascade_idx, depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, texel_size), cascade_idx, depth);
+    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, -texel_size), cascade_idx, depth);
     
     return shadow / 5.0;
 }
