@@ -128,7 +128,7 @@ impl Rasterizer {
             .uniform(1, wgpu::ShaderStages::FRAGMENT)
             .comparison_sampler(2, wgpu::ShaderStages::FRAGMENT)
             .texture_depth_2d_array(3, wgpu::ShaderStages::FRAGMENT)
-            .uniform(4, wgpu::ShaderStages::VERTEX)
+            .uniform(4, wgpu::ShaderStages::FRAGMENT)
             .build();
         let material_bgl = wgpu
             .device
@@ -203,7 +203,7 @@ impl Rasterizer {
             .buffer(1, &lighting_buffers.sun_direction)
             .sampler(2, shadow_render_texture.get_sampler())
             .texture(3, shadow_render_texture.get_shadow_map_array_view())
-            .buffer(4, shadow_render_texture.get_light_matrices_buffer())
+            .buffer(4, shadow_render_texture.get_packed_light_matrices_buffer())
             .build();
 
         let probe_visualization =

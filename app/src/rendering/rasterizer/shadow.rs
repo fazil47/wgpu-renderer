@@ -2,7 +2,10 @@ use ecs::World;
 use maths::{Mat4, Vec3};
 
 use crate::{
-    lighting::{DirectionalLight, directional_light::CASCADED_SHADOW_NUM_CASCADES},
+    lighting::{
+        DirectionalLight,
+        directional_light::{CASCADED_SHADOW_FRUSTUM_SPLITS, CASCADED_SHADOW_NUM_CASCADES},
+    },
     rendering::{
         GpuVertex,
         rasterizer::{GpuMesh, InstanceTransform},
@@ -18,7 +21,8 @@ pub struct ShadowRenderTexture {
     sampler: wgpu::Sampler,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
-    light_matrices_buffer: wgpu::Buffer,
+    packed_light_matrices_buffer: wgpu::Buffer, // Buffer that's for shadow map sampling, for shadow map sampling
+    padded_light_matrices_buffer: wgpu::Buffer, // Buffer that's compatible with indexing, for shadow map rendering
     light_direction_buffer: wgpu::Buffer,
     matrices_uniform_padded_size: usize,
 }
@@ -48,16 +52,23 @@ impl ShadowRenderTexture {
             .clamp()
             .build();
 
-        let uniform_alignment = device.limits().min_uniform_buffer_offset_alignment as usize;
         let matrices_size = std::mem::size_of::<Mat4>();
-        let matrices_uniform_padded_size = uniform_alignment.max(matrices_size);
 
-        let dummy_light_matrices =
-            vec![0u8; matrices_uniform_padded_size * CASCADED_SHADOW_NUM_CASCADES];
-        let light_matrices_buffer = device
+        let packed_light_matrices_size = matrices_size * 4 + std::mem::size_of::<[f32; 4]>();
+        let dummy_packed_light_matrices = vec![0u8; packed_light_matrices_size];
+        let packed_light_matrices_buffer = device
             .buffer()
-            .label("Shadow Light Matrices Buffer")
-            .uniform_bytes(&dummy_light_matrices);
+            .label("Packed Shadow Light Matrices Buffer")
+            .uniform_bytes(&dummy_packed_light_matrices);
+
+        let uniform_alignment = device.limits().min_uniform_buffer_offset_alignment as usize;
+        let matrices_uniform_padded_size = uniform_alignment.max(matrices_size);
+        let dummy_padded_light_matrices =
+            vec![0u8; matrices_uniform_padded_size * CASCADED_SHADOW_NUM_CASCADES];
+        let padded_light_matrices_buffer = device
+            .buffer()
+            .label("Padded Shadow Light Matrices Buffer")
+            .uniform_bytes(&dummy_padded_light_matrices);
 
         // The fourth component contains the number of cascades
         let dummy_light_direction = [0.0, 0.0, 0.0, 0.0];
@@ -76,7 +87,7 @@ impl ShadowRenderTexture {
             .bind_group(&bind_group_layout)
             .buffer_range(
                 0,
-                &light_matrices_buffer,
+                &padded_light_matrices_buffer,
                 0,
                 Some(matrices_uniform_padded_size as u64),
             )
@@ -126,7 +137,8 @@ impl ShadowRenderTexture {
             sampler,
             pipeline,
             bind_group,
-            light_matrices_buffer,
+            packed_light_matrices_buffer,
+            padded_light_matrices_buffer,
             light_direction_buffer,
             matrices_uniform_padded_size,
         }
@@ -177,8 +189,8 @@ impl ShadowRenderTexture {
         &self.sampler
     }
 
-    pub fn get_light_matrices_buffer(&self) -> &wgpu::Buffer {
-        &self.light_matrices_buffer
+    pub fn get_packed_light_matrices_buffer(&self) -> &wgpu::Buffer {
+        &self.packed_light_matrices_buffer
     }
 
     fn write_to_light_buffers(
@@ -188,6 +200,19 @@ impl ShadowRenderTexture {
         direction: Vec3,
     ) {
         let mat4_size = std::mem::size_of::<Mat4>();
+
+        let packed_size = mat4_size * 4 + std::mem::size_of::<[f32; 4]>();
+        let mut packed_data: Vec<u8> = Vec::with_capacity(packed_size);
+        for i in 0..CASCADED_SHADOW_NUM_CASCADES {
+            packed_data.extend_from_slice(bytemuck::bytes_of(&light_matrices[i]));
+        }
+        let mut cascade_distances = vec![0.0]; // FIXME: This is the camera near plane z-distance, get this from the camera.
+        for split_distance in CASCADED_SHADOW_FRUSTUM_SPLITS {
+            cascade_distances.push(split_distance);
+        }
+        packed_data.extend_from_slice(bytemuck::cast_slice(cascade_distances.as_slice()));
+        queue.write_buffer_bytes(&self.packed_light_matrices_buffer, 0, &packed_data);
+
         let padded_size = self.matrices_uniform_padded_size;
         let mut padded_data = vec![0u8; padded_size * CASCADED_SHADOW_NUM_CASCADES];
         for (i, mat) in light_matrices.iter().enumerate() {
@@ -195,11 +220,8 @@ impl ShadowRenderTexture {
             let bytes = bytemuck::bytes_of(mat);
             padded_data[offset..(offset + mat4_size)].copy_from_slice(bytes);
         }
+        queue.write_buffer_bytes(&self.padded_light_matrices_buffer, 0, &padded_data);
 
-        queue.write_buffer_bytes(&self.light_matrices_buffer, 0, &padded_data);
-
-        let dir = direction.to_array();
-        let dir4 = [dir[0], dir[1], dir[2], 0.0];
-        queue.write_buffer_data(&self.light_direction_buffer, 0, &dir4);
+        queue.write_buffer_data(&self.light_direction_buffer, 0, &direction.extend(0.0));
     }
 }

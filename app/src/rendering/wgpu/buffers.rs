@@ -1,7 +1,10 @@
 use ecs::{Entity, World};
 
 use super::WgpuExt;
-use crate::camera::Camera;
+use crate::{
+    camera::Camera, lighting::directional_light::CASCADED_SHADOW_NUM_CASCADES,
+    rendering::wgpu::QueueExt,
+};
 
 pub struct CameraBuffers {
     pub view_projection: wgpu::Buffer,
@@ -48,13 +51,14 @@ impl CameraBuffers {
 
 /// Unified lighting buffer creation for both raytracer and rasterizer
 pub struct LightingBuffers {
+    /// The vec3 direction vector of the sun, and a float representing the number of CSM cascades
     pub sun_direction: wgpu::Buffer,
 }
 
 impl LightingBuffers {
     /// Create lighting buffers with default downward light direction
     pub fn new(device: &wgpu::Device, label_prefix: &str) -> Self {
-        let sun_direction_data = [0.0, -1.0, 0.0, 0.0];
+        let sun_direction_data = [0.0, -1.0, 0.0, CASCADED_SHADOW_NUM_CASCADES as f32];
 
         let sun_direction = device
             .buffer()
@@ -63,6 +67,18 @@ impl LightingBuffers {
             .uniform(&[sun_direction_data]);
 
         Self { sun_direction }
+    }
+
+    pub fn update_from_world(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
+        if let Some(light) =
+            world.get_component::<crate::lighting::DirectionalLight>(sun_light_entity)
+        {
+            queue.write_buffer_data(
+                &self.sun_direction,
+                0,
+                &light.direction.extend(CASCADED_SHADOW_NUM_CASCADES as f32),
+            );
+        }
     }
 }
 
@@ -85,19 +101,6 @@ impl CameraBuffers {
                 0,
                 bytemuck::cast_slice(&[camera.camera_inverse_projection().to_cols_array_2d()]),
             );
-        }
-    }
-}
-
-/// Update lighting buffers when lighting changes
-impl LightingBuffers {
-    pub fn update_from_world(&self, queue: &wgpu::Queue, world: &World, sun_light_entity: Entity) {
-        if let Some(light) =
-            world.get_component::<crate::lighting::DirectionalLight>(sun_light_entity)
-        {
-            let dir = light.direction.to_array();
-            let dir4 = [dir[0], dir[1], dir[2], 0.0]; // Convert Vec3 to Vec4
-            queue.write_buffer(&self.sun_direction, 0, bytemuck::cast_slice(&[dir4]));
         }
     }
 }
