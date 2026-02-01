@@ -12,3 +12,6 @@
 assets/sponza.glb
 assets/van
 assets/chess.glb
+
+# Editor
+.helix
