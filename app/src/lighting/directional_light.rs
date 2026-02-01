@@ -10,19 +10,19 @@ pub const CASCADED_SHADOW_NUM_CASCADES: usize = CASCADED_SHADOW_FRUSTUM_SPLITS.l
 TODO: CASCADED SHADOW MAPS
 
 - Divide view frustum into 4 cascades
-  - get world space positions of the corners of the 4 cascade frustums
-  - rotate using the light's rotation matrix to align with the light direction
-  - Find the AABB of the corners
-  - Calculate the view matrices by using the center of the AABBs offset by half their extent along z and the rotation matrix
-  - Calculate the projection matrices by using the half extent of the AABBs along x and y and the extent along z
-- Generate a shadow map for each cascade
-  - Store the cascade transforms in a single buffer
-  - Render each cascade using separate render passes
-- Modify the fragment shader to sample from the cascade a mesh is in
-- Artifact mitigations
+  - [x] get world space positions of the corners of the 4 cascade frustums
+  - [x] rotate using the light's rotation matrix to align with the light direction
+  - [x] Find the AABB of the corners
+  - [x] Calculate the view matrices by using the center of the AABBs offset by half their extent along z and the rotation matrix
+  - [x] Calculate the projection matrices by using the half extent of the AABBs along x and y and the extent along z
+- [x] Generate a shadow map for each cascade
+  - [x] Store the cascade transforms in a single buffer
+  - [x] Render each cascade using separate render passes
+- [x] Modify the fragment shader to sample from the cascade a mesh is in
+- [] Artifact mitigations
  - Shadow casters are being clipped because the bounding boxes calculated for each cascade is too tight.
-  - Switch to a reverse z depth buffer to improve precision for far away meshes, this is important for the next step
-  - For each of the bounding boxes (that are rotated to align with the directional light), instead of them tightly surrounding the scene camera frustum cascade, extend the near face of the boxes back by a huge amount (enough to capture the whole scene, use scene_radius).
+  - [] Switch to a reverse z depth buffer to improve precision for far away meshes, this is important for the next step
+  - [] For each of the bounding boxes (that are rotated to align with the directional light), instead of them tightly surrounding the scene camera frustum cascade, extend the near face of the boxes back by a huge amount (enough to capture the whole scene, use scene_radius).
 */
 
 /// Directional light component
