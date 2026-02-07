@@ -37,8 +37,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     output.position = light_matrix * vec4f(biased_pos, 1.0);
 
-    // Pancaking: clamp depth to 0.0 to prevent clipping of objects behind the light's near plane                                                      │
-    output.position.z = max(output.position.z, 0.0);
+    // Pancaking: clamp depth to 1.0 to prevent clipping of objects behind the light's near plane
+    output.position.z = min(output.position.z, 1.0);
 
     return output;
 }

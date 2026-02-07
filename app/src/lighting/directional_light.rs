@@ -21,7 +21,7 @@ TODO: CASCADED SHADOW MAPS
 - [x] Modify the fragment shader to sample from the cascade a mesh is in
 - [] Artifact mitigations
  - Shadow casters are being clipped because the bounding boxes calculated for each cascade is too tight.
-  - [] Switch to a reverse z depth buffer to improve precision for far away meshes, this is important for the next step
+  - [x] Switch to a reverse z depth buffer to improve precision for far away meshes, this is important for the next step
   - [] For each of the bounding boxes (that are rotated to align with the directional light), instead of them tightly surrounding the scene camera frustum cascade, extend the near face of the boxes back by a huge amount (enough to capture the whole scene, use scene_radius).
 */
 
@@ -116,12 +116,12 @@ impl DirectionalLight {
         let far = scene_radius * 2.0;
         let depth = far - self.near;
 
-        // Orthographic projection for WebGPU (depth range [0, 1])
+        // Orthographic projection for WebGPU with reverse depth buffer (depth range [1, 0])
         maths::Mat4::from_cols(
             maths::Vec4::new(2.0 / size, 0.0, 0.0, 0.0),
             maths::Vec4::new(0.0, 2.0 / size, 0.0, 0.0),
-            maths::Vec4::new(0.0, 0.0, -1.0 / depth, 0.0),
-            maths::Vec4::new(0.0, 0.0, -self.near / depth, 1.0),
+            maths::Vec4::new(0.0, 0.0, 1.0 / depth, 0.0),
+            maths::Vec4::new(0.0, 0.0, far / depth, 1.0),
         )
     }
 
@@ -205,8 +205,8 @@ impl DirectionalLight {
             let projection_matrix = Mat4::from_cols(
                 Vec4::new(1.0 / half_extent_light.x, 0.0, 0.0, 0.0),
                 Vec4::new(0.0, 1.0 / half_extent_light.y, 0.0, 0.0),
-                Vec4::new(0.0, 0.0, -1.0 / depth, 0.0),
-                Vec4::new(0.0, 0.0, 0.0, 1.0),
+                Vec4::new(0.0, 0.0, 1.0 / depth, 0.0),
+                Vec4::new(0.0, 0.0, 1.0, 1.0),
             );
 
             matrices[i] = projection_matrix * view_matrix;

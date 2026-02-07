@@ -166,7 +166,7 @@ impl Rasterizer {
             .vertex_buffer(InstanceTransform::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(Some(wgpu::Face::Back))
-            .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
+            .depth_test_greater(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
             .build()
             .unwrap();
 
@@ -181,7 +181,7 @@ impl Rasterizer {
             .vertex_buffer(InstanceTransform::desc())
             .color_target_alpha_blend(swapchain_format)
             .cull_mode(None)
-            .depth_test_less(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
+            .depth_test_greater(crate::rendering::wgpu::Texture::DEPTH_FORMAT)
             .build()
             .unwrap();
 
@@ -335,7 +335,7 @@ impl Rasterizer {
         let mut rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")
             .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
-            .depth_attachment(&self.depth_texture.view, Some(1.0))
+            .depth_attachment(&self.depth_texture.view, Some(0.0))
             .begin();
 
         rpass.set_bind_group(0, &self.other_bind_group, &[]);

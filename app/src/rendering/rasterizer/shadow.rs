@@ -48,7 +48,7 @@ impl ShadowRenderTexture {
         let sampler = device
             .sampler()
             .label("Shadow Map Sampler")
-            .shadow()
+            .compare(wgpu::CompareFunction::GreaterEqual)
             .clamp()
             .build();
 
@@ -109,10 +109,10 @@ impl ShadowRenderTexture {
             .cull_mode(Some(wgpu::Face::Back))
             .depth_test_with_bias(
                 wgpu::TextureFormat::Depth32Float,
-                wgpu::CompareFunction::Less,
+                wgpu::CompareFunction::Greater,
                 wgpu::DepthBiasState {
-                    constant: 2,
-                    slope_scale: 3.0,
+                    constant: -2,
+                    slope_scale: -3.0,
                     clamp: 0.0,
                 },
             )
@@ -156,7 +156,7 @@ impl ShadowRenderTexture {
         for cascade_index in 0..CASCADED_SHADOW_NUM_CASCADES {
             let mut rpass = render_pass(render_encoder)
                 .label("Shadow map render pass")
-                .depth_attachment(&self.layers_views[cascade_index], Some(1.0))
+                .depth_attachment(&self.layers_views[cascade_index], Some(0.0))
                 .begin();
 
             rpass.set_pipeline(&self.pipeline);

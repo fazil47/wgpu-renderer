@@ -264,10 +264,6 @@ impl<'a> SamplerBuilder<'a> {
         self.address_mode(AddressMode::ClampToEdge)
     }
 
-    pub fn shadow(self) -> Self {
-        self.compare(CompareFunction::LessEqual)
-    }
-
     pub fn build(self) -> Sampler {
         self.device.create_sampler(&wgpu::SamplerDescriptor {
             label: self.label,
@@ -898,6 +894,10 @@ impl<'a> RenderPipelineBuilder<'a> {
 
     pub fn depth_test_less(self, format: TextureFormat) -> Self {
         self.depth_test(format, CompareFunction::Less)
+    }
+
+    pub fn depth_test_greater(self, format: TextureFormat) -> Self {
+        self.depth_test(format, CompareFunction::Greater)
     }
 
     pub fn depth_test_with_bias(

@@ -112,29 +112,24 @@ impl Camera {
          *      so the fourth column is chosen to produce w_c = -z for any input point. The -1 sitting in the
          *      third-row/fourth-column slot is what multiplies the incoming w=1 to give w_c = -z. After the GPU
          *      divides by w_c, depth becomes z_ndc = z_c / w_c.
-         *   4) We require z_ndc = -1 (FIXME: shouldn't this be 0?) at z = -near and z_ndc = 1 at z = -far so the clip depth range matches the API.
-         *      Let z_c = A*z + B. Solving the two equations
-         *          (A * -near + B) / near = -1
-         *          (A * -far  + B) / far  =  1
+         *   4) We require z_ndc = 1 at z = -near and z_ndc = 0 at z = -far (we're using reverse depth buffer) so the clip depth range matches the API.
+         *      Let z_c = A*z + B. Solving the two equations you get using the z_ndc formula.
+         *          (A * -near + B) / near = 1
+         *          (A * -far  + B) / far  = 0
          *      yields
-         *          A = -(far + near) / (far - near)
-         *          B = -(2 * far * near) / (far - near).
+         *          A = near / (far - near)
+         *          B = far * near / (far - near).
          *      Placing A in the third-row, third-column slot and B in the third-row, fourth-column slot causes the
          *      perspective divide (division by -z) to generate the expected right-handed depth curve.
          */
         let camera_projection = maths::Mat4::from_cols(
             maths::Vec4::new(self.near / right_proj, 0.0, 0.0, 0.0),
             maths::Vec4::new(0.0, self.near / top, 0.0, 0.0),
+            maths::Vec4::new(0.0, 0.0, self.near / (self.far - self.near), -1.0),
             maths::Vec4::new(
                 0.0,
                 0.0,
-                -(self.far + self.near) / (self.far - self.near),
-                -1.0,
-            ),
-            maths::Vec4::new(
-                0.0,
-                0.0,
-                -(2.0 * self.far * self.near) / (self.far - self.near),
+                (self.far * self.near) / (self.far - self.near),
                 0.0,
             ),
         );
