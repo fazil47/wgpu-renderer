@@ -3,7 +3,8 @@
 
 # AI
 .claude/settings.local.json
-.gemini*
+.gemini/settings.json
+.gemini-clipboard
 
 # Scratchpad
 .scratchpad
