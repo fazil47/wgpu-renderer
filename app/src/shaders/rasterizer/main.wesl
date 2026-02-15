@@ -1,4 +1,7 @@
-import runtime::constants::SHADOW_MAP_SIZE;
+import runtime::constants::{
+    SHADOW_MAP_SIZE,
+    CASCADED_SHADOW_BLEND_REGION
+};
 import package::probe_lighting::util::{
     ProbeGridConfig,
     sample_probe_lighting,
@@ -96,6 +99,14 @@ fn sample_shadow_pcf(depth: f32, uv: vec2f, cascade_idx: u32) -> f32 {
     return shadow / 5.0;
 }
 
+fn sample_shadow_for_cascade(cascade_idx: u32, world_position: vec3f) -> f32 {
+    let light_matrix = light_matrices.view_proj_matrices[cascade_idx];
+    let light_ndc_position = light_matrix * vec4f(world_position, 1.0);
+    let light_ndc_depth = light_ndc_position.z;
+    let shadow_map_uv = light_ndc_position.xy * vec2f(0.5, -0.5) + vec2f(0.5, 0.5);
+    return sample_shadow_pcf(light_ndc_depth, shadow_map_uv, cascade_idx);
+}
+
 fn sample_csm_shadow_pcf(view_depth: f32, world_position: vec3f) -> f32 {
     var cascade_idx = 0u;
     let num_cascades = u32(sun_direction.w);
@@ -113,12 +124,23 @@ fn sample_csm_shadow_pcf(view_depth: f32, world_position: vec3f) -> f32 {
         }
     }
 
-    let light_matrix = light_matrices.view_proj_matrices[cascade_idx];
-    let light_ndc_position = light_matrix * vec4f(world_position, 1.0);
-    let light_ndc_depth = light_ndc_position.z;
-    let shadow_map_uv = light_ndc_position.xy * vec2f(0.5, -0.5) + vec2f(0.5, 0.5); // transform from [-1, 1] to [-0.5, 0.5] and then [0, 1] (negate y since it goes from 0 to 1 from top to bottom)
+    let shadow = sample_shadow_for_cascade(cascade_idx, world_position);
 
-    return sample_shadow_pcf(light_ndc_depth, shadow_map_uv, cascade_idx);
+    // Blend with next cascade near the far boundary
+    if (cascade_idx < num_cascades - 1) {
+        let cascade_end = light_matrices.cascade_distances[cascade_idx + 1];
+        let cascade_start = light_matrices.cascade_distances[cascade_idx];
+        let cascade_range = cascade_end - cascade_start;
+        let blend_start = cascade_end - cascade_range * CASCADED_SHADOW_BLEND_REGION;
+
+        if (view_depth > blend_start) {
+            let next_shadow = sample_shadow_for_cascade(cascade_idx + 1, world_position);
+            let t = (view_depth - blend_start) / (cascade_end - blend_start);
+            return mix(shadow, next_shadow, t);
+        }
+    }
+
+    return shadow;
 }
 
 @fragment

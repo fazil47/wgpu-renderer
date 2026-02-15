@@ -285,6 +285,7 @@ pub struct ShaderBuilder<'a> {
     device: &'a Device,
     label: Option<&'a str>,
     u32_defines: HashMap<String, String>,
+    f32_defines: HashMap<String, String>,
     features: HashSet<String>,
 }
 
@@ -294,6 +295,7 @@ impl<'a> ShaderBuilder<'a> {
             device,
             label: None,
             u32_defines: HashMap::new(),
+            f32_defines: HashMap::new(),
             features: HashSet::new(),
         }
     }
@@ -305,6 +307,11 @@ impl<'a> ShaderBuilder<'a> {
 
     pub fn define_u32(mut self, name: impl ToString, value: u32) -> Self {
         self.u32_defines.insert(name.to_string(), value.to_string());
+        self
+    }
+
+    pub fn define_f32(mut self, name: impl ToString, value: f32) -> Self {
+        self.f32_defines.insert(name.to_string(), value.to_string());
         self
     }
 
@@ -353,12 +360,18 @@ impl<'a> ShaderBuilder<'a> {
             );
         }
 
-        if !self.u32_defines.is_empty() {
+        if !self.u32_defines.is_empty() || !self.f32_defines.is_empty() {
             let mut resolver = VirtualResolver::new();
             let mut defines = String::new();
+
             for (name, value) in &self.u32_defines {
                 defines.push_str(&format!("const {}: u32 = {};\n", name, value));
             }
+
+            for (name, value) in &self.f32_defines {
+                defines.push_str(&format!("const {}: f32 = {};\n", name, value));
+            }
+
             resolver.add_module("runtime::constants".parse().unwrap(), defines.into());
             router.mount_resolver("runtime".parse().unwrap(), resolver);
         }

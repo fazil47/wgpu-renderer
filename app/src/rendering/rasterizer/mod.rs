@@ -1,5 +1,5 @@
 mod blit_to_screen;
-mod shadow;
+pub mod shadow;
 
 use std::{collections::HashMap, mem::size_of};
 use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, RenderPipeline};
@@ -7,6 +7,7 @@ use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, RenderPipeline};
 use crate::{
     lighting::{
         DirectionalLight,
+        directional_light::CASCADED_SHADOW_BLEND_REGION,
         probe_lighting::{
             Dimensions, ProbeGrid, ProbeGridConfig,
             updater::ProbeUpdatePipeline,
@@ -118,6 +119,7 @@ impl Rasterizer {
             .shader()
             .label("Rasterizer Main Shader")
             .define_u32("SHADOW_MAP_SIZE", shadow::SHADOW_MAP_SIZE)
+            .define_f32("CASCADED_SHADOW_BLEND_REGION", CASCADED_SHADOW_BLEND_REGION)
             .wesl_runtime("package::rasterizer::main");
 
         let other_bind_group_layout = wgpu

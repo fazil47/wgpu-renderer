@@ -1,10 +1,14 @@
 use ecs::{Component, World};
 use maths::{Mat4, Quat, Vec3, Vec4};
 
-use crate::{camera::Camera, rendering::TlasBvh};
+use crate::{
+    camera::Camera,
+    rendering::{TlasBvh, rasterizer::shadow::SHADOW_MAP_SIZE},
+};
 
 pub const CASCADED_SHADOW_FRUSTUM_SPLITS: [f32; 3] = [10.0, 50.0, 200.0]; // Frustum bounds are camera near plane, 10, 50, 200 and camera far plane. These are the z distances in camera space.
 pub const CASCADED_SHADOW_NUM_CASCADES: usize = CASCADED_SHADOW_FRUSTUM_SPLITS.len() + 1;
+pub const CASCADED_SHADOW_BLEND_REGION: f32 = 0.1;
 
 /*
 TODO: CASCADED SHADOW MAPS
@@ -19,10 +23,15 @@ TODO: CASCADED SHADOW MAPS
   - [x] Store the cascade transforms in a single buffer
   - [x] Render each cascade using separate render passes
 - [x] Modify the fragment shader to sample from the cascade a mesh is in
-- [] Artifact mitigations
- - Shadow casters are being clipped because the bounding boxes calculated for each cascade is too tight.
+- [x] Artifact mitigations
+  - Shadow casters are being clipped because the bounding boxes calculated for each cascade is too tight.
   - [x] Switch to a reverse z depth buffer to improve precision for far away meshes, this is important for the next step
   - [x] For each of the bounding boxes (that are rotated to align with the directional light), instead of them tightly surrounding the scene camera frustum cascade, extend the near face of the boxes back by a huge amount (enough to capture the whole scene, use scene_radius).
+  - [x] Linearly blend between cascades at boundaries
+    - Set CASCADED_SHADOW_BLEND_BOUNDARY to 0.1, set that in the rasterizer shader with a shader constant
+    - In the fragment shader,
+        - blend_start is cascade_end - CASCADED_SHADOW_BLEND_BOUNDARY * (cascade_end - cascade_start)
+        - If view_depth > blend_start then blend with t = (view_depth - blend_start) / (cascade_end - blend_start)
 */
 
 /// Directional light component
@@ -189,16 +198,25 @@ impl DirectionalLight {
                 }
 
                 // Extend the near plane back towards the light to capture occluders
-                // The max corner is the corner closest to the camera since positive
-                // z is towards the camera
+                // The max corner is the corner closest to the light since positive
+                // z is towards the light's ortho camera
                 max.z += scene_radius;
 
                 (min, max)
             };
 
-            let center_light = (max + min) / 2.0;
+            let mut center_light = (max + min) / 2.0;
             let half_extent_light = (max - min) / 2.0;
             let radius = half_extent_light.z;
+
+            // TODO: Use a bounding sphere instead a tight AABB so that camera rotation doesn't
+            // change size extent.xy
+
+            // Texel snapping: lock shadow map to a fixed world-space grid to prevent shimmering
+            let texel_size_x = (2.0 * half_extent_light.x) / SHADOW_MAP_SIZE as f32;
+            let texel_size_y = (2.0 * half_extent_light.y) / SHADOW_MAP_SIZE as f32;
+            center_light.x = (center_light.x / texel_size_x).floor() * texel_size_x;
+            center_light.y = (center_light.y / texel_size_y).floor() * texel_size_y;
 
             // Transform center back to world space
             let center_world = (rotation_matrix * center_light).xyz();
