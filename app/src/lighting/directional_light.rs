@@ -22,7 +22,7 @@ TODO: CASCADED SHADOW MAPS
 - [] Artifact mitigations
  - Shadow casters are being clipped because the bounding boxes calculated for each cascade is too tight.
   - [x] Switch to a reverse z depth buffer to improve precision for far away meshes, this is important for the next step
-  - [] For each of the bounding boxes (that are rotated to align with the directional light), instead of them tightly surrounding the scene camera frustum cascade, extend the near face of the boxes back by a huge amount (enough to capture the whole scene, use scene_radius).
+  - [x] For each of the bounding boxes (that are rotated to align with the directional light), instead of them tightly surrounding the scene camera frustum cascade, extend the near face of the boxes back by a huge amount (enough to capture the whole scene, use scene_radius).
 */
 
 /// Directional light component
@@ -150,6 +150,14 @@ impl DirectionalLight {
         let camera_entity = camera_entities.first().unwrap();
         let camera = world.get_component::<Camera>(*camera_entity).unwrap();
 
+        // Get scene radius to ensure we capture all shadow casters
+        let tlas = world.get_resource::<TlasBvh>().unwrap();
+        let [x_max, y_max, z_max, _] = tlas.bvh.nodes[0].bounds_max;
+        let [x_min, y_min, z_min, _] = tlas.bvh.nodes[0].bounds_min;
+        let scene_max = Vec3::new(x_max, y_max, z_max);
+        let scene_min = Vec3::new(x_min, y_min, z_min);
+        let scene_radius = (scene_max - scene_min).length() / 2.0;
+
         let rotation_matrix = self.get_rotation_matrix();
         let inverse_rotation_matrix = rotation_matrix.inverse();
 
@@ -179,6 +187,11 @@ impl DirectionalLight {
                     min = corner.min(min);
                     max = corner.max(max);
                 }
+
+                // Extend the near plane back towards the light to capture occluders
+                // The max corner is the corner closest to the camera since positive
+                // z is towards the camera
+                max.z += scene_radius;
 
                 (min, max)
             };
