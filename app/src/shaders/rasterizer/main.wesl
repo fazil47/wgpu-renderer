@@ -123,7 +123,7 @@ fn sample_csm_shadow_pcf(view_depth: f32, world_position: vec3f) -> f32 {
 
 @fragment
 fn fs_main(vert_output: VertexOutput) -> @location(0) vec4f {
-    let view_depth = vert_output.position.w; // The view space z coord will be stored clip space w
+    let view_depth = 1.0 / vert_output.position.w; // @builtin(position).w is 1/w_clip in the fragment shader, and w_clip = -z_view
     let shadow = sample_csm_shadow_pcf(view_depth, vert_output.world_position);
 
     let direct_light: f32 = max(0.0, dot(vert_output.normal, -sun_direction.xyz)) * shadow;
