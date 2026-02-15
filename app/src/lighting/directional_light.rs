@@ -8,7 +8,7 @@ use crate::{
 
 pub const CASCADED_SHADOW_FRUSTUM_SPLITS: [f32; 3] = [10.0, 50.0, 200.0]; // Frustum bounds are camera near plane, 10, 50, 200 and camera far plane. These are the z distances in camera space.
 pub const CASCADED_SHADOW_NUM_CASCADES: usize = CASCADED_SHADOW_FRUSTUM_SPLITS.len() + 1;
-pub const CASCADED_SHADOW_BLEND_REGION: f32 = 0.1;
+pub const CASCADED_SHADOW_BLEND_REGION: f32 = 0.05;
 
 /// Directional light component
 #[derive(Debug, Clone)]
