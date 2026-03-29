@@ -90,11 +90,11 @@ fn sample_shadow_pcf(depth: f32, uv: vec2f, cascade_idx: u32) -> f32 {
     var shadow = 0.0;
     
     // 5-tap cross pattern
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv, cascade_idx, depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(texel_size, 0.0), cascade_idx, depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(-texel_size, 0.0), cascade_idx, depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, texel_size), cascade_idx, depth);
-    shadow += textureSampleCompare(shadow_map, shadow_map_sampler, uv + vec2f(0.0, -texel_size), cascade_idx, depth);
+    shadow += textureSampleCompareLevel(shadow_map, shadow_map_sampler, uv, cascade_idx, depth);
+    shadow += textureSampleCompareLevel(shadow_map, shadow_map_sampler, uv + vec2f(texel_size, 0.0), cascade_idx, depth);
+    shadow += textureSampleCompareLevel(shadow_map, shadow_map_sampler, uv + vec2f(-texel_size, 0.0), cascade_idx, depth);
+    shadow += textureSampleCompareLevel(shadow_map, shadow_map_sampler, uv + vec2f(0.0, texel_size), cascade_idx, depth);
+    shadow += textureSampleCompareLevel(shadow_map, shadow_map_sampler, uv + vec2f(0.0, -texel_size), cascade_idx, depth);
     
     return shadow / 5.0;
 }
