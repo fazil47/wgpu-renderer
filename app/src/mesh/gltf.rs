@@ -1,7 +1,7 @@
 use super::{Mesh, Vertex};
 use crate::{
     material::{Material, RGBA},
-    transform::{Children, GlobalTransform, Name, Transform},
+    transform::{GlobalTransform, Name, Transform},
 };
 use ecs::{Entity, World};
 use gltf::material::AlphaMode;
@@ -181,10 +181,6 @@ fn process_node(
         }
     };
 
-    if let Some(parent_entity) = parent {
-        append_child(world, parent_entity, entity)?;
-    }
-
     if context.processed_nodes.insert(node_index) {
         if let Some(mesh) = node.mesh() {
             create_mesh_entities(world, entity, mesh, context)?;
@@ -247,7 +243,7 @@ fn create_mesh_entities(
                 (None, None) => None,
             };
 
-            create_child_entity(world, node_entity, child_name)?
+            create_child_entity(world, node_entity, child_name)
         };
 
         let (vertices, indices) = build_mesh(&primitives, context.buffers)?;
@@ -303,11 +299,7 @@ fn build_mesh(
     Ok((vertices, indices))
 }
 
-fn create_child_entity(
-    world: &mut World,
-    parent: Entity,
-    name: Option<String>,
-) -> Result<Entity, String> {
+fn create_child_entity(world: &mut World, parent: Entity, name: Option<String>) -> Entity {
     let child = world.create_entity();
     let transform = Transform {
         position: Vec3::ZERO,
@@ -321,9 +313,8 @@ fn create_child_entity(
     if let Some(name) = name {
         world.add_component(child, Name::new(name));
     }
-    append_child(world, parent, child)?;
 
-    Ok(child)
+    child
 }
 
 fn ensure_parent(world: &World, entity: Entity, parent: Option<Entity>) -> Result<(), String> {
@@ -332,18 +323,6 @@ fn ensure_parent(world: &World, entity: Entity, parent: Option<Entity>) -> Resul
         .ok_or_else(|| format!("Entity {entity:?} missing Transform component"))?;
 
     transform.parent = parent;
-
-    Ok(())
-}
-
-fn append_child(world: &mut World, parent: Entity, child: Entity) -> Result<(), String> {
-    if let Some(mut children) = world.get_component_mut::<Children>(parent) {
-        if !children.entities.contains(&child) {
-            children.entities.push(child);
-        }
-    } else {
-        world.add_component(parent, Children::new(vec![child]));
-    }
 
     Ok(())
 }

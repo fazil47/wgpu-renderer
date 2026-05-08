@@ -31,7 +31,7 @@ impl ShadowRenderTexture {
     pub fn new(device: &wgpu::Device) -> Self {
         let texture = device
             .texture()
-            .label(&format!("Shadow Render Texture Ping"))
+            .label("Shadow Render Texture Ping")
             .size_2d_array(
                 SHADOW_MAP_SIZE,
                 SHADOW_MAP_SIZE,
@@ -203,8 +203,8 @@ impl ShadowRenderTexture {
 
         let packed_size = mat4_size * 4 + std::mem::size_of::<[f32; 4]>();
         let mut packed_data: Vec<u8> = Vec::with_capacity(packed_size);
-        for i in 0..CASCADED_SHADOW_NUM_CASCADES {
-            packed_data.extend_from_slice(bytemuck::bytes_of(&light_matrices[i]));
+        for light_matrix in light_matrices.iter().take(CASCADED_SHADOW_NUM_CASCADES) {
+            packed_data.extend_from_slice(bytemuck::bytes_of(light_matrix));
         }
         let mut cascade_distances = vec![0.0]; // FIXME: This is the camera near plane z-distance, get this from the camera.
         for split_distance in CASCADED_SHADOW_FRUSTUM_SPLITS {

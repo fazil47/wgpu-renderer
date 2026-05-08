@@ -100,7 +100,7 @@ impl BlitToScreen {
 
         let mut rpass = render_pass(render_encoder)
             .label("Blit to screen render pass")
-            .color_attachment(&surface_texture_view, Some(wgpu::Color::BLACK))
+            .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
             .begin();
 
         let pipeline = if self.use_depth {

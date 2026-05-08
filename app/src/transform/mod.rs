@@ -72,19 +72,6 @@ impl Default for GlobalTransform {
 
 impl Component for GlobalTransform {}
 
-#[derive(Debug, Clone, Default)]
-pub struct Children {
-    pub entities: Vec<Entity>,
-}
-
-impl Children {
-    pub fn new(entities: Vec<Entity>) -> Self {
-        Self { entities }
-    }
-}
-
-impl Component for Children {}
-
 #[derive(Debug, Clone)]
 pub struct Name(pub String);
 
