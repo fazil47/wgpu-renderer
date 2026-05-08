@@ -16,3 +16,6 @@ assets/chess.glb
 
 # Editor
 .helix
+
+# Obsidian
+**/.obsidian/workspace.json
