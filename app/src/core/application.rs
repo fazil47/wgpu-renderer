@@ -111,7 +111,12 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
         match event {
             StateInitializationEvent::Initialize(engine) => {
                 log::info!("Received initialization event");
-                engine.window.request_redraw();
+
+                let window = engine
+                    .window
+                    .clone()
+                    .expect("Can't accept winit events without window");
+                window.request_redraw();
 
                 // Force resize to fix initial canvas size on WASM
                 #[cfg(target_arch = "wasm32")]
@@ -125,10 +130,15 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             }
             StateInitializationEvent::ForceResize => {
                 if let State::Initialized(ref mut engine) = self.application_state {
-                    let size = engine.window.inner_size();
+                    let window = engine
+                        .window
+                        .clone()
+                        .expect("Can't accept winit event without window");
+                    let size = window.inner_size();
                     log::info!("Force resize to: {}x{}", size.width, size.height);
+
                     engine.resize(size);
-                    engine.window.request_redraw();
+                    window.request_redraw();
                 }
             }
         }
@@ -146,7 +156,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
 
         let egui_event_response = engine.process_egui_events(&event);
         if egui_event_response.repaint {
-            engine.window.request_redraw();
+            engine.window.as_ref().unwrap().request_redraw();
         }
 
         engine.process_events(&event);

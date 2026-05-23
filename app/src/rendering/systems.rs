@@ -32,7 +32,11 @@ pub fn render_system(world: &mut World) {
     };
 
     // 2. Prepare for rendering
-    let surface_texture = match wgpu.surface.get_current_texture() {
+    let Some(ref surface) = wgpu.surface else {
+        return; // Headless mode — no surface to render to
+    };
+
+    let surface_texture = match surface.get_current_texture() {
         Ok(texture) => texture,
         Err(wgpu::SurfaceError::Outdated) => return,
         Err(wgpu::SurfaceError::Timeout) => return,

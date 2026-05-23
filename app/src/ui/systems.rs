@@ -10,6 +10,11 @@ use crate::ui::mesh_hierarchy::{build_mesh_hierarchy, draw_mesh_hierarchy};
 use ecs::World;
 
 pub fn ui_system(world: &mut World) {
+    // No UI in headless mode
+    if world.get_resource::<RendererEgui>().is_none() {
+        return;
+    }
+
     // 1. Extract resources
     let (
         mut raytracer_enabled,
