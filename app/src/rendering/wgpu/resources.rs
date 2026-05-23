@@ -7,7 +7,7 @@ use super::WgpuExt;
 
 pub struct WgpuResources {
     pub instance: wgpu::Instance,
-    pub surface: wgpu::Surface<'static>,
+    pub surface: Option<wgpu::Surface<'static>>,
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -20,23 +20,63 @@ impl WgpuResources {
     pub async fn new(window: Arc<Window>, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).unwrap();
+        Self::build(
+            instance,
+            Some(surface),
+            window_size.width,
+            window_size.height,
+        )
+        .await
+    }
+
+    pub async fn new_headless() -> Self {
+        let instance = wgpu::Instance::default();
+        Self::build(instance, None, 800, 600).await
+    }
+
+    /// Shared device creation and initialization.
+    async fn build(
+        instance: wgpu::Instance,
+        surface: Option<wgpu::Surface<'static>>,
+        width: u32,
+        height: u32,
+    ) -> Self {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 force_fallback_adapter: false,
-                // Request an adapter which can render to our surface
-                compatible_surface: Some(&surface),
+                compatible_surface: surface.as_ref(),
             })
             .await
             .expect("Failed to find an appropriate adapter");
+
+        let surface_config = if let Some(ref surface) = surface {
+            surface
+                .get_default_config(&adapter, width, height)
+                .expect("Failed to get default surface configuration")
+        } else {
+            // TODO: Find a cleaner way to support headless
+            wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                width,
+                height,
+                present_mode: wgpu::PresentMode::Fifo,
+                desired_maximum_frame_latency: 2,
+                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+                view_formats: vec![],
+            }
+        };
+
+        // TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES is native only
+        let required_features = wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+            | wgpu::Features::FLOAT32_FILTERABLE;
 
         // Create the logical device and command queue
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("Device"),
-                // TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES is native only
-                required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                    | wgpu::Features::FLOAT32_FILTERABLE,
+                required_features,
                 required_limits: wgpu::Limits {
                     max_storage_buffers_per_shader_stage: 10,
                     ..wgpu::Limits::default().using_resolution(adapter.limits())
@@ -47,10 +87,9 @@ impl WgpuResources {
             .await
             .expect("Failed to create device");
 
-        let surface_config = surface
-            .get_default_config(&adapter, window_size.width, window_size.height)
-            .expect("Failed to get default surface configuration");
-        surface.configure(&device, &surface_config);
+        if let Some(ref surface) = surface {
+            surface.configure(&device, &surface_config);
+        }
 
         Self {
             instance,
@@ -65,7 +104,9 @@ impl WgpuResources {
     pub fn resize(&mut self, new_size: &winit::dpi::PhysicalSize<u32>) {
         self.surface_config.width = new_size.width.max(1);
         self.surface_config.height = new_size.height.max(1);
-        self.surface.configure(&self.device, &self.surface_config);
+        if let Some(surface) = &self.surface {
+            surface.configure(&self.device, &self.surface_config);
+        }
     }
 }
 

@@ -244,8 +244,7 @@ impl Raytracer {
             ])
             .build();
 
-        let swapchain_capabilities = wgpu.surface.get_capabilities(&wgpu.adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
+        let swapchain_format = wgpu.surface_config.format;
         let render = wgpu
             .device
             .render_pipeline()

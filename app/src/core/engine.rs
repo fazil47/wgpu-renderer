@@ -27,7 +27,7 @@ use maths::Vec3;
 use crate::mesh::gltf::GltfMeshExt;
 
 pub struct Engine {
-    pub window: Arc<Window>,
+    pub window: Option<Arc<Window>>,
     pub window_size: winit::dpi::PhysicalSize<u32>,
     pub world: World,
     pub input_schedule: ecs::Schedule,
@@ -57,6 +57,16 @@ impl Engine {
         window_size.width = window_size.width.max(1);
         window_size.height = window_size.height.max(1);
 
+        let wgpu = crate::rendering::wgpu::WgpuResources::new(window.clone(), &window_size).await;
+        Self::build(Some(window), window_size, wgpu).await
+    }
+
+    /// Common initialization shared by windowed and headless modes.
+    async fn build(
+        window: Option<Arc<Window>>,
+        window_size: winit::dpi::PhysicalSize<u32>,
+        wgpu: crate::rendering::wgpu::WgpuResources,
+    ) -> Engine {
         let mut world = World::new();
 
         let default_material_entity = world.create_entity();
@@ -143,14 +153,17 @@ impl Engine {
         let mut cleanup_schedule = ecs::Schedule::new();
         cleanup_schedule.add_system(crate::core::systems::reset_dirty_flags_system);
 
-        // Create rendering resources separately
-        let wgpu = crate::rendering::wgpu::WgpuResources::new(window.clone(), &window_size).await;
-        let egui = crate::ui::egui::RendererEgui::new(
-            &window,
-            &wgpu.device,
-            &wgpu.surface_config,
-            window.scale_factor() as f32,
-        );
+        // Create egui renderer (windowed only)
+        if let Some(ref window) = window {
+            let egui = crate::ui::egui::RendererEgui::new(
+                window,
+                &wgpu.device,
+                &wgpu.surface_config,
+                window.scale_factor() as f32,
+            );
+            world.insert_resource(egui);
+            world.insert_resource(WindowResource(window.clone()));
+        }
 
         let mut rasterizer = crate::rendering::rasterizer::Rasterizer::new(&wgpu);
         if let Err(err) = rasterizer.update_render_data(
@@ -180,12 +193,10 @@ impl Engine {
             }
         }
 
-        world.insert_resource(wgpu);
-        world.insert_resource(egui);
         world.insert_resource(rasterizer);
         world.insert_resource(raytracer);
-        world.insert_resource(WindowResource(window.clone()));
 
+        world.insert_resource(wgpu);
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
         world.insert_resource(EngineConfiguration::default());
@@ -203,6 +214,12 @@ impl Engine {
             sun_light_entity,
             stat: EngineStatistics::default(),
         }
+    }
+
+    pub async fn new_headless() -> Engine {
+        let window_size = winit::dpi::PhysicalSize::new(800u32, 600u32);
+        let wgpu = crate::rendering::wgpu::WgpuResources::new_headless().await;
+        Self::build(None, window_size, wgpu).await
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -236,8 +253,8 @@ impl Engine {
 
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
-        {
-            self.window.request_redraw();
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -268,11 +285,12 @@ impl Engine {
         &mut self,
         event: &winit::event::WindowEvent,
     ) -> egui_winit::EventResponse {
+        let window = self.window.as_ref().expect("No window for egui events");
         let mut egui = self
             .world
             .get_resource_mut::<crate::ui::egui::RendererEgui>()
             .unwrap();
-        egui.state.on_window_event(&self.window, event)
+        egui.state.on_window_event(window, event)
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {
