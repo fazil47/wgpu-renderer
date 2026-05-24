@@ -19,3 +19,19 @@ fn engine_renders_frame_headless() {
     let mut engine = pollster::block_on(app::core::Engine::new_headless());
     engine.render().unwrap();
 }
+
+#[test]
+fn engine_renders_raytracer_headless() {
+    setup();
+    let mut engine = pollster::block_on(app::core::Engine::new_headless());
+
+    // Enable the raytracer before rendering
+    if let Some(mut config) = engine
+        .world
+        .get_resource_mut::<app::core::engine::EngineConfiguration>()
+    {
+        config.is_raytracer_enabled = true;
+    }
+
+    engine.render().unwrap();
+}
