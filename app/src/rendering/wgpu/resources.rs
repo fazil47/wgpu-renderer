@@ -37,6 +37,78 @@ impl RenderTarget {
             RenderTarget::Offscreen { texture, .. } => texture.height(),
         }
     }
+
+    /// Read the offscreen texture back to CPU as RGBA bytes.
+    /// Panics if called on a Surface target.
+    pub fn read_pixels(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<u8> {
+        let texture = match self {
+            RenderTarget::Offscreen { texture, .. } => texture,
+            RenderTarget::Surface { .. } => {
+                panic!("read_pixels is only supported on offscreen render targets")
+            }
+        };
+
+        let rows = texture.width();
+        let cols = texture.height();
+        let bytes_per_pixel = 4u32; // We use Bgra8UnormSrgb, so 4 bytes per pixel
+        let unpadded_row_bytes = rows * bytes_per_pixel;
+
+        // Pad so that row is divisible by COPY_BYTES_PER_ROW_ALIGNMENT
+        let padded_row_bytes = unpadded_row_bytes.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback"),
+            size: (padded_row_bytes * cols) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_row_bytes),
+                    rows_per_image: None,
+                },
+            },
+            texture.size(),
+        );
+        queue.submit(Some(encoder.finish()));
+
+        let slice = buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        // sender.send is called when mapping is done
+        slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
+
+        // Wait until submitted GPU work is done
+        let _ = device.poll(wgpu::PollType::Wait);
+
+        // Unwrap results
+        let channel_result = receiver.recv();
+        let map_result = channel_result.unwrap();
+        map_result.unwrap();
+
+        // Get mapped data
+        let data = slice.get_mapped_range();
+
+        // Fill up pixels using only unpadded bytes per row
+        let mut pixels = Vec::with_capacity((rows * cols * bytes_per_pixel) as usize);
+        for row in 0..cols {
+            let start = (row * padded_row_bytes) as usize;
+            let end = start + unpadded_row_bytes as usize;
+            for chunk in data[start..end].chunks_exact(4) {
+                // BGRA to RGBA
+                pixels.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
+            }
+        }
+
+        pixels
+    }
 }
 
 pub struct WgpuResources {

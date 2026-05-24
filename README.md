@@ -11,15 +11,21 @@ To run:
 cargo run --release
 ```
 
+To run wasm:
+
+```zsh
+cargo xtask run-wasm --release
+```
+
+## Testing
+
 To run integration tests:
 
 ```zsh
 cargo test --release
 ```
 
-On macOS, tests run headless using the native Metal backend. In Linux containers
-without a GPU, install [llvmpipe](https://docs.mesa3d.org/drivers/llvmpipe.html)
-(Mesa's software Vulkan renderer) to provide a backend:
+Install [llvmpipe](https://docs.mesa3d.org/drivers/llvmpipe.html) to run tests with Lavapipe.
 
 ```zsh
 # Debian/Ubuntu
@@ -32,8 +38,8 @@ apk add mesa-vulkan-gallium
 dnf install mesa-vulkan-drivers
 ```
 
-To run wasm:
+Headless rendering tests compare output against reference images with a 2% tolerance. To regenerate the references after a rendering change:
 
 ```zsh
-cargo xtask run-wasm --release
+UPDATE_REFERENCES=1 cargo test 
 ```
