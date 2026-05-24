@@ -19,11 +19,11 @@ impl RendererEgui {
     pub fn new(
         window: &Window,
         device: &wgpu::Device,
-        surface_config: &wgpu::SurfaceConfiguration,
+        surface_format: wgpu::TextureFormat,
         pixels_per_point: f32,
     ) -> Self {
         // TODO: Try with dithering enabled
-        let egui_renderer = egui_wgpu::Renderer::new(device, surface_config.format, None, 1, false);
+        let egui_renderer = egui_wgpu::Renderer::new(device, surface_format, None, 1, false);
         let egui_ctx = egui::Context::default();
 
         let egui_viewport_id = egui_ctx.viewport_id();

@@ -6,7 +6,11 @@ use crate::ui::egui::RendererEgui;
 use crate::{
     camera::Camera,
     lighting::DirectionalLight,
-    rendering::{rasterizer::Rasterizer, raytracer::Raytracer, wgpu::WgpuResources},
+    rendering::{
+        rasterizer::Rasterizer,
+        raytracer::Raytracer,
+        wgpu::{RenderTarget, WgpuResources},
+    },
 };
 
 pub fn render_system(world: &mut World) {
@@ -32,26 +36,31 @@ pub fn render_system(world: &mut World) {
     };
 
     // 2. Prepare for rendering
-    let Some(ref surface) = wgpu.surface else {
-        return; // Headless mode — no surface to render to
-    };
+    let (surface_texture, render_target_view) = match &wgpu.target {
+        RenderTarget::Surface { surface, .. } => {
+            let surface_texture = match surface.get_current_texture() {
+                Ok(texture) => texture,
+                Err(wgpu::SurfaceError::Outdated) => return,
+                Err(wgpu::SurfaceError::Timeout) => return,
+                Err(wgpu::SurfaceError::Lost) => return,
+                Err(wgpu::SurfaceError::OutOfMemory) => {
+                    panic!("Out of memory");
+                }
+                Err(wgpu::SurfaceError::Other) => {
+                    panic!("Other surface error");
+                }
+            };
+            let view = surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
 
-    let surface_texture = match surface.get_current_texture() {
-        Ok(texture) => texture,
-        Err(wgpu::SurfaceError::Outdated) => return,
-        Err(wgpu::SurfaceError::Timeout) => return,
-        Err(wgpu::SurfaceError::Lost) => return,
-        Err(wgpu::SurfaceError::OutOfMemory) => {
-            panic!("Out of memory");
+            (Some(surface_texture), view)
         }
-        Err(wgpu::SurfaceError::Other) => {
-            panic!("Other surface error");
+        RenderTarget::Offscreen { texture, .. } => {
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            (None, view)
         }
     };
-
-    let surface_texture_view = surface_texture
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
 
     let mut render_encoder = wgpu
         .device
@@ -137,10 +146,8 @@ pub fn render_system(world: &mut World) {
                     raytracer.update_frame_count(&wgpu.queue, frame_state.frame_count);
 
                     // Dispatch compute
-                    let window_size = winit::dpi::PhysicalSize::new(
-                        wgpu.surface_config.width,
-                        wgpu.surface_config.height,
-                    );
+                    let window_size =
+                        winit::dpi::PhysicalSize::new(wgpu.target.width(), wgpu.target.height());
 
                     raytracer.compute(&window_size, &wgpu.device, &wgpu.queue);
 
@@ -161,11 +168,7 @@ pub fn render_system(world: &mut World) {
     {
         if raytracer_enabled {
             let raytracer = world.get_resource::<Raytracer>().unwrap();
-            raytracer.render(
-                &mut render_encoder,
-                &surface_texture_view,
-                raytracer_show_bvh,
-            );
+            raytracer.render(&mut render_encoder, &render_target_view, raytracer_show_bvh);
         } else {
             // Rasterizer pass
             if let Some(rasterizer) = world.get_resource::<Rasterizer>() {
@@ -181,13 +184,12 @@ pub fn render_system(world: &mut World) {
 
                 rasterizer.render(
                     &mut render_encoder,
-                    &surface_texture_view,
+                    &render_target_view,
                     default_material_entity,
                 );
 
                 if rasterizer.should_render_probe_visualization() {
-                    rasterizer
-                        .render_probe_visualization(&mut render_encoder, &surface_texture_view);
+                    rasterizer.render_probe_visualization(&mut render_encoder, &render_target_view);
                 }
             }
         }
@@ -211,7 +213,7 @@ pub fn render_system(world: &mut World) {
             .tessellate(output.shapes, output.pixels_per_point);
 
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [wgpu.surface_config.width, wgpu.surface_config.height],
+            size_in_pixels: [wgpu.target.width(), wgpu.target.height()],
             pixels_per_point: window_resource.0.scale_factor() as f32,
         };
 
@@ -225,7 +227,7 @@ pub fn render_system(world: &mut World) {
             &wgpu.device,
             &wgpu.queue,
             &mut render_encoder,
-            &surface_texture_view,
+            &render_target_view,
             &egui_primitives,
             &screen_descriptor,
         );
@@ -238,7 +240,9 @@ pub fn render_system(world: &mut World) {
 
     // 6. Submit and Present
     wgpu.queue.submit(std::iter::once(render_encoder.finish()));
-    surface_texture.present();
+    if let Some(surface_texture) = surface_texture {
+        surface_texture.present();
+    }
 }
 
 pub fn update_system(world: &mut World) {

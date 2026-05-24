@@ -154,7 +154,7 @@ impl Rasterizer {
             ])
             .build();
 
-        let swapchain_format = wgpu.surface_config.format;
+        let swapchain_format = wgpu.target.format();
 
         let render_pipeline = wgpu
             .device
@@ -188,7 +188,8 @@ impl Rasterizer {
 
         let depth_texture = crate::rendering::wgpu::Texture::create_depth_texture(
             &wgpu.device,
-            &wgpu.surface_config,
+            wgpu.target.width(),
+            wgpu.target.height(),
             "rasterizer_depth_texture",
         );
 
@@ -279,7 +280,8 @@ impl Rasterizer {
     pub fn resize(&mut self, wgpu: &WgpuResources) {
         self.depth_texture = crate::rendering::wgpu::Texture::create_depth_texture(
             &wgpu.device,
-            &wgpu.surface_config,
+            wgpu.target.width(),
+            wgpu.target.height(),
             "rasterizer_depth_texture",
         );
     }
@@ -320,7 +322,7 @@ impl Rasterizer {
     pub fn render(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
-        surface_texture_view: &wgpu::TextureView,
+        render_target_view: &wgpu::TextureView,
         default_material_entity: Entity,
     ) {
         // TODO: Only render shadow map if the directional light has changed
@@ -329,13 +331,13 @@ impl Rasterizer {
 
         if self.debug_shadow_maps {
             self._blit_to_screen
-                .render(render_encoder, surface_texture_view);
+                .render(render_encoder, render_target_view);
             return;
         }
 
         let mut rpass = render_pass(render_encoder)
             .label("Rasterizer Render Pass")
-            .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
+            .color_attachment(render_target_view, Some(wgpu::Color::BLACK))
             .depth_attachment(&self.depth_texture.view, Some(0.0))
             .begin();
 
@@ -391,11 +393,11 @@ impl Rasterizer {
     pub fn render_probe_visualization(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
-        surface_texture_view: &wgpu::TextureView,
+        render_target_view: &wgpu::TextureView,
     ) {
         self.probe_visualization.render(
             render_encoder,
-            surface_texture_view,
+            render_target_view,
             &self.depth_texture.view,
             self.probe_grid.bind_group(),
         );

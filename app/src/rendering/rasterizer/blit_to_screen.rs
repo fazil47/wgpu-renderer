@@ -91,7 +91,7 @@ impl BlitToScreen {
     pub fn render(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
-        surface_texture_view: &wgpu::TextureView,
+        render_target_view: &wgpu::TextureView,
     ) {
         if self.bind_group.is_none() {
             panic!("Blit to screen bind group not set");
@@ -100,7 +100,7 @@ impl BlitToScreen {
 
         let mut rpass = render_pass(render_encoder)
             .label("Blit to screen render pass")
-            .color_attachment(surface_texture_view, Some(wgpu::Color::BLACK))
+            .color_attachment(render_target_view, Some(wgpu::Color::BLACK))
             .begin();
 
         let pipeline = if self.use_depth {

@@ -158,7 +158,7 @@ impl Engine {
             let egui = crate::ui::egui::RendererEgui::new(
                 window,
                 &wgpu.device,
-                &wgpu.surface_config,
+                wgpu.target.format(),
                 window.scale_factor() as f32,
             );
             world.insert_resource(egui);

@@ -93,7 +93,7 @@ impl ProbeVisualization {
             .bind_group_layout(probe_grid.bind_group_layout())
             .build();
 
-        let swapchain_format = wgpu.surface_config.format;
+        let swapchain_format = wgpu.target.format();
         let render_pipeline = wgpu
             .device
             .render_pipeline()
@@ -220,7 +220,7 @@ impl ProbeVisualization {
     pub fn render(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
-        surface_texture_view: &wgpu::TextureView,
+        render_target_view: &wgpu::TextureView,
         depth_texture_view: &wgpu::TextureView,
         probe_bind_group: &wgpu::BindGroup,
     ) {
@@ -230,7 +230,7 @@ impl ProbeVisualization {
 
         // Create render pass using helper function
         let mut render_pass =
-            Self::create_render_pass(render_encoder, surface_texture_view, depth_texture_view);
+            Self::create_render_pass(render_encoder, render_target_view, depth_texture_view);
 
         // Set up rendering state and draw instanced spheres
         render_pass.set_pipeline(&self.render_pipeline);
@@ -273,13 +273,13 @@ impl ProbeVisualization {
     /// Create render pass with standard settings for probe visualization
     fn create_render_pass<'a>(
         render_encoder: &'a mut wgpu::CommandEncoder,
-        surface_texture_view: &'a wgpu::TextureView,
+        render_target_view: &'a wgpu::TextureView,
         depth_texture_view: &'a wgpu::TextureView,
     ) -> wgpu::RenderPass<'a> {
         render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Probe Visualization Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: surface_texture_view,
+                view: render_target_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load, // Don't clear, render on top

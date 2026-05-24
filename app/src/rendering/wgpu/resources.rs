@@ -5,13 +5,46 @@ use crate::material::RGBA;
 
 use super::WgpuExt;
 
+pub enum RenderTarget {
+    Surface {
+        surface: wgpu::Surface<'static>,
+        config: wgpu::SurfaceConfiguration,
+    },
+    Offscreen {
+        texture: wgpu::Texture,
+        view: wgpu::TextureView,
+    },
+}
+
+impl RenderTarget {
+    pub fn format(&self) -> wgpu::TextureFormat {
+        match self {
+            RenderTarget::Surface { config, .. } => config.format,
+            RenderTarget::Offscreen { texture, .. } => texture.format(),
+        }
+    }
+
+    pub fn width(&self) -> u32 {
+        match self {
+            RenderTarget::Surface { config, .. } => config.width,
+            RenderTarget::Offscreen { texture, .. } => texture.width(),
+        }
+    }
+
+    pub fn height(&self) -> u32 {
+        match self {
+            RenderTarget::Surface { config, .. } => config.height,
+            RenderTarget::Offscreen { texture, .. } => texture.height(),
+        }
+    }
+}
+
 pub struct WgpuResources {
     pub instance: wgpu::Instance,
-    pub surface: Option<wgpu::Surface<'static>>,
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub surface_config: wgpu::SurfaceConfiguration,
+    pub target: RenderTarget,
 }
 
 impl ecs::Resource for WgpuResources {}
@@ -50,24 +83,6 @@ impl WgpuResources {
             .await
             .expect("Failed to find an appropriate adapter");
 
-        let surface_config = if let Some(ref surface) = surface {
-            surface
-                .get_default_config(&adapter, width, height)
-                .expect("Failed to get default surface configuration")
-        } else {
-            // TODO: Find a cleaner way to support headless
-            wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                width,
-                height,
-                present_mode: wgpu::PresentMode::Fifo,
-                desired_maximum_frame_latency: 2,
-                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
-                view_formats: vec![],
-            }
-        };
-
         // TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES is native only
         let required_features = wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgpu::Features::FLOAT32_FILTERABLE;
@@ -87,25 +102,66 @@ impl WgpuResources {
             .await
             .expect("Failed to create device");
 
-        if let Some(ref surface) = surface {
-            surface.configure(&device, &surface_config);
-        }
+        let target = if let Some(surface) = surface {
+            let config = surface
+                .get_default_config(&adapter, width, height)
+                .expect("Failed to get default surface configuration");
+            surface.configure(&device, &config);
+            RenderTarget::Surface { surface, config }
+        } else {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Offscreen Render Target"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            RenderTarget::Offscreen { texture, view }
+        };
 
         Self {
             instance,
-            surface,
             adapter,
             device,
             queue,
-            surface_config,
+            target,
         }
     }
 
     pub fn resize(&mut self, new_size: &winit::dpi::PhysicalSize<u32>) {
-        self.surface_config.width = new_size.width.max(1);
-        self.surface_config.height = new_size.height.max(1);
-        if let Some(surface) = &self.surface {
-            surface.configure(&self.device, &self.surface_config);
+        match &mut self.target {
+            RenderTarget::Surface { surface, config } => {
+                config.width = new_size.width.max(1);
+                config.height = new_size.height.max(1);
+                surface.configure(&self.device, config);
+            }
+            RenderTarget::Offscreen { texture, view } => {
+                let format = texture.format();
+                let usage = texture.usage();
+                *texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Offscreen Render Target"),
+                    size: wgpu::Extent3d {
+                        width: new_size.width.max(1),
+                        height: new_size.height.max(1),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage,
+                    view_formats: &[],
+                });
+                *view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            }
         }
     }
 }
@@ -163,13 +219,14 @@ impl Texture {
 
     pub fn create_depth_texture(
         device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        width: u32,
+        height: u32,
         label: &str,
     ) -> Self {
         let texture = device
             .texture()
             .label(label)
-            .size_2d(config.width.max(1), config.height.max(1))
+            .size_2d(width.max(1), height.max(1))
             .format(Self::DEPTH_FORMAT)
             .usage(wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING)
             .build();

@@ -244,7 +244,7 @@ impl Raytracer {
             ])
             .build();
 
-        let swapchain_format = wgpu.surface_config.format;
+        let swapchain_format = wgpu.target.format();
         let render = wgpu
             .device
             .render_pipeline()
@@ -384,13 +384,13 @@ impl Raytracer {
     pub fn render(
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
-        surface_texture_view: &wgpu::TextureView,
+        render_target_view: &wgpu::TextureView,
         show_bvh: bool,
     ) {
         let mut rpass = render_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Raytracer Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: surface_texture_view,
+                view: render_target_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
