@@ -15,7 +15,7 @@ use winit::platform::web::WindowExtWebSys;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utils::load_icon;
 
-use crate::core::engine::Engine;
+use crate::core::engine::{Engine, WindowResource};
 
 pub enum StateInitializationEvent {
     Initialize(Box<Engine>),
@@ -112,11 +112,14 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             StateInitializationEvent::Initialize(engine) => {
                 log::info!("Received initialization event");
 
-                let window = engine
-                    .window
-                    .clone()
-                    .expect("Can't accept winit events without window");
-                window.request_redraw();
+                {
+                    // Request redraw with window and drop reference
+                    let window = engine
+                        .world
+                        .get_resource::<WindowResource>()
+                        .expect("Can't accept winit events without window");
+                    window.0.request_redraw();
+                }
 
                 // Force resize to fix initial canvas size on WASM
                 #[cfg(target_arch = "wasm32")]
@@ -131,14 +134,20 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             StateInitializationEvent::ForceResize => {
                 if let State::Initialized(ref mut engine) = self.application_state {
                     let window = engine
-                        .window
-                        .clone()
+                        .world
+                        .get_resource::<WindowResource>()
                         .expect("Can't accept winit event without window");
-                    let size = window.inner_size();
+                    let size = window.0.inner_size();
                     log::info!("Force resize to: {}x{}", size.width, size.height);
 
+                    // Drop the borrow before calling resize which also borrows the world
+                    drop(window);
+
                     engine.resize(size);
-                    window.request_redraw();
+
+                    if let Some(window) = engine.world.get_resource::<WindowResource>() {
+                        window.0.request_redraw();
+                    }
                 }
             }
         }
@@ -155,8 +164,10 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
         };
 
         let egui_event_response = engine.process_egui_events(&event);
-        if egui_event_response.repaint {
-            engine.window.as_ref().unwrap().request_redraw();
+        if egui_event_response.repaint
+            && let Some(window) = engine.world.get_resource::<WindowResource>()
+        {
+            window.0.request_redraw();
         }
 
         engine.process_events(&event);

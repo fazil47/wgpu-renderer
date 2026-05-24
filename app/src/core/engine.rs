@@ -27,8 +27,6 @@ use maths::Vec3;
 use crate::mesh::gltf::GltfMeshExt;
 
 pub struct Engine {
-    pub window: Option<Arc<Window>>,
-    pub window_size: winit::dpi::PhysicalSize<u32>,
     pub world: World,
     pub input_schedule: ecs::Schedule,
     pub update_schedule: ecs::Schedule,
@@ -58,13 +56,12 @@ impl Engine {
         window_size.height = window_size.height.max(1);
 
         let wgpu = crate::rendering::wgpu::WgpuResources::new(window.clone(), &window_size).await;
-        Self::build(Some(window), window_size, wgpu).await
+        Self::build(Some(window), wgpu).await
     }
 
     /// Common initialization shared by windowed and headless modes.
     async fn build(
         window: Option<Arc<Window>>,
-        window_size: winit::dpi::PhysicalSize<u32>,
         wgpu: crate::rendering::wgpu::WgpuResources,
     ) -> Engine {
         let mut world = World::new();
@@ -87,7 +84,7 @@ impl Engine {
             Camera::new(
                 camera_position,
                 -camera_position.normalized(), // look at origin
-                window_size.width as f32 / window_size.height as f32,
+                wgpu.target.width() as f32 / wgpu.target.height() as f32,
                 45.0,
                 0.01,
                 10000.0,
@@ -176,7 +173,7 @@ impl Engine {
             eprintln!("Failed to update rasterizer render data: {err}");
         }
 
-        let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu, &window_size);
+        let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu);
         match raytracer.update_render_data(
             &wgpu.device,
             &wgpu.queue,
@@ -203,8 +200,6 @@ impl Engine {
         world.insert_resource(UiState::default());
 
         Self {
-            window,
-            window_size,
             world,
             input_schedule,
             update_schedule,
@@ -217,13 +212,11 @@ impl Engine {
     }
 
     pub async fn new_headless() -> Engine {
-        let window_size = winit::dpi::PhysicalSize::new(800u32, 600u32);
         let wgpu = crate::rendering::wgpu::WgpuResources::new_headless().await;
-        Self::build(None, window_size, wgpu).await
+        Self::build(None, wgpu).await
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.window_size = new_size;
         if let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>() {
             flags.raytracer_reset = true;
         }
@@ -249,12 +242,12 @@ impl Engine {
             .world
             .get_resource_mut::<crate::rendering::raytracer::Raytracer>()
             .unwrap();
-        raytracer.resize(&new_size, &wgpu);
+        raytracer.resize(&wgpu);
 
         // On macOS the window needs to be redrawn manually after resizing
         #[cfg(target_os = "macos")]
-        if let Some(window) = &self.window {
-            window.request_redraw();
+        if let Some(window) = self.world.get_resource::<WindowResource>() {
+            window.0.request_redraw();
         }
     }
 
@@ -285,12 +278,12 @@ impl Engine {
         &mut self,
         event: &winit::event::WindowEvent,
     ) -> egui_winit::EventResponse {
-        let window = self.window.as_ref().expect("No window for egui events");
+        let window = self.world.get_resource::<WindowResource>().unwrap();
         let mut egui = self
             .world
             .get_resource_mut::<crate::ui::egui::RendererEgui>()
             .unwrap();
-        egui.state.on_window_event(window, event)
+        egui.state.on_window_event(&window.0, event)
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {

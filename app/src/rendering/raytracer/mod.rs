@@ -221,9 +221,10 @@ impl Raytracer {
             .build()
     }
 
-    pub fn new(wgpu: &WgpuResources, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
+    pub fn new(wgpu: &WgpuResources) -> Self {
         let shaders = RaytracerShaders::new(&wgpu.device);
-        let buffers = RaytracerBuffers::new(&wgpu.device, window_size);
+        let buffers =
+            RaytracerBuffers::new(&wgpu.device, wgpu.target.width(), wgpu.target.height());
         let bind_group_layouts = RaytracerBindGroupLayouts::new(&wgpu.device);
 
         let render_pipeline_layout = wgpu
@@ -355,8 +356,8 @@ impl Raytracer {
         Ok(Some(tlas_bvh))
     }
 
-    pub fn resize(&mut self, new_size: &winit::dpi::PhysicalSize<u32>, wgpu: &WgpuResources) {
-        self.buffers.on_resize(wgpu, new_size);
+    pub fn resize(&mut self, wgpu: &WgpuResources) {
+        self.buffers.on_resize(wgpu);
         self.bind_groups
             .on_resize(&wgpu.device, &self.bind_group_layouts, &self.buffers);
     }
@@ -509,7 +510,7 @@ pub struct RaytracerBuffers {
 }
 
 impl RaytracerBuffers {
-    fn new(device: &wgpu::Device, window_size: &winit::dpi::PhysicalSize<u32>) -> Self {
+    fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
         let initial_materials = vec![RaytracerMaterial {
             color: [1.0, 1.0, 1.0, 1.0],
             emissive: [0.0, 0.0, 0.0, 0.0],
@@ -585,7 +586,7 @@ impl RaytracerBuffers {
             .label("Raytracer Frame Count Buffer")
             .uniform(&0u32);
 
-        let result = Self::create_result_texture(device, window_size);
+        let result = Self::create_result_texture(device, width, height);
 
         Self {
             materials: materials_buffer,
@@ -610,9 +611,10 @@ impl RaytracerBuffers {
             result,
         }
     }
-    fn on_resize(&mut self, wgpu: &WgpuResources, new_size: &winit::dpi::PhysicalSize<u32>) {
+    fn on_resize(&mut self, wgpu: &WgpuResources) {
         self.update_frame_count(&wgpu.queue, 0);
-        self.result = Self::create_result_texture(&wgpu.device, new_size);
+        self.result =
+            Self::create_result_texture(&wgpu.device, wgpu.target.width(), wgpu.target.height());
     }
     fn update_frame_count(&self, queue: &wgpu::Queue, frame_count: u32) {
         queue.write_buffer(&self.frame_count, 0, bytemuck::cast_slice(&[frame_count]));
@@ -624,14 +626,11 @@ impl RaytracerBuffers {
         self.lighting
             .update_from_world(queue, world, sun_light_entity);
     }
-    fn create_result_texture(
-        device: &wgpu::Device,
-        window_size: &winit::dpi::PhysicalSize<u32>,
-    ) -> wgpu::TextureView {
+    fn create_result_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
         let result_texture = device
             .texture()
             .label("Raytracer Result Texture")
-            .size_2d(window_size.width, window_size.height)
+            .size_2d(width, height)
             .format(RaytracerTextureFormat)
             .usage(
                 wgpu::TextureUsages::STORAGE_BINDING
