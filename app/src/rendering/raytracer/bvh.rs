@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use maths::{Mat4, Vec3};
 
-use super::RaytracerVertex;
+use crate::rendering::GpuVertex;
 
 pub const BVH_LEAF_SIZE: usize = 4;
 
@@ -77,7 +77,7 @@ fn extent_component(vec: Vec3, axis: usize) -> f32 {
     }
 }
 
-fn vertex_position(vertex: &RaytracerVertex) -> Vec3 {
+fn vertex_position(vertex: &GpuVertex) -> Vec3 {
     Vec3::new(vertex.position[0], vertex.position[1], vertex.position[2])
 }
 
@@ -139,7 +139,7 @@ pub struct BvhPrimitive {
 }
 
 impl BvhPrimitive {
-    fn from_triangle(triangle_index: u32, vertices: &[RaytracerVertex], indices: &[u32]) -> Self {
+    fn from_triangle(triangle_index: u32, vertices: &[GpuVertex], indices: &[u32]) -> Self {
         let base = triangle_index as usize * 3;
         let i0 = indices[base] as usize;
         let i1 = indices[base + 1] as usize;
@@ -316,7 +316,7 @@ pub fn build_bvh_debug_lines(bvh: &Bvh) -> Vec<BvhDebugLine> {
     lines
 }
 
-pub fn build_blas(vertices: &[RaytracerVertex], indices: &[u32]) -> Bvh {
+pub fn build_blas(vertices: &[GpuVertex], indices: &[u32]) -> Bvh {
     if indices.is_empty() {
         return Bvh::empty();
     }

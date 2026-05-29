@@ -14,9 +14,8 @@ use crate::{
             visualization::{ProbeUIResult, ProbeVisualization},
         },
     },
-    mesh::Vertex,
     rendering::{
-        WorldExtractExt,
+        GpuVertex, WorldExtractExt,
         extract::{Extract, ExtractionError},
         rasterizer::{blit_to_screen::BlitToScreen, shadow::ShadowRenderTexture},
         raytracer::Raytracer,
@@ -24,36 +23,6 @@ use crate::{
     },
 };
 use ecs::{Entity, World};
-
-// Rasterizer vertex type
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuVertex {
-    pub position: [f32; 4],
-    pub normal: [f32; 4],
-}
-
-impl GpuVertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-impl From<Vertex> for GpuVertex {
-    fn from(val: Vertex) -> Self {
-        GpuVertex {
-            position: val.position.to_array(),
-            normal: val.normal.to_array(),
-        }
-    }
-}
 
 // Per-instance transform data (mat4 as four vec4 columns)
 #[repr(C)]

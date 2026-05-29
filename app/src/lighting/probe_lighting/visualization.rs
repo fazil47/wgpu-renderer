@@ -1,7 +1,7 @@
 use crate::{
     lighting::probe_lighting::{Dimensions, ProbeGrid, ProbeLightingState},
     rendering::wgpu::{QueueExt, WgpuExt},
-    rendering::{rasterizer::GpuVertex, wgpu::WgpuResources},
+    rendering::{GpuVertex, wgpu::WgpuResources},
 };
 use maths::Vec3;
 use wesl::include_wesl;
@@ -147,7 +147,11 @@ impl ProbeVisualization {
                 let position = [x * radius, y * radius, z * radius, 1.0];
                 let normal = [x, y, z, 0.0];
 
-                vertices.push(GpuVertex { position, normal });
+                vertices.push(GpuVertex {
+                    position,
+                    normal,
+                    material_index: 0.0,
+                });
             }
         }
 

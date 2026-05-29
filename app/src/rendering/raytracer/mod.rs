@@ -6,8 +6,8 @@ use wgpu::Device;
 
 use crate::{
     material::{DefaultMaterialEntity, Material},
-    mesh::Vertex,
     rendering::{
+        GpuVertex,
         extract::{Extract, ExtractionError, WorldExtractExt},
         raytracer::bvh::{Aabb, BvhNode, build_blas, build_bvh_debug_lines, build_tlas},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
@@ -17,27 +17,6 @@ use ecs::{Entity, World};
 use maths::{Mat4, Vec3};
 
 pub mod bvh;
-
-// Raytracer-specific vertex and material types
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RaytracerVertex {
-    pub position: [f32; 4],
-    pub normal: [f32; 4],
-    pub material_index: f32,
-}
-
-impl RaytracerVertex {
-    pub fn from_vertex(vertex: &Vertex, material_index: usize, transform: Mat4) -> Self {
-        let position = transform * vertex.position;
-        let normal = transform * vertex.normal;
-        Self {
-            position: position.to_array(),
-            normal: normal.to_array(),
-            material_index: material_index as f32,
-        }
-    }
-}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -101,11 +80,11 @@ impl RaytracerBvhLineVertex {
 // Raytracer vertex constants
 pub const RAYTRACE_MATERIAL_STRIDE: u32 =
     (size_of::<RaytracerMaterial>() / size_of::<f32>()) as u32;
-pub const RAYTRACE_VERTEX_STRIDE: u32 = (size_of::<RaytracerVertex>() / size_of::<f32>()) as u32;
+pub const RAYTRACE_VERTEX_STRIDE: u32 = (size_of::<GpuVertex>() / size_of::<f32>()) as u32;
 pub const RAYTRACE_VERTEX_NORMAL_OFFSET: u32 =
-    (offset_of!(RaytracerVertex, normal) / size_of::<f32>()) as u32;
+    (offset_of!(GpuVertex, normal) / size_of::<f32>()) as u32;
 pub const RAYTRACE_VERTEX_MATERIAL_INDEX_OFFSET: u32 =
-    (offset_of!(RaytracerVertex, material_index) / size_of::<f32>()) as u32;
+    (offset_of!(GpuVertex, material_index) / size_of::<f32>()) as u32;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -521,7 +500,7 @@ impl RaytracerBuffers {
             .label("Raytracer Materials Buffer")
             .storage(&initial_materials);
 
-        let initial_vertices = vec![RaytracerVertex {
+        let initial_vertices = vec![GpuVertex {
             position: [0.0, 0.0, 0.0, 1.0],
             normal: [0.0, 1.0, 0.0, 0.0],
             material_index: 0.0,
@@ -865,10 +844,10 @@ impl Extract for Raytracer {
                 default_material_index
             };
 
-            let mesh_vertices: Vec<RaytracerVertex> = mesh
+            let mesh_vertices: Vec<GpuVertex> = mesh
                 .vertices()
                 .iter()
-                .map(|vertex| RaytracerVertex::from_vertex(vertex, material_index, Mat4::IDENTITY))
+                .map(|vertex| GpuVertex::from_vertex(vertex, material_index, Mat4::IDENTITY))
                 .collect();
 
             let mesh_indices: Vec<u32> = match mesh.indices() {
