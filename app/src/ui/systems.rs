@@ -167,11 +167,16 @@ pub fn ui_system(world: &mut World) {
         config.shadow_map_cascade_to_debug = shadow_map_cascade_to_debug;
     }
 
-    if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
-        if has_transform_changed {
-            flags.raytracer_reset = true;
-            flags.transforms = true;
+    if has_transform_changed {
+        if let Some(entity) = world.get_resource::<SelectedEntity>().and_then(|s| s.0) {
+            world.send_event(crate::core::events::TransformChanged(entity));
         }
+        if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
+            flags.raytracer_reset = true;
+        }
+    }
+
+    if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
         if bake_requested {
             flags.probe_bake_requested = true;
         }

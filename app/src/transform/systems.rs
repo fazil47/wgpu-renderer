@@ -4,20 +4,21 @@ use ecs::{Entity, World};
 use maths::Mat4;
 
 use crate::{
-    core::flags::DirtyFlags,
+    core::events::TransformChanged,
     transform::{GlobalTransform, Transform},
 };
 
 pub fn calculate_global_position_system(world: &mut World) {
-    let is_dirty = world
-        .get_resource::<DirtyFlags>()
-        .map(|f| f.transforms)
-        .unwrap_or(false);
-
-    if !is_dirty {
+    if !world.has_events::<TransformChanged>() {
         return;
     }
 
+    calculate_global_positions(world);
+}
+
+/// Recalculates GlobalTransform for every entity that has a Transform.
+/// Called during initialization and when transforms change at runtime.
+pub fn calculate_global_positions(world: &World) {
     let mut cache: HashMap<Entity, Mat4> = HashMap::new();
     let mut visiting: HashSet<Entity> = HashSet::new();
 

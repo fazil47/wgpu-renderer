@@ -3,9 +3,12 @@ use ecs::World;
 pub fn reset_dirty_flags_system(world: &mut World) {
     if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
         flags.geometry = false;
-        flags.transforms = false;
         flags.lights = false;
         flags.probe_bake_requested = false;
         flags.raytracer_reset = false;
     }
+}
+
+pub fn clear_events_system(world: &mut World) {
+    world.clear_all_events();
 }

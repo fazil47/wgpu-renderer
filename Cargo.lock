@@ -742,6 +742,9 @@ dependencies = [
 [[package]]
 name = "ecs"
 version = "0.1.0"
+dependencies = [
+ "indexmap",
+]
 
 [[package]]
 name = "egui"

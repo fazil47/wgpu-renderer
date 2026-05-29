@@ -1,5 +1,6 @@
 pub mod application;
 pub mod engine;
+pub mod events;
 pub mod flags;
 pub mod systems;
 

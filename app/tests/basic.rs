@@ -1,3 +1,5 @@
+use app::core::events::TransformChanged;
+
 #[test]
 fn headless_engine_can_be_created() {
     setup();
@@ -65,13 +67,8 @@ fn rasterizer_responds_to_transform_changes() {
         transform.position.x += 0.5;
     }
 
-    // Mark transforms dirty so the update pipeline picks up the change
-    if let Some(mut flags) = engine
-        .world
-        .get_resource_mut::<app::core::flags::DirtyFlags>()
-    {
-        flags.transforms = true;
-    }
+    // Send transform changed event
+    engine.world.send_event(TransformChanged(suzanne));
 
     // Render with the moved mesh
     engine.render().unwrap();
@@ -128,12 +125,14 @@ fn raytracer_responds_to_transform_changes() {
         transform.position.x += 0.5;
     }
 
-    // Mark transforms dirty so the update pipeline picks up the change
+    // Reset raytracer and send event
+
+    engine.world.send_event(TransformChanged(suzanne));
+
     if let Some(mut flags) = engine
         .world
         .get_resource_mut::<app::core::flags::DirtyFlags>()
     {
-        flags.transforms = true;
         flags.raytracer_reset = true;
     }
 

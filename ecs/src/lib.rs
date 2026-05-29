@@ -2,8 +2,11 @@ use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
+    hash::Hash,
     ops::{Deref, DerefMut},
 };
+
+use indexmap::IndexSet;
 
 /// Marker trait for ECS components
 pub trait Component: 'static + Any {}
@@ -35,10 +38,13 @@ impl DerefMut for Entity {
 
 pub type EntityComponents = HashMap<TypeId, Box<RefCell<dyn Component>>>;
 
+// ── World ───────────────────────────────────────────────────────────────────
+
 /// The main ECS world that holds all entities and their components
 pub struct World {
     entities: HashMap<Entity, EntityComponents>,
     resources: HashMap<TypeId, Box<RefCell<dyn Resource>>>,
+    events: HashMap<TypeId, Box<dyn AnyEventStorage>>,
     next_id: u32,
 }
 
@@ -53,6 +59,7 @@ impl World {
         Self {
             entities: HashMap::new(),
             resources: HashMap::new(),
+            events: HashMap::new(),
             next_id: 0,
         }
     }
@@ -176,6 +183,45 @@ impl World {
         self.resources
             .insert(resource.type_id(), Box::new(RefCell::new(resource)));
     }
+
+    // ── Event methods ───────────────────────────────────────────────────
+
+    /// Send an entity event. Deduplicated: sending the same event twice in a frame is a no-op.
+    pub fn send_event<E: EntityEvent + Eq + std::hash::Hash>(&mut self, event: E) {
+        let storage = self
+            .events
+            .entry(TypeId::of::<E>())
+            .or_insert_with(|| Box::new(EventStorage::<E>::new()));
+
+        let storage = storage
+            .as_any_mut()
+            .downcast_mut::<EventStorage<E>>()
+            .unwrap();
+
+        storage.events.insert(event);
+    }
+
+    /// Read all events of a given type this frame.
+    pub fn read_events<E: EntityEvent + Eq + std::hash::Hash>(&self) -> Option<&IndexSet<E>> {
+        self.events
+            .get(&TypeId::of::<E>())
+            .and_then(|s| s.as_any().downcast_ref::<EventStorage<E>>())
+            .map(|s| &s.events)
+    }
+
+    /// Check whether any events of a given type were sent this frame.
+    pub fn has_events<E: EntityEvent + Eq + std::hash::Hash>(&self) -> bool {
+        self.events
+            .get(&TypeId::of::<E>())
+            .is_some_and(|s| s.len() > 0)
+    }
+
+    /// Clear all events of every type. Call at end of frame.
+    pub fn clear_all_events(&mut self) {
+        for storage in self.events.values_mut() {
+            storage.clear();
+        }
+    }
 }
 
 pub type System = Box<dyn FnMut(&mut World)>;
@@ -207,6 +253,54 @@ impl Schedule {
         }
     }
 }
+
+// ── Events ──────────────────────────────────────────────────────────────────
+
+/// An event that targets an entity. Deduplicated per entity within an event type.
+pub trait EntityEvent: 'static + Copy {
+    fn entity(&self) -> Entity;
+}
+
+/// Type-erased storage so we can hold heterogeneous event queues in one map.
+trait AnyEventStorage: Any {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn clear(&mut self);
+    fn len(&self) -> usize;
+}
+
+/// Concrete, typed storage for a single event type.
+struct EventStorage<E: EntityEvent + Eq + Hash> {
+    events: IndexSet<E>,
+}
+
+impl<E: EntityEvent + Eq + Hash> EventStorage<E> {
+    fn new() -> Self {
+        Self {
+            events: IndexSet::new(),
+        }
+    }
+}
+
+impl<E: EntityEvent + Eq + Hash> AnyEventStorage for EventStorage<E> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn clear(&mut self) {
+        self.events.clear();
+    }
+
+    fn len(&self) -> usize {
+        self.events.len()
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -266,5 +360,83 @@ mod tests {
         assert_eq!(world.get_all_entities().len(), 1);
         let entities = world.get_entities_with::<TestComponent>();
         assert_eq!(entities.len(), 1);
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    struct TestEvent(Entity);
+    impl EntityEvent for TestEvent {
+        fn entity(&self) -> Entity {
+            self.0
+        }
+    }
+
+    #[test]
+    fn test_events_send_and_read() {
+        let mut world = World::new();
+        let e1 = world.create_entity();
+        let e2 = world.create_entity();
+
+        world.send_event(TestEvent(e1));
+        world.send_event(TestEvent(e2));
+
+        assert!(world.has_events::<TestEvent>());
+
+        let events = world.read_events::<TestEvent>().unwrap();
+        assert_eq!(events.len(), 2);
+
+        assert!(events.contains(&TestEvent(e1)));
+        assert!(events.contains(&TestEvent(e2)));
+    }
+
+    #[test]
+    fn test_events_dedup() {
+        let mut world = World::new();
+        let e1 = world.create_entity();
+
+        world.send_event(TestEvent(e1));
+        world.send_event(TestEvent(e1));
+        world.send_event(TestEvent(e1));
+
+        let events = world.read_events::<TestEvent>().unwrap();
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn test_events_clear() {
+        let mut world = World::new();
+        let e1 = world.create_entity();
+
+        world.send_event(TestEvent(e1));
+        assert!(world.has_events::<TestEvent>());
+
+        world.clear_all_events();
+        assert!(!world.has_events::<TestEvent>());
+    }
+
+    #[test]
+    fn test_events_empty_by_default() {
+        let world = World::new();
+        assert!(!world.has_events::<TestEvent>());
+        assert!(world.read_events::<TestEvent>().is_none());
+    }
+
+    #[test]
+    fn test_events_insertion_order() {
+        let mut world = World::new();
+        let e1 = world.create_entity();
+        let e2 = world.create_entity();
+        let e3 = world.create_entity();
+
+        world.send_event(TestEvent(e3));
+        world.send_event(TestEvent(e1));
+        world.send_event(TestEvent(e2));
+
+        let events: Vec<TestEvent> = world
+            .read_events::<TestEvent>()
+            .unwrap()
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(events, vec![TestEvent(e3), TestEvent(e1), TestEvent(e2)]);
     }
 }

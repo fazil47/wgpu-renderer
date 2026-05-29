@@ -123,6 +123,9 @@ impl Engine {
             }
         }
 
+        // Calculate global transforms for all loaded entities before renderers read them
+        crate::transform::systems::calculate_global_positions(&world);
+
         world.insert_resource(camera_controller);
         world.insert_resource(Time {
             delta_time: 0.0,
@@ -130,7 +133,6 @@ impl Engine {
         });
         world.insert_resource(DirtyFlags {
             geometry: true,
-            transforms: true,
             lights: true,
             ..Default::default()
         });
@@ -151,6 +153,7 @@ impl Engine {
 
         let mut cleanup_schedule = ecs::Schedule::new();
         cleanup_schedule.add_system(crate::core::systems::reset_dirty_flags_system);
+        cleanup_schedule.add_system(crate::core::systems::clear_events_system);
 
         // Create egui renderer (windowed only)
         if let Some(ref window) = window {

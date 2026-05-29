@@ -94,13 +94,9 @@ impl CameraController {
                     _ => false,
                 }
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if *button == MouseButton::Right {
-                    self.cursor_locked = *state == ElementState::Pressed;
-                    true
-                } else {
-                    false
-                }
+            WindowEvent::MouseInput { state, button, .. } if *button == MouseButton::Right => {
+                self.cursor_locked = *state == ElementState::Pressed;
+                true
             }
             _ => false,
         }
