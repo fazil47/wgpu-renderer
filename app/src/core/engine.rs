@@ -101,23 +101,25 @@ impl Engine {
         );
         world.add_component(sun_light_entity, DirectionalLight::new(45.0, 45.0));
 
-        let gltf_path = "assets/cornell-box.glb";
+        let gltf_paths = ["assets/cornell-box.glb"];
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Ok(meshes) = Mesh::from_gltf(&mut world, gltf_path) {
-                println!("Loaded {} meshes from GLTF", meshes.len());
-            } else {
-                log::warn!("Failed to load GLTF mesh");
+        for gltf_path in gltf_paths {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if let Ok(meshes) = Mesh::from_gltf(&mut world, gltf_path) {
+                    println!("Loaded {} meshes from GLTF", meshes.len());
+                } else {
+                    log::warn!("Failed to load GLTF mesh");
+                }
             }
-        }
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            if let Ok(meshes) = Mesh::from_gltf_url(&mut world, gltf_path).await {
-                println!("Loaded {} meshes from GLTF", meshes.len());
-            } else {
-                log::warn!("Failed to load GLTF mesh");
+            #[cfg(target_arch = "wasm32")]
+            {
+                if let Ok(meshes) = Mesh::from_gltf_url(&mut world, gltf_path).await {
+                    println!("Loaded {} meshes from GLTF", meshes.len());
+                } else {
+                    log::warn!("Failed to load GLTF mesh");
+                }
             }
         }
 
