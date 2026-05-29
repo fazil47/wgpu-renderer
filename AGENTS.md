@@ -8,7 +8,10 @@
 # Build and run in debug mode
 cargo run
 
-# Build and run in release mode (recommended for performance)
+# Testing
+cargo test
+
+# Build and run in release mode 
 cargo run --release
 
 # Check compilation without running
