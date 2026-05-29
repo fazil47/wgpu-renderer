@@ -124,8 +124,10 @@ impl Engine {
         }
 
         // TODO: Add hooks to send TransformChanged events automatically when a
-        // Transform component is first attached, instead of doing this
-        crate::transform::systems::calculate_global_positions(&world);
+        // Transform component is first attached instead of doing this
+        for entity in world.get_entities_with::<Transform>() {
+            world.send_event(crate::core::events::TransformChanged(entity));
+        }
 
         world.insert_resource(camera_controller);
         world.insert_resource(Time {

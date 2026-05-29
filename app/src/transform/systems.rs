@@ -9,21 +9,39 @@ use crate::{
 };
 
 pub fn calculate_global_position_system(world: &mut World) {
-    if !world.has_events::<TransformChanged>() {
-        return;
+    // Collect changed entities from events
+    let changed_entities: HashSet<Entity> = match world.read_events::<TransformChanged>() {
+        Some(events) if !events.is_empty() => events.iter().map(|e| e.0).collect(),
+        _ => return,
+    };
+
+    // Build parent -> children map so we can find descendants
+    let all_transforms = world.get_entities_with::<Transform>();
+    let mut children_map: HashMap<Entity, Vec<Entity>> = HashMap::new();
+    for &entity in &all_transforms {
+        if let Some(transform) = world.get_component::<Transform>(entity)
+            && let Some(parent) = transform.parent
+        {
+            children_map.entry(parent).or_default().push(entity);
+        }
     }
 
-    calculate_global_positions(world);
-}
+    // Collect dirty set: changed entities + all their descendants
+    let mut dirty: HashSet<Entity> = HashSet::new();
+    let mut stack: Vec<Entity> = changed_entities.into_iter().collect();
+    while let Some(entity) = stack.pop() {
+        if dirty.insert(entity)
+            && let Some(children) = children_map.get(&entity)
+        {
+            stack.extend(children);
+        }
+    }
 
-/// Recalculates GlobalTransform for every entity that has a Transform.
-/// Called during initialization and when transforms change at runtime.
-pub fn calculate_global_positions(world: &World) {
+    // Recalculate only dirty entities, using stored GlobalTransform for clean ancestors
     let mut cache: HashMap<Entity, Mat4> = HashMap::new();
     let mut visiting: HashSet<Entity> = HashSet::new();
-
-    for entity in world.get_entities_with::<Transform>() {
-        let _ = calculate_global_position(world, entity, &mut cache, &mut visiting);
+    for &entity in &dirty {
+        let _ = calculate_global_position(world, entity, &mut cache, &mut visiting, &dirty);
     }
 }
 
@@ -32,9 +50,18 @@ fn calculate_global_position(
     entity: Entity,
     cache: &mut HashMap<Entity, Mat4>,
     visiting: &mut HashSet<Entity>,
+    dirty: &HashSet<Entity>,
 ) -> Result<Mat4, String> {
     if let Some(matrix) = cache.get(&entity) {
         return Ok(*matrix);
+    }
+
+    // Non-dirty entities still have a valid GlobalTransform — use it directly
+    if !dirty.contains(&entity)
+        && let Some(global) = world.get_component::<GlobalTransform>(entity)
+    {
+        cache.insert(entity, global.matrix);
+        return Ok(global.matrix);
     }
 
     if !visiting.insert(entity) {
@@ -54,7 +81,7 @@ fn calculate_global_position(
             return Err(format!("Entity {parent:?} missing component: Transform"));
         }
 
-        let parent_matrix = calculate_global_position(world, parent, cache, visiting)?;
+        let parent_matrix = calculate_global_position(world, parent, cache, visiting, dirty)?;
         parent_matrix * local_matrix
     } else {
         local_matrix
