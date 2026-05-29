@@ -105,7 +105,11 @@ impl MeshBuffers {
 
     pub fn update(&mut self, device: &wgpu::Device, world: &World) -> Result<(), ExtractionError> {
         // Build material entity → index mapping
-        let material_entities = world.get_materials();
+        let mut material_entities = world.get_materials();
+
+        // Sort so that material indices are stable
+        material_entities.sort();
+
         let default_material_entity = world.get_resource::<DefaultMaterialEntity>().unwrap().0;
         let mut material_entity_to_index: HashMap<Entity, usize> = HashMap::new();
         let mut default_material_index = None;

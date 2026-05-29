@@ -16,7 +16,7 @@ pub trait Resource: 'static + Any {}
 impl<T> Resource for Box<T> where T: Resource {}
 
 /// A unique identifier for an entity
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Entity(pub u32);
 
 impl Deref for Entity {

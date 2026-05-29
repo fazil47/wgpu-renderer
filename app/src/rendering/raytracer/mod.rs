@@ -793,7 +793,11 @@ impl Extract for Raytracer {
             .get_resource::<MeshBuffers>()
             .ok_or_else(|| ExtractionError::Misc("MeshBuffers resource not found".to_string()))?;
 
-        let material_entities = world.get_materials();
+        let mut material_entities = world.get_materials();
+
+        // Sort so that material indices are stable
+        material_entities.sort();
+
         let mut materials = Vec::new();
         for entity in material_entities {
             let material = world.extract_material_component(entity)?;
