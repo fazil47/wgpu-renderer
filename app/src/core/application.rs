@@ -170,7 +170,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             window.0.request_redraw();
         }
 
-        engine.process_events(&event);
+        engine.process_window_events(&event);
 
         if egui_event_response.consumed {
             return;

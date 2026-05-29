@@ -297,14 +297,14 @@ impl Engine {
         egui.state.on_window_event(&window.0, event)
     }
 
-    pub fn process_events(&mut self, event: &WindowEvent) {
-        let should_reset = {
+    pub fn process_window_events(&mut self, event: &WindowEvent) {
+        let should_reset_raytracer = {
             let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
             camera_controller.process_events(event);
             camera_controller.is_cursor_locked() && camera_controller.has_camera_moved()
         };
 
-        if should_reset {
+        if should_reset_raytracer {
             self.world.send_event(RaytracerReset);
         }
     }
