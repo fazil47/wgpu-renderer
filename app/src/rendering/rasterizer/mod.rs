@@ -1,8 +1,8 @@
 mod blit_to_screen;
 pub mod shadow;
 
-use std::{collections::HashMap, mem::size_of};
-use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, RenderPipeline};
+use std::collections::HashMap;
+use wgpu::{BindGroup, BindGroupLayout, Device, RenderPipeline};
 
 use crate::{
     lighting::{
@@ -17,6 +17,7 @@ use crate::{
     rendering::{
         GpuVertex, WorldExtractExt,
         extract::{Extract, ExtractionError},
+        mesh::{InstanceTransform, MeshBuffers},
         rasterizer::{blit_to_screen::BlitToScreen, shadow::ShadowRenderTexture},
         raytracer::Raytracer,
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources, render_pass},
@@ -24,43 +25,7 @@ use crate::{
 };
 use ecs::{Entity, World};
 
-// Per-instance transform data (mat4 as four vec4 columns)
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct InstanceTransform {
-    pub col0: [f32; 4],
-    pub col1: [f32; 4],
-    pub col2: [f32; 4],
-    pub col3: [f32; 4],
-}
-
-impl InstanceTransform {
-    const ATTRIBS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
-        2 => Float32x4,
-        3 => Float32x4,
-        4 => Float32x4,
-        5 => Float32x4
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-pub struct GpuMesh {
-    vertex_buffer: Buffer,
-    instance_buffer: Buffer,
-    vertex_count: u32,
-    index_buffer: Option<(Buffer, u32)>,
-    material_entity: Option<Entity>,
-}
-
 pub struct Rasterizer {
-    gpu_meshes: Vec<GpuMesh>,
     camera_buffers: CameraBuffers,
     lighting_buffers: LightingBuffers,
     depth_texture: crate::rendering::wgpu::Texture,
@@ -205,7 +170,6 @@ impl Rasterizer {
         );
 
         Self {
-            gpu_meshes: Vec::new(),
             camera_buffers,
             lighting_buffers,
             depth_texture,
@@ -237,9 +201,7 @@ impl Rasterizer {
             .update_from_world(queue, world, camera_entity);
         self.lighting_buffers
             .update_from_world(queue, world, sun_light_entity);
-        let (gpu_meshes, material_bind_groups, material_double_sided) =
-            self.extract(device, world)?;
-        self.gpu_meshes = gpu_meshes;
+        let (material_bind_groups, material_double_sided) = self.extract(device, world)?;
         self.material_bind_groups = material_bind_groups;
         self.material_double_sided = material_double_sided;
 
@@ -293,10 +255,11 @@ impl Rasterizer {
         render_encoder: &mut wgpu::CommandEncoder,
         render_target_view: &wgpu::TextureView,
         default_material_entity: Entity,
+        mesh_buffers: &MeshBuffers,
     ) {
         // TODO: Only render shadow map if the directional light has changed
         self.shadow_render_texture
-            .render(render_encoder, &self.gpu_meshes);
+            .render(render_encoder, mesh_buffers);
 
         if self.debug_shadow_maps {
             self._blit_to_screen
@@ -313,7 +276,14 @@ impl Rasterizer {
         rpass.set_bind_group(0, &self.other_bind_group, &[]);
         rpass.set_bind_group(1, self.probe_grid.bind_group(), &[]);
 
-        for mesh in &self.gpu_meshes {
+        rpass.set_vertex_buffer(0, mesh_buffers.vertex_buffer.slice(..));
+        rpass.set_index_buffer(
+            mesh_buffers.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint32,
+        );
+
+        let instance_stride = std::mem::size_of::<InstanceTransform>() as u64;
+        for (i, mesh) in mesh_buffers.meshes.iter().enumerate() {
             let material_entity = mesh.material_entity.unwrap_or(default_material_entity);
             let material_bind_group = self
                 .material_bind_groups
@@ -339,15 +309,19 @@ impl Rasterizer {
 
             rpass.set_bind_group(2, material_bind_group, &[]);
 
-            rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            rpass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
+            let instance_offset = i as u64 * instance_stride;
+            rpass.set_vertex_buffer(
+                1,
+                mesh_buffers
+                    .instance_buffer
+                    .slice(instance_offset..instance_offset + instance_stride),
+            );
 
-            if let Some((buffer, count)) = mesh.index_buffer.as_ref() {
-                rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
-                rpass.draw_indexed(0..*count, 0, 0..1);
-            } else {
-                rpass.draw(0..mesh.vertex_count, 0..1);
-            }
+            rpass.draw_indexed(
+                mesh.index_offset..(mesh.index_offset + mesh.index_count),
+                mesh.vertex_offset as i32,
+                0..1,
+            );
         }
     }
 
@@ -441,11 +415,7 @@ impl Rasterizer {
 }
 
 impl Extract for Rasterizer {
-    type ExtractedData = (
-        Vec<GpuMesh>,
-        HashMap<Entity, BindGroup>,
-        HashMap<Entity, bool>,
-    );
+    type ExtractedData = (HashMap<Entity, BindGroup>, HashMap<Entity, bool>);
 
     fn extract(
         &self,
@@ -486,60 +456,6 @@ impl Extract for Rasterizer {
                 .or_insert(material.double_sided);
         }
 
-        let renderables: Vec<Entity> = world.get_renderables();
-        let mut gpu_meshes: Vec<GpuMesh> = Vec::new();
-
-        for entity in renderables {
-            let global_transform = world.extract_global_transform_component(entity)?;
-            let mesh = world.extract_mesh_component(entity)?;
-
-            // Store vertices in local space (no transform applied)
-            let vertices: Vec<GpuVertex> = mesh
-                .vertices()
-                .iter()
-                .map(|v| GpuVertex::from(*v))
-                .collect();
-
-            let vertex_buffer: Buffer = device
-                .buffer()
-                .label("Entity Mesh Vertex Buffer")
-                .usage(wgpu::BufferUsages::VERTEX)
-                .vertex(&vertices);
-            let vertex_count = mesh.vertices().len() as u32;
-
-            let index_buffer = mesh.indices().map(|mesh_indices| {
-                (
-                    device
-                        .buffer()
-                        .label("Entity Mesh Index Buffer")
-                        .usage(wgpu::BufferUsages::INDEX)
-                        .index(mesh_indices),
-                    mesh_indices.len() as u32,
-                )
-            });
-
-            // Instance buffer holding the model transform
-            let matrix = global_transform.matrix.to_cols_array_2d();
-            let instance_transform = InstanceTransform {
-                col0: matrix[0],
-                col1: matrix[1],
-                col2: matrix[2],
-                col3: matrix[3],
-            };
-            let instance_buffer = device
-                .buffer()
-                .label("Entity Mesh Instance Buffer")
-                .vertex(&[instance_transform]);
-
-            gpu_meshes.push(GpuMesh {
-                vertex_buffer,
-                instance_buffer,
-                vertex_count,
-                index_buffer,
-                material_entity: mesh.material_entity,
-            });
-        }
-
-        Ok((gpu_meshes, material_bind_groups, material_double_sided))
+        Ok((material_bind_groups, material_double_sided))
     }
 }

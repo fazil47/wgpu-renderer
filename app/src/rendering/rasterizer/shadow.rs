@@ -8,7 +8,7 @@ use crate::{
     },
     rendering::{
         GpuVertex,
-        rasterizer::{GpuMesh, InstanceTransform},
+        mesh::{InstanceTransform, MeshBuffers},
         wgpu::{QueueExt, WgpuExt, render_pass},
     },
 };
@@ -152,7 +152,9 @@ impl ShadowRenderTexture {
         );
     }
 
-    pub fn render(&self, render_encoder: &mut wgpu::CommandEncoder, gpu_meshes: &Vec<GpuMesh>) {
+    pub fn render(&self, render_encoder: &mut wgpu::CommandEncoder, mesh_buffers: &MeshBuffers) {
+        let instance_stride = std::mem::size_of::<InstanceTransform>() as u64;
+
         for cascade_index in 0..CASCADED_SHADOW_NUM_CASCADES {
             let mut rpass = render_pass(render_encoder)
                 .label("Shadow map render pass")
@@ -163,16 +165,26 @@ impl ShadowRenderTexture {
             let bg_offset = (self.matrices_uniform_padded_size * cascade_index) as u32;
             rpass.set_bind_group(0, &self.bind_group, &[bg_offset]);
 
-            for gpu_mesh in gpu_meshes {
-                rpass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-                rpass.set_vertex_buffer(1, gpu_mesh.instance_buffer.slice(..));
+            rpass.set_vertex_buffer(0, mesh_buffers.vertex_buffer.slice(..));
+            rpass.set_index_buffer(
+                mesh_buffers.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
 
-                if let Some((buffer, count)) = gpu_mesh.index_buffer.as_ref() {
-                    rpass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rpass.draw_indexed(0..*count, 0, 0..1);
-                } else {
-                    rpass.draw(0..gpu_mesh.vertex_count, 0..1);
-                }
+            for (i, mesh) in mesh_buffers.meshes.iter().enumerate() {
+                let instance_offset = i as u64 * instance_stride;
+                rpass.set_vertex_buffer(
+                    1,
+                    mesh_buffers
+                        .instance_buffer
+                        .slice(instance_offset..instance_offset + instance_stride),
+                );
+
+                rpass.draw_indexed(
+                    mesh.index_offset..(mesh.index_offset + mesh.index_count),
+                    mesh.vertex_offset as i32,
+                    0..1,
+                );
             }
         }
     }

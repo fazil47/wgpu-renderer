@@ -1,14 +1,12 @@
-use std::{
-    collections::HashMap,
-    mem::{offset_of, size_of},
-};
+use std::mem::{offset_of, size_of};
 use wgpu::Device;
 
 use crate::{
-    material::{DefaultMaterialEntity, Material},
+    material::Material,
     rendering::{
         GpuVertex,
         extract::{Extract, ExtractionError, WorldExtractExt},
+        mesh::MeshBuffers,
         raytracer::bvh::{Aabb, BvhNode, build_blas, build_bvh_debug_lines, build_tlas},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
@@ -200,7 +198,7 @@ impl Raytracer {
             .build()
     }
 
-    pub fn new(wgpu: &WgpuResources) -> Self {
+    pub fn new(wgpu: &WgpuResources, mesh_buffers: &MeshBuffers) -> Self {
         let shaders = RaytracerShaders::new(&wgpu.device);
         let buffers =
             RaytracerBuffers::new(&wgpu.device, wgpu.target.width(), wgpu.target.height());
@@ -267,7 +265,13 @@ impl Raytracer {
             compute,
             bvh_lines,
         };
-        let bind_groups = RaytracerBindGroups::new(&wgpu.device, &bind_group_layouts, &buffers);
+        let bind_groups = RaytracerBindGroups::new(
+            &wgpu.device,
+            &bind_group_layouts,
+            &buffers,
+            &mesh_buffers.vertex_buffer,
+            &mesh_buffers.index_buffer,
+        );
 
         Self {
             buffers,
@@ -287,8 +291,6 @@ impl Raytracer {
     ) -> Result<Option<bvh::Bvh>, ExtractionError> {
         let RaytracerExtractedBuffers {
             materials,
-            vertices,
-            indices,
             bvh_lines,
             bvh_line_vertex_count,
             blas_nodes,
@@ -305,9 +307,11 @@ impl Raytracer {
             tlas_bvh,
         } = self.extract(device, world)?;
 
+        let mesh_buffers = world
+            .get_resource::<MeshBuffers>()
+            .ok_or_else(|| ExtractionError::Misc("MeshBuffers resource not found".to_string()))?;
+
         self.buffers.materials = materials;
-        self.buffers.vertices = vertices;
-        self.buffers.indices = indices;
         self.buffers.bvh_lines = bvh_lines;
         self.buffers.bvh_line_vertex_count = bvh_line_vertex_count;
         self.buffers.blas_nodes = blas_nodes;
@@ -329,8 +333,13 @@ impl Raytracer {
             .camera
             .update_from_world(queue, world, camera_entity);
 
-        self.bind_groups =
-            RaytracerBindGroups::new(device, &self.bind_group_layouts, &self.buffers);
+        self.bind_groups = RaytracerBindGroups::new(
+            device,
+            &self.bind_group_layouts,
+            &self.buffers,
+            &mesh_buffers.vertex_buffer,
+            &mesh_buffers.index_buffer,
+        );
 
         Ok(Some(tlas_bvh))
     }
@@ -465,8 +474,6 @@ pub struct RaytracerBuffers {
     pub materials: wgpu::Buffer,
 
     // Mesh buffers
-    pub vertices: wgpu::Buffer,
-    pub indices: wgpu::Buffer,
     pub bvh_lines: wgpu::Buffer,
     pub bvh_line_vertex_count: u32,
     pub blas_nodes: wgpu::Buffer,
@@ -499,23 +506,6 @@ impl RaytracerBuffers {
             .buffer()
             .label("Raytracer Materials Buffer")
             .storage(&initial_materials);
-
-        let initial_vertices = vec![GpuVertex {
-            position: [0.0, 0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0, 0.0],
-            material_index: 0.0,
-        }];
-        let initial_indices = vec![0u32];
-
-        let vertices = device
-            .buffer()
-            .label("Raytracer Vertices Buffer")
-            .storage(&initial_vertices);
-
-        let indices = device
-            .buffer()
-            .label("Raytracer Indices Buffer")
-            .storage(&initial_indices);
 
         let initial_bvh_lines = [
             RaytracerBvhLineVertex::zero(),
@@ -569,8 +559,6 @@ impl RaytracerBuffers {
 
         Self {
             materials: materials_buffer,
-            vertices,
-            indices,
             bvh_lines,
             bvh_line_vertex_count: 0,
             blas_nodes,
@@ -693,6 +681,8 @@ impl RaytracerBindGroups {
         device: &wgpu::Device,
         bgl: &RaytracerBindGroupLayouts,
         buffers: &RaytracerBuffers,
+        mesh_vertex_buffer: &wgpu::Buffer,
+        mesh_index_buffer: &wgpu::Buffer,
     ) -> Self {
         let render = device
             .bind_group(&bgl.render)
@@ -707,8 +697,8 @@ impl RaytracerBindGroups {
         let compute_mesh = device
             .bind_group(&bgl.compute_meshes)
             .label("Raytracer Compute Mesh Bind Group")
-            .buffer(0, &buffers.vertices)
-            .buffer(1, &buffers.indices)
+            .buffer(0, mesh_vertex_buffer)
+            .buffer(1, mesh_index_buffer)
             .buffer(2, &buffers.blas_nodes)
             .buffer(3, &buffers.blas_primitive_indices)
             .buffer(4, &buffers.blas_info)
@@ -735,6 +725,7 @@ impl RaytracerBindGroups {
             .buffer(0, &buffers.camera.view_projection)
             .buffer(1, &buffers.instances)
             .build();
+
         Self {
             render,
             compute_material,
@@ -774,8 +765,6 @@ struct RaytracerPipelines {
 
 pub struct RaytracerExtractedBuffers {
     pub materials: wgpu::Buffer,
-    pub vertices: wgpu::Buffer,
-    pub indices: wgpu::Buffer,
     pub bvh_lines: wgpu::Buffer,
     pub bvh_line_vertex_count: u32,
     pub blas_nodes: wgpu::Buffer,
@@ -800,30 +789,17 @@ impl Extract for Raytracer {
         device: &Device,
         world: &World,
     ) -> Result<Self::ExtractedData, ExtractionError> {
+        let mesh_buffers = world
+            .get_resource::<MeshBuffers>()
+            .ok_or_else(|| ExtractionError::Misc("MeshBuffers resource not found".to_string()))?;
+
         let material_entities = world.get_materials();
         let mut materials = Vec::new();
-        let mut material_entity_to_index = HashMap::new();
-        let default_material_entity = world.get_resource::<DefaultMaterialEntity>().unwrap().0;
-        let mut default_material_index = None;
-
         for entity in material_entities {
             let material = world.extract_material_component(entity)?;
-            let material_index = materials.len();
             materials.push(RaytracerMaterial::from_material(&material));
-            material_entity_to_index.insert(entity, material_index);
-
-            if entity == default_material_entity {
-                default_material_index = Some(material_index);
-            }
         }
 
-        let default_material_index = default_material_index.unwrap();
-
-        let renderables = world.get_renderables();
-
-        // Aggregated buffers
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
         let mut blas_nodes = Vec::new();
         let mut blas_primitive_indices = Vec::new();
         let mut blas_infos = Vec::new();
@@ -832,30 +808,14 @@ impl Extract for Raytracer {
         // Debug lines
         let mut blas_lines_per_instance: Vec<(u32, Vec<bvh::BvhDebugLine>)> = Vec::new();
 
-        // Build per-entity BLAS and TLAS leaves (one BLAS per renderable for simplicity)
-        for entity in renderables {
-            let global_transform = world.extract_global_transform_component(entity)?;
-            let mesh = world.extract_mesh_component(entity)?;
-            let material_index = if let Some(mat_entity) = mesh.material_entity {
-                *material_entity_to_index
-                    .get(&mat_entity)
-                    .expect("Material entity not found for mesh")
-            } else {
-                default_material_index
-            };
+        // Build per-mesh BLAS and instances from shared mesh arena
+        for (instance_idx, gpu_mesh) in mesh_buffers.meshes.iter().enumerate() {
+            let mesh_vertices = &mesh_buffers.vertices[gpu_mesh.vertex_offset as usize
+                ..(gpu_mesh.vertex_offset + gpu_mesh.vertex_count) as usize];
+            let mesh_indices = &mesh_buffers.indices[gpu_mesh.index_offset as usize
+                ..(gpu_mesh.index_offset + gpu_mesh.index_count) as usize];
 
-            let mesh_vertices: Vec<GpuVertex> = mesh
-                .vertices()
-                .iter()
-                .map(|vertex| GpuVertex::from_vertex(vertex, material_index, Mat4::IDENTITY))
-                .collect();
-
-            let mesh_indices: Vec<u32> = match mesh.indices() {
-                Some(mesh_indices) => mesh_indices.to_vec(),
-                None => (0..mesh.vertices().len() as u32).collect(),
-            };
-
-            let blas = build_blas(&mesh_vertices, &mesh_indices);
+            let blas = build_blas(mesh_vertices, mesh_indices);
             let blas_index = blas_infos.len() as u32;
             let node_offset = blas_nodes.len() as u32;
             let node_count = blas.nodes.len() as u32;
@@ -864,26 +824,19 @@ impl Extract for Raytracer {
             blas_nodes.extend_from_slice(&blas.nodes);
             blas_primitive_indices.extend_from_slice(&blas.primitive_indices);
 
-            let vertex_offset = vertices.len() as u32;
-            vertices.extend_from_slice(&mesh_vertices);
-            let index_offset = indices.len() as u32;
-            indices.extend_from_slice(&mesh_indices);
-
             blas_infos.push(RaytracerBlasInfo::new(
                 node_offset,
                 node_count,
                 primitive_offset,
                 primitive_count,
-                vertex_offset,
-                index_offset,
+                gpu_mesh.vertex_offset,
+                gpu_mesh.index_offset,
             ));
 
-            let transform_matrix = global_transform.matrix;
-            instances.push(RaytracerInstance::new(transform_matrix, blas_index));
+            instances.push(RaytracerInstance::new(gpu_mesh.transform, blas_index));
 
-            let instance_index = (instances.len() as u32).saturating_sub(1);
             let blas_lines = build_bvh_debug_lines(&blas);
-            blas_lines_per_instance.push((instance_index, blas_lines));
+            blas_lines_per_instance.push((instance_idx as u32, blas_lines));
         }
 
         // Build TLAS using world-space bounds of each instance
@@ -985,15 +938,6 @@ impl Extract for Raytracer {
             .buffer()
             .label("Raytracer Materials Buffer")
             .storage(&materials);
-        let vertices_buffer = device
-            .buffer()
-            .label("Raytracer Vertices Buffer")
-            .storage(&vertices);
-        let indices_buffer = device
-            .buffer()
-            .label("Raytracer Indices Buffer")
-            .storage(&indices);
-
         let blas_nodes_buffer = if blas_nodes.is_empty() {
             device
                 .buffer()
@@ -1044,8 +988,6 @@ impl Extract for Raytracer {
 
         Ok(RaytracerExtractedBuffers {
             materials: material_buffer,
-            vertices: vertices_buffer,
-            indices: indices_buffer,
             bvh_lines: bvh_line_buffer,
             bvh_line_vertex_count,
             blas_nodes: blas_nodes_buffer,

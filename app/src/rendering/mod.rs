@@ -1,4 +1,5 @@
 pub mod extract;
+pub mod mesh;
 pub mod rasterizer;
 pub mod raytracer;
 pub mod systems;

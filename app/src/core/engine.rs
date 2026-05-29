@@ -162,6 +162,8 @@ impl Engine {
             world.insert_resource(WindowResource(window.clone()));
         }
 
+        let mesh_buffers = crate::rendering::mesh::MeshBuffers::new(&wgpu.device);
+
         let mut rasterizer = crate::rendering::rasterizer::Rasterizer::new(&wgpu);
         if let Err(err) = rasterizer.update_render_data(
             &wgpu.device,
@@ -173,7 +175,11 @@ impl Engine {
             eprintln!("Failed to update rasterizer render data: {err}");
         }
 
-        let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu);
+        let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu, &mesh_buffers);
+
+        // Raytracer::update_render_data needs this in the world
+        world.insert_resource(mesh_buffers);
+
         match raytracer.update_render_data(
             &wgpu.device,
             &wgpu.queue,

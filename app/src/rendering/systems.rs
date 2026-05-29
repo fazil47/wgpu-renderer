@@ -7,6 +7,7 @@ use crate::{
     camera::Camera,
     lighting::DirectionalLight,
     rendering::{
+        mesh::MeshBuffers,
         rasterizer::Rasterizer,
         raytracer::Raytracer,
         wgpu::{RenderTarget, WgpuResources},
@@ -171,10 +172,9 @@ pub fn render_system(world: &mut World) {
             raytracer.render(&mut render_encoder, &render_target_view, raytracer_show_bvh);
         } else {
             // Rasterizer pass
-            if let Some(rasterizer) = world.get_resource::<Rasterizer>() {
-                // We need default material entity?
-                // Let's query for the first entity with Material component.
-
+            if let Some(rasterizer) = world.get_resource::<Rasterizer>()
+                && let Some(mesh_buffers) = world.get_resource::<MeshBuffers>()
+            {
                 let material_entities = world.get_entities_with::<crate::material::Material>();
                 let default_material_entity = material_entities.first().copied().unwrap_or(
                     // Fallback if no materials? Should not happen in this scene.
@@ -186,6 +186,7 @@ pub fn render_system(world: &mut World) {
                     &mut render_encoder,
                     &render_target_view,
                     default_material_entity,
+                    &mesh_buffers,
                 );
 
                 if rasterizer.should_render_probe_visualization() {
@@ -270,6 +271,18 @@ pub fn update_system(world: &mut World) {
         .into_iter()
         .next()
         .expect("No sun light entity found");
+
+    // Update shared mesh buffers used by both renderers
+    {
+        let wgpu = world.get_resource::<WgpuResources>().unwrap();
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
+            let res = mesh_buffers.update(&wgpu.device, world);
+
+            if let Err(err) = res {
+                log::error!("MeshBuffers update failed: {}", err);
+            }
+        }
+    }
 
     let mut tlas_bvh_to_insert = None;
 
