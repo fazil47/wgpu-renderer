@@ -186,8 +186,8 @@ impl World {
 
     // ── Event methods ───────────────────────────────────────────────────
 
-    /// Send an entity event. Deduplicated: sending the same event twice in a frame is a no-op.
-    pub fn send_event<E: EntityEvent + Eq + std::hash::Hash>(&mut self, event: E) {
+    /// Send an event. Deduplicated: sending the same event twice in a frame is a no-op.
+    pub fn send_event<E: Event>(&mut self, event: E) {
         let storage = self
             .events
             .entry(TypeId::of::<E>())
@@ -202,7 +202,7 @@ impl World {
     }
 
     /// Read all events of a given type this frame.
-    pub fn read_events<E: EntityEvent + Eq + std::hash::Hash>(&self) -> Option<&IndexSet<E>> {
+    pub fn read_events<E: Event>(&self) -> Option<&IndexSet<E>> {
         self.events
             .get(&TypeId::of::<E>())
             .and_then(|s| s.as_any().downcast_ref::<EventStorage<E>>())
@@ -210,7 +210,7 @@ impl World {
     }
 
     /// Check whether any events of a given type were sent this frame.
-    pub fn has_events<E: EntityEvent + Eq + std::hash::Hash>(&self) -> bool {
+    pub fn has_events<E: Event>(&self) -> bool {
         self.events
             .get(&TypeId::of::<E>())
             .is_some_and(|s| s.len() > 0)
@@ -256,10 +256,15 @@ impl Schedule {
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-/// An event that targets an entity. Deduplicated per entity within an event type.
-pub trait EntityEvent: 'static + Copy {
+/// Marker trait for ECS events.
+pub trait Event: 'static + Copy + Eq + Hash {}
+
+/// An event that targets a specific entity.
+pub trait EntityEvent: 'static + Copy + Eq + Hash {
     fn entity(&self) -> Entity;
 }
+
+impl<T: EntityEvent> Event for T {}
 
 /// Type-erased storage so we can hold heterogeneous event queues in one map.
 trait AnyEventStorage: Any {
@@ -270,11 +275,11 @@ trait AnyEventStorage: Any {
 }
 
 /// Concrete, typed storage for a single event type.
-struct EventStorage<E: EntityEvent + Eq + Hash> {
+struct EventStorage<E: Event> {
     events: IndexSet<E>,
 }
 
-impl<E: EntityEvent + Eq + Hash> EventStorage<E> {
+impl<E: Event> EventStorage<E> {
     fn new() -> Self {
         Self {
             events: IndexSet::new(),
@@ -282,7 +287,7 @@ impl<E: EntityEvent + Eq + Hash> EventStorage<E> {
     }
 }
 
-impl<E: EntityEvent + Eq + Hash> AnyEventStorage for EventStorage<E> {
+impl<E: Event> AnyEventStorage for EventStorage<E> {
     fn as_any(&self) -> &dyn Any {
         self
     }

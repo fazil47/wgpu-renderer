@@ -69,11 +69,9 @@ pub fn render_system(world: &mut World) {
             label: Some("Render Encoder"),
         });
 
-    // Check DirtyFlags
-    let (light_dirty, reset_raytracer) = world
-        .get_resource::<crate::core::flags::DirtyFlags>()
-        .map(|f| (f.lights, f.raytracer_reset))
-        .unwrap_or((false, false));
+    // Check events
+    let light_dirty = world.has_events::<crate::core::events::LightsChanged>();
+    let reset_raytracer = world.has_events::<crate::core::events::RaytracerReset>();
 
     // We need camera and light entities for updates
     let camera_entity = world
@@ -249,14 +247,8 @@ pub fn render_system(world: &mut World) {
 pub fn update_system(world: &mut World) {
     // TODO: If only transform has changed then only extract transform
 
-    // Check if geometry is dirty or any transforms have changed
-    let geometry_dirty = world
-        .get_resource::<crate::core::flags::DirtyFlags>()
-        .map(|f| f.geometry)
-        .unwrap_or(false);
-    let transforms_dirty = world.has_events::<crate::core::events::TransformChanged>();
-
-    if !geometry_dirty && !transforms_dirty {
+    // Check if any transforms have changed
+    if !world.has_events::<crate::core::events::TransformChanged>() {
         return;
     }
 

@@ -1,4 +1,4 @@
-use app::core::events::TransformChanged;
+use app::core::events::{RaytracerReset, TransformChanged};
 
 #[test]
 fn headless_engine_can_be_created() {
@@ -125,16 +125,9 @@ fn raytracer_responds_to_transform_changes() {
         transform.position.x += 0.5;
     }
 
-    // Reset raytracer and send event
-
+    // Send transform changed and raytracer reset events
     engine.world.send_event(TransformChanged(suzanne));
-
-    if let Some(mut flags) = engine
-        .world
-        .get_resource_mut::<app::core::flags::DirtyFlags>()
-    {
-        flags.raytracer_reset = true;
-    }
+    engine.world.send_event(RaytracerReset);
 
     // Render a few frames to converge past noise
     for _ in 0..3 {

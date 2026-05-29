@@ -12,7 +12,7 @@ use winit::{
 
 use crate::{
     camera::Camera,
-    core::flags::DirtyFlags,
+    core::events::{LightsChanged, RaytracerReset},
     input::CameraController,
     lighting::DirectionalLight,
     material::{DefaultMaterialEntity, Material},
@@ -123,7 +123,8 @@ impl Engine {
             }
         }
 
-        // Calculate global transforms for all loaded entities before renderers read them
+        // TODO: Add hooks to send TransformChanged events automatically when a
+        // Transform component is first attached, instead of doing this
         crate::transform::systems::calculate_global_positions(&world);
 
         world.insert_resource(camera_controller);
@@ -131,11 +132,7 @@ impl Engine {
             delta_time: 0.0,
             elapsed_time: 0.0,
         });
-        world.insert_resource(DirtyFlags {
-            geometry: true,
-            lights: true,
-            ..Default::default()
-        });
+        world.send_event(LightsChanged);
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
 
@@ -152,7 +149,6 @@ impl Engine {
         render_schedule.add_system(crate::rendering::systems::render_system);
 
         let mut cleanup_schedule = ecs::Schedule::new();
-        cleanup_schedule.add_system(crate::core::systems::reset_dirty_flags_system);
         cleanup_schedule.add_system(crate::core::systems::clear_events_system);
 
         // Create egui renderer (windowed only)
@@ -167,7 +163,13 @@ impl Engine {
             world.insert_resource(WindowResource(window.clone()));
         }
 
-        let mesh_buffers = crate::rendering::mesh::MeshBuffers::new(&wgpu.device);
+        let mut mesh_buffers = crate::rendering::mesh::MeshBuffers::new(&wgpu.device);
+
+        // TODO: Add hooks to send GeometryChanged or MeshAdded events
+        // automatically when a Mesh component is first attached.
+        if let Err(err) = mesh_buffers.update(&wgpu.device, &world) {
+            eprintln!("Failed to update mesh buffers: {err}");
+        }
 
         let mut rasterizer = crate::rendering::rasterizer::Rasterizer::new(&wgpu);
         if let Err(err) = rasterizer.update_render_data(
@@ -228,9 +230,7 @@ impl Engine {
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>() {
-            flags.raytracer_reset = true;
-        }
+        self.world.send_event(RaytracerReset);
 
         // Update camera aspect ratio
         if let Some(mut camera) = self.world.get_component_mut::<Camera>(self.camera_entity) {
@@ -298,26 +298,28 @@ impl Engine {
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) {
-        let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
-        camera_controller.process_events(event);
+        let should_reset = {
+            let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
+            camera_controller.process_events(event);
+            camera_controller.is_cursor_locked() && camera_controller.has_camera_moved()
+        };
 
-        if camera_controller.is_cursor_locked()
-            && camera_controller.has_camera_moved()
-            && let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>()
-        {
-            flags.raytracer_reset = true;
+        if should_reset {
+            self.world.send_event(RaytracerReset);
         }
     }
 
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
-            let mut camera_controller = self.world.get_resource_mut::<CameraController>().unwrap();
-            camera_controller.process_mouse(delta.0, delta.1);
+            let should_reset = {
+                let mut camera_controller =
+                    self.world.get_resource_mut::<CameraController>().unwrap();
+                camera_controller.process_mouse(delta.0, delta.1);
+                camera_controller.is_cursor_locked()
+            };
 
-            if camera_controller.is_cursor_locked()
-                && let Some(mut flags) = self.world.get_resource_mut::<DirtyFlags>()
-            {
-                flags.raytracer_reset = true;
+            if should_reset {
+                self.world.send_event(RaytracerReset);
             }
         }
     }

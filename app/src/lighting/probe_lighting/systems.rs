@@ -4,10 +4,7 @@ use crate::rendering::wgpu::WgpuResources;
 use ecs::World;
 
 pub fn probe_baking_system(world: &mut World) {
-    let bake_requested = world
-        .get_resource::<crate::core::flags::DirtyFlags>()
-        .map(|s| s.probe_bake_requested)
-        .unwrap_or(false);
+    let bake_requested = world.has_events::<crate::core::events::ProbeBakeRequested>();
 
     if !bake_requested {
         return;

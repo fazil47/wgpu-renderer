@@ -171,19 +171,16 @@ pub fn ui_system(world: &mut World) {
         if let Some(entity) = world.get_resource::<SelectedEntity>().and_then(|s| s.0) {
             world.send_event(crate::core::events::TransformChanged(entity));
         }
-        if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
-            flags.raytracer_reset = true;
-        }
+        world.send_event(crate::core::events::RaytracerReset);
     }
 
-    if let Some(mut flags) = world.get_resource_mut::<crate::core::flags::DirtyFlags>() {
-        if bake_requested {
-            flags.probe_bake_requested = true;
-        }
-        if is_light_dirty {
-            flags.lights = true;
-            flags.raytracer_reset = true;
-        }
+    if bake_requested {
+        world.send_event(crate::core::events::ProbeBakeRequested);
+    }
+
+    if is_light_dirty {
+        world.send_event(crate::core::events::LightsChanged);
+        world.send_event(crate::core::events::RaytracerReset);
     }
 
     // 4. Store UI output in UiState
