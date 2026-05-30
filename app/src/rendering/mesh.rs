@@ -1,4 +1,7 @@
-use std::{collections::HashMap, mem::size_of};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::size_of,
+};
 
 use crate::{
     material::DefaultMaterialEntity,
@@ -64,6 +67,7 @@ pub struct MeshBuffers {
     pub index_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
     pub meshes: Vec<GpuMesh>,
+    entity_to_meshes_index: HashMap<Entity, usize>,
 }
 
 impl ecs::Resource for MeshBuffers {}
@@ -91,6 +95,7 @@ impl MeshBuffers {
         let instance_buffer = device
             .buffer()
             .label("Mesh Arena Instance Buffer")
+            .usage(wgpu::BufferUsages::COPY_DST)
             .vertex(&instance_transforms);
 
         Self {
@@ -100,6 +105,7 @@ impl MeshBuffers {
             index_buffer,
             instance_buffer,
             meshes: Vec::new(),
+            entity_to_meshes_index: HashMap::new(),
         }
     }
 
@@ -127,6 +133,7 @@ impl MeshBuffers {
         self.vertices.clear();
         self.indices.clear();
         self.meshes.clear();
+        self.entity_to_meshes_index.clear();
         let mut instance_transforms: Vec<InstanceTransform> = Vec::new();
 
         for entity in renderables {
@@ -167,6 +174,8 @@ impl MeshBuffers {
                 transform: global_transform.matrix,
                 material_entity: mesh.material_entity,
             });
+            self.entity_to_meshes_index
+                .insert(entity, self.meshes.len() - 1);
         }
 
         self.vertex_buffer.destroy();
@@ -187,7 +196,39 @@ impl MeshBuffers {
         self.instance_buffer = device
             .buffer()
             .label("Mesh Arena Instance Buffer")
+            .usage(wgpu::BufferUsages::COPY_DST)
             .vertex(&instance_transforms);
+
+        Ok(())
+    }
+
+    /// Update only the instance transforms for entities whose GlobalTransform changed.
+    pub fn update_transforms(
+        &mut self,
+        queue: &wgpu::Queue,
+        world: &World,
+    ) -> Result<(), ExtractionError> {
+        let changed_entities: HashSet<Entity> =
+            match world.read_events::<crate::core::events::GlobalTransformChanged>() {
+                Some(events) => events.iter().map(|e| e.0).collect(),
+                None => return Ok(()),
+            };
+
+        let instance_stride = size_of::<InstanceTransform>();
+
+        for &entity in &changed_entities {
+            if let Some(&index) = self.entity_to_meshes_index.get(&entity) {
+                let global_transform = world.extract_global_transform_component(entity)?;
+                self.meshes[index].transform = global_transform.matrix;
+
+                let instance = InstanceTransform::from_mat4(global_transform.matrix);
+                queue.write_buffer(
+                    &self.instance_buffer,
+                    (index * instance_stride) as u64,
+                    bytemuck::cast_slice(&[instance]),
+                );
+            }
+        }
 
         Ok(())
     }

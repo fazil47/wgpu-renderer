@@ -245,14 +245,27 @@ pub fn render_system(world: &mut World) {
 }
 
 pub fn update_system(world: &mut World) {
-    // TODO: If only transform has changed then only extract transform
+    // TODO: This systems only checks if the GlobalTransform has changed for any
+    // entity, and updates the instance data and the BVH if that's the case. It
+    // doesn't update the mesh buffers or the other render data, since meshes
+    // are added only on startup. But that should be supported using a different
+    // event
 
-    // Check if any transforms have changed
-    if !world.has_events::<crate::core::events::TransformChanged>() {
+    if !world.has_events::<crate::core::events::GlobalTransformChanged>() {
         return;
     }
 
-    // Find camera and sun light entities
+    // Update only the instance transforms for changed entities (skip vertex/index rebuild)
+    {
+        let wgpu = world.get_resource::<WgpuResources>().unwrap();
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
+            if let Err(err) = mesh_buffers.update_transforms(&wgpu.queue, world) {
+                log::error!("MeshBuffers transform update failed: {}", err);
+            }
+        }
+    }
+
+    // Raytracer: TLAS depends on world-space transforms, still needs full update
     let camera_entity = world
         .get_entities_with::<Camera>()
         .into_iter()
@@ -265,31 +278,9 @@ pub fn update_system(world: &mut World) {
         .next()
         .expect("No sun light entity found");
 
-    // Update shared mesh buffers used by both renderers
-    {
-        let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
-            let res = mesh_buffers.update(&wgpu.device, world);
-
-            if let Err(err) = res {
-                log::error!("MeshBuffers update failed: {}", err);
-            }
-        }
-    }
-
     let mut tlas_bvh_to_insert = None;
-
     {
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut rasterizer) = world.get_resource_mut::<Rasterizer>() {
-            let _ = rasterizer.update_render_data(
-                &wgpu.device,
-                &wgpu.queue,
-                world,
-                camera_entity,
-                sun_light_entity,
-            );
-        }
         if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>()
             && let Ok(Some(tlas_bvh)) = raytracer.update_render_data(
                 &wgpu.device,

@@ -4,7 +4,7 @@ use ecs::{Entity, World};
 use maths::Mat4;
 
 use crate::{
-    core::events::TransformChanged,
+    core::events::{GlobalTransformChanged, TransformChanged},
     transform::{GlobalTransform, Transform},
 };
 
@@ -42,6 +42,11 @@ pub fn calculate_global_position_system(world: &mut World) {
     let mut visiting: HashSet<Entity> = HashSet::new();
     for &entity in &dirty {
         let _ = calculate_global_position(world, entity, &mut cache, &mut visiting, &dirty);
+    }
+
+    // Notify downstream systems which entities had their GlobalTransform recomputed
+    for entity in dirty {
+        world.send_event(GlobalTransformChanged(entity));
     }
 }
 

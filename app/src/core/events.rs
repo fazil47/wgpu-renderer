@@ -10,6 +10,17 @@ impl EntityEvent for TransformChanged {
     }
 }
 
+/// Fired when an entity's GlobalTransform has been recomputed
+/// (either because its own Transform changed or an ancestor's did).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlobalTransformChanged(pub Entity);
+
+impl EntityEvent for GlobalTransformChanged {
+    fn entity(&self) -> Entity {
+        self.0
+    }
+}
+
 /// Fired when a light property (direction, color, etc.) has changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LightsChanged;
