@@ -1,4 +1,5 @@
 use app::core::events::{RaytracerReset, TransformChanged};
+use maths::Vec3;
 
 #[test]
 fn headless_engine_can_be_created() {
@@ -64,7 +65,7 @@ fn rasterizer_responds_to_transform_changes() {
             .world
             .get_component_mut::<app::transform::Transform>(suzanne)
             .expect("Suzanne has no Transform");
-        transform.position.x += 0.5;
+        transform.position.x += 1.0;
     }
 
     // Send transform changed event
@@ -75,6 +76,14 @@ fn rasterizer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_suzanne_moved.png",
+        0.02,
+    );
+
+    set_camera_to_corner_view(&mut engine);
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/rasterizer_suzanne_moved_corner_view.png",
         0.02,
     );
 }
@@ -122,7 +131,7 @@ fn raytracer_responds_to_transform_changes() {
             .world
             .get_component_mut::<app::transform::Transform>(suzanne)
             .expect("Suzanne has no Transform");
-        transform.position.x += 0.5;
+        transform.position.x += 1.0;
     }
 
     // Send transform changed and raytracer reset events
@@ -138,6 +147,19 @@ fn raytracer_responds_to_transform_changes() {
         "app/tests/reference_images/raytracer_suzanne_moved.png",
         0.02,
     );
+
+    set_camera_to_corner_view(&mut engine);
+    engine.world.send_event(RaytracerReset);
+
+    // Render a few frames to converge past noise
+    for _ in 0..3 {
+        engine.render().unwrap();
+    }
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/raytracer_suzanne_moved_corner_view.png",
+        0.02,
+    );
 }
 
 // Helpers
@@ -150,6 +172,18 @@ fn setup() {
         .unwrap();
     std::env::set_current_dir(workspace_root).unwrap();
 }
+
+fn set_camera_to_corner_view(engine: &mut app::core::Engine) {
+    let mut camera = engine
+        .world
+        .get_component_mut::<app::camera::Camera>(engine.camera_entity)
+        .expect("Camera entity has no Camera component");
+
+    camera.eye = Vec3::new(2.5, 0.9, 3.2);
+    camera.forward = (Vec3::new(0.0, 0.0, 0.0) - camera.eye).normalized();
+    camera.up = Vec3::Y;
+}
+
 /// Compare rendered pixels against a reference image, or update it if UPDATE_REFERENCES is set.
 /// Tolerance is the maximum allowed fraction of differing pixels (0.0–1.0).
 fn check_or_update_reference(engine: &app::core::Engine, reference_path: &str, tolerance: f64) {
