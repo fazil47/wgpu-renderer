@@ -265,7 +265,14 @@ pub fn update_system(world: &mut World) {
         }
     }
 
-    // Raytracer: TLAS depends on world-space transforms, still needs full update
+    // Rebuild TLAS (world-space bounds changed) and re-upload raytracer GPU data
+    let (blas_resource, tlas_resource) = {
+        let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
+        crate::rendering::build_scene_bvh(&mesh_buffers)
+    };
+    world.insert_resource(blas_resource);
+    world.insert_resource(tlas_resource);
+
     let camera_entity = world
         .get_entities_with::<Camera>()
         .into_iter()
@@ -278,23 +285,18 @@ pub fn update_system(world: &mut World) {
         .next()
         .expect("No sun light entity found");
 
-    let mut tlas_bvh_to_insert = None;
     {
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>()
-            && let Ok(Some(tlas_bvh)) = raytracer.update_render_data(
+        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>() {
+            if let Err(err) = raytracer.update_render_data(
                 &wgpu.device,
                 &wgpu.queue,
                 world,
                 camera_entity,
                 sun_light_entity,
-            )
-        {
-            tlas_bvh_to_insert = Some(tlas_bvh);
+            ) {
+                log::error!("Raytracer update failed: {}", err);
+            }
         }
-    }
-
-    if let Some(tlas_bvh) = tlas_bvh_to_insert {
-        world.insert_resource(crate::rendering::TlasBvh::new(tlas_bvh));
     }
 }

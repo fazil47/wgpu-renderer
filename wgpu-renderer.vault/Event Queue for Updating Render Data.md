@@ -21,7 +21,8 @@ Currently if a mesh is moved, then the entire render data is torn down and rebui
 			- Send a `GlobalTransformChanged(entity)` event
 - Add `MeshBuffers::update_transforms` that is gated on there being `GlobalTransformChanged(entity)` events that frame
 	- Only update the instance data
+- Separate out BVH BLAS and TLAS generation from `Raytracer::extract` and store them in resources, `Raytracer::extract` can then just fetch them from `World` 
 - Add a new event `GeometryChanged` that is not an entity event for now
-	- Only update the BLAS BVH in `Raytracer::extract` if there is a `GeometryChanged` that frame
+	- Only update the BLAS BVH if there is a `GeometryChanged` that frame
 	- Instead of calling `MeshBuffers::update` directly on `Engine::build`, send a `GeometryChanged` event
 		- In `rendering::systems::update_system`, if there's a `GeometryChanged` event that frame, then call `MeshBuffers::update`

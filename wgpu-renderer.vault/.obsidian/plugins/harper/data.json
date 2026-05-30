@@ -725,7 +725,8 @@
     "BLAS",
     "BVH",
     "ECS",
-    "EGUI"
+    "EGUI",
+    "TLAS"
   ],
   "dialect": 0,
   "delay": -1,

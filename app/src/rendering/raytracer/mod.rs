@@ -7,7 +7,7 @@ use crate::{
         GpuVertex,
         extract::{Extract, ExtractionError, WorldExtractExt},
         mesh::MeshBuffers,
-        raytracer::bvh::{Aabb, BvhNode, build_blas, build_bvh_debug_lines, build_tlas},
+        raytracer::bvh::{BvhNode, build_bvh_debug_lines},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
 };
@@ -288,43 +288,27 @@ impl Raytracer {
         world: &World,
         camera_entity: Entity,
         sun_light_entity: Entity,
-    ) -> Result<Option<bvh::Bvh>, ExtractionError> {
-        let RaytracerExtractedBuffers {
-            materials,
-            bvh_lines,
-            bvh_line_vertex_count,
-            blas_nodes,
-            blas_node_count,
-            blas_primitive_indices,
-            blas_primitive_count,
-            blas_info,
-            tlas_nodes,
-            tlas_node_count,
-            tlas_primitive_indices,
-            tlas_primitive_count,
-            instances,
-            instance_count,
-            tlas_bvh,
-        } = self.extract(device, world)?;
+    ) -> Result<(), ExtractionError> {
+        let extracted = self.extract(device, world)?;
 
         let mesh_buffers = world
             .get_resource::<MeshBuffers>()
             .ok_or_else(|| ExtractionError::Misc("MeshBuffers resource not found".to_string()))?;
 
-        self.buffers.materials = materials;
-        self.buffers.bvh_lines = bvh_lines;
-        self.buffers.bvh_line_vertex_count = bvh_line_vertex_count;
-        self.buffers.blas_nodes = blas_nodes;
-        self.buffers.blas_node_count = blas_node_count;
-        self.buffers.blas_primitive_indices = blas_primitive_indices;
-        self.buffers.blas_primitive_count = blas_primitive_count;
-        self.buffers.blas_info = blas_info;
-        self.buffers.tlas_nodes = tlas_nodes;
-        self.buffers.tlas_node_count = tlas_node_count;
-        self.buffers.tlas_primitive_indices = tlas_primitive_indices;
-        self.buffers.tlas_primitive_count = tlas_primitive_count;
-        self.buffers.instances = instances;
-        self.buffers.instance_count = instance_count;
+        self.buffers.materials = extracted.materials;
+        self.buffers.bvh_lines = extracted.bvh_lines;
+        self.buffers.bvh_line_vertex_count = extracted.bvh_line_vertex_count;
+        self.buffers.blas_nodes = extracted.blas_nodes;
+        self.buffers.blas_node_count = extracted.blas_node_count;
+        self.buffers.blas_primitive_indices = extracted.blas_primitive_indices;
+        self.buffers.blas_primitive_count = extracted.blas_primitive_count;
+        self.buffers.blas_info = extracted.blas_info;
+        self.buffers.tlas_nodes = extracted.tlas_nodes;
+        self.buffers.tlas_node_count = extracted.tlas_node_count;
+        self.buffers.tlas_primitive_indices = extracted.tlas_primitive_indices;
+        self.buffers.tlas_primitive_count = extracted.tlas_primitive_count;
+        self.buffers.instances = extracted.instances;
+        self.buffers.instance_count = extracted.instance_count;
 
         self.buffers
             .lighting
@@ -341,7 +325,7 @@ impl Raytracer {
             &mesh_buffers.index_buffer,
         );
 
-        Ok(Some(tlas_bvh))
+        Ok(())
     }
 
     pub fn resize(&mut self, wgpu: &WgpuResources) {
@@ -778,7 +762,6 @@ pub struct RaytracerExtractedBuffers {
     pub tlas_primitive_count: u32,
     pub instances: wgpu::Buffer,
     pub instance_count: u32,
-    pub tlas_bvh: bvh::Bvh,
 }
 
 impl Extract for Raytracer {
@@ -793,103 +776,30 @@ impl Extract for Raytracer {
             .get_resource::<MeshBuffers>()
             .ok_or_else(|| ExtractionError::Misc("MeshBuffers resource not found".to_string()))?;
 
+        let blas = world
+            .get_resource::<crate::rendering::BlasBvh>()
+            .ok_or_else(|| ExtractionError::Misc("BlasBvh not found".to_string()))?;
+        let tlas = world
+            .get_resource::<crate::rendering::TlasBvh>()
+            .ok_or_else(|| ExtractionError::Misc("TlasBvh not found".to_string()))?;
+
+        // Materials
         let mut material_entities = world.get_materials();
-
-        // Sort so that material indices are stable
         material_entities.sort();
-
         let mut materials = Vec::new();
         for entity in material_entities {
             let material = world.extract_material_component(entity)?;
             materials.push(RaytracerMaterial::from_material(&material));
         }
 
-        let mut blas_nodes = Vec::new();
-        let mut blas_primitive_indices = Vec::new();
-        let mut blas_infos = Vec::new();
+        // Instances (one per mesh, referencing its BLAS by index)
         let mut instances = Vec::new();
-
-        // Debug lines
-        let mut blas_lines_per_instance: Vec<(u32, Vec<bvh::BvhDebugLine>)> = Vec::new();
-
-        // Build per-mesh BLAS and instances from shared mesh arena
-        for (instance_idx, gpu_mesh) in mesh_buffers.meshes.iter().enumerate() {
-            let mesh_vertices = &mesh_buffers.vertices[gpu_mesh.vertex_offset as usize
-                ..(gpu_mesh.vertex_offset + gpu_mesh.vertex_count) as usize];
-            let mesh_indices = &mesh_buffers.indices[gpu_mesh.index_offset as usize
-                ..(gpu_mesh.index_offset + gpu_mesh.index_count) as usize];
-
-            let blas = build_blas(mesh_vertices, mesh_indices);
-            let blas_index = blas_infos.len() as u32;
-            let node_offset = blas_nodes.len() as u32;
-            let node_count = blas.nodes.len() as u32;
-            let primitive_offset = blas_primitive_indices.len() as u32;
-            let primitive_count = blas.primitive_indices.len() as u32;
-            blas_nodes.extend_from_slice(&blas.nodes);
-            blas_primitive_indices.extend_from_slice(&blas.primitive_indices);
-
-            blas_infos.push(RaytracerBlasInfo::new(
-                node_offset,
-                node_count,
-                primitive_offset,
-                primitive_count,
-                gpu_mesh.vertex_offset,
-                gpu_mesh.index_offset,
-            ));
-
-            instances.push(RaytracerInstance::new(gpu_mesh.transform, blas_index));
-
-            let blas_lines = build_bvh_debug_lines(&blas);
-            blas_lines_per_instance.push((instance_idx as u32, blas_lines));
+        for (idx, gpu_mesh) in mesh_buffers.meshes.iter().enumerate() {
+            instances.push(RaytracerInstance::new(gpu_mesh.transform, idx as u32));
         }
 
-        // Build TLAS using world-space bounds of each instance
-        let mut instance_bounds: Vec<(Vec3, Vec3, u32)> = Vec::new();
-        for (instance_index, instance) in instances.iter().enumerate() {
-            let blas_index = instance.blas_index as usize;
-            let blas_info = &blas_infos[blas_index];
-            let bounds = if blas_info.node_count == 0 {
-                (Vec3::ZERO, Vec3::ZERO)
-            } else {
-                let node = &blas_nodes[blas_info.node_offset as usize];
-                (
-                    Vec3::new(node.bounds_min[0], node.bounds_min[1], node.bounds_min[2]),
-                    Vec3::new(node.bounds_max[0], node.bounds_max[1], node.bounds_max[2]),
-                )
-            };
-            let world_matrix = Mat4::from_cols_array_2d(instance.world_matrix);
-            let aabb = Aabb::new(bounds.0, bounds.1).transform(world_matrix);
-            instance_bounds.push((aabb.min, aabb.max, instance_index as u32));
-        }
-
-        let tlas_bvh = build_tlas(&instance_bounds);
-        let tlas_node_count = tlas_bvh.nodes.len() as u32;
-        let tlas_nodes_buffer = if tlas_bvh.nodes.is_empty() {
-            device
-                .buffer()
-                .label("Raytracer TLAS Node Buffer")
-                .storage(&[BvhNode::default()])
-        } else {
-            device
-                .buffer()
-                .label("Raytracer TLAS Node Buffer")
-                .storage(&tlas_bvh.nodes)
-        };
-        let tlas_primitive_count = tlas_bvh.primitive_indices.len() as u32;
-        let tlas_primitive_indices_buffer = if tlas_bvh.primitive_indices.is_empty() {
-            device
-                .buffer()
-                .label("Raytracer TLAS Primitive Indices Buffer")
-                .storage(&[0u32])
-        } else {
-            device
-                .buffer()
-                .label("Raytracer TLAS Primitive Indices Buffer")
-                .storage(&tlas_bvh.primitive_indices)
-        };
-
-        // TLAS debug lines (world space, no transform)
-        let tlas_debug_lines = build_bvh_debug_lines(&tlas_bvh);
+        // Debug lines: TLAS (world space)
+        let tlas_debug_lines = build_bvh_debug_lines(&tlas.bvh);
         let mut line_vertices = Vec::new();
         for line in tlas_debug_lines {
             let color = if line.is_leaf {
@@ -905,9 +815,10 @@ impl Extract for Raytracer {
             line_vertices.push(RaytracerBvhLineVertex::from_vec3(line.end, color, u32::MAX));
         }
 
-        // BLAS debug lines (object space, transformed on GPU per instance)
-        for (instance_index, lines) in blas_lines_per_instance {
-            for line in lines {
+        // Debug lines: BLAS (object space, transformed on GPU per instance)
+        for (instance_index, per_mesh_bvh) in blas.per_mesh_bvhs.iter().enumerate() {
+            let blas_lines = build_bvh_debug_lines(per_mesh_bvh);
+            for line in blas_lines {
                 let color = if line.is_leaf {
                     BVH_LEAF_COLOR
                 } else {
@@ -916,16 +827,17 @@ impl Extract for Raytracer {
                 line_vertices.push(RaytracerBvhLineVertex::from_vec3(
                     line.start,
                     color,
-                    instance_index,
+                    instance_index as u32,
                 ));
                 line_vertices.push(RaytracerBvhLineVertex::from_vec3(
                     line.end,
                     color,
-                    instance_index,
+                    instance_index as u32,
                 ));
             }
         }
 
+        // GPU buffer creation
         let (bvh_line_buffer, bvh_line_vertex_count) = if line_vertices.is_empty() {
             (
                 device.buffer().label("Raytracer BVH Line Buffer").vertex(&[
@@ -942,7 +854,8 @@ impl Extract for Raytracer {
             .buffer()
             .label("Raytracer Materials Buffer")
             .storage(&materials);
-        let blas_nodes_buffer = if blas_nodes.is_empty() {
+
+        let blas_nodes_buffer = if blas.nodes.is_empty() {
             device
                 .buffer()
                 .label("Raytracer BLAS Node Buffer")
@@ -951,10 +864,10 @@ impl Extract for Raytracer {
             device
                 .buffer()
                 .label("Raytracer BLAS Node Buffer")
-                .storage(&blas_nodes)
+                .storage(&blas.nodes)
         };
 
-        let blas_primitives_buffer = if blas_primitive_indices.is_empty() {
+        let blas_primitives_buffer = if blas.primitive_indices.is_empty() {
             device
                 .buffer()
                 .label("Raytracer BLAS Primitive Indices Buffer")
@@ -963,10 +876,10 @@ impl Extract for Raytracer {
             device
                 .buffer()
                 .label("Raytracer BLAS Primitive Indices Buffer")
-                .storage(&blas_primitive_indices)
+                .storage(&blas.primitive_indices)
         };
 
-        let blas_info_buffer = if blas_infos.is_empty() {
+        let blas_info_buffer = if blas.infos.is_empty() {
             device
                 .buffer()
                 .label("Raytracer BLAS Info Buffer")
@@ -975,7 +888,31 @@ impl Extract for Raytracer {
             device
                 .buffer()
                 .label("Raytracer BLAS Info Buffer")
-                .storage(&blas_infos)
+                .storage(&blas.infos)
+        };
+
+        let tlas_nodes_buffer = if tlas.bvh.nodes.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer TLAS Node Buffer")
+                .storage(&[BvhNode::default()])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer TLAS Node Buffer")
+                .storage(&tlas.bvh.nodes)
+        };
+
+        let tlas_primitive_indices_buffer = if tlas.bvh.primitive_indices.is_empty() {
+            device
+                .buffer()
+                .label("Raytracer TLAS Primitive Indices Buffer")
+                .storage(&[0u32])
+        } else {
+            device
+                .buffer()
+                .label("Raytracer TLAS Primitive Indices Buffer")
+                .storage(&tlas.bvh.primitive_indices)
         };
 
         let instances_buffer = if instances.is_empty() {
@@ -995,17 +932,16 @@ impl Extract for Raytracer {
             bvh_lines: bvh_line_buffer,
             bvh_line_vertex_count,
             blas_nodes: blas_nodes_buffer,
-            blas_node_count: blas_nodes.len() as u32,
+            blas_node_count: blas.nodes.len() as u32,
             blas_primitive_indices: blas_primitives_buffer,
-            blas_primitive_count: blas_primitive_indices.len() as u32,
+            blas_primitive_count: blas.primitive_indices.len() as u32,
             blas_info: blas_info_buffer,
             tlas_nodes: tlas_nodes_buffer,
-            tlas_node_count,
+            tlas_node_count: tlas.bvh.nodes.len() as u32,
             tlas_primitive_indices: tlas_primitive_indices_buffer,
-            tlas_primitive_count,
+            tlas_primitive_count: tlas.bvh.primitive_indices.len() as u32,
             instances: instances_buffer,
             instance_count: instances.len() as u32,
-            tlas_bvh,
         })
     }
 }

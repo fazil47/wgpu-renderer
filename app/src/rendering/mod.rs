@@ -10,5 +10,5 @@ pub mod wgpu;
 pub use extract::{Extract, ExtractionError, WorldExtractExt};
 pub use rasterizer::Rasterizer;
 pub use raytracer::{Raytracer, RaytracerExtractedBuffers, RaytracerMaterial};
-pub use tlas_bvh::TlasBvh;
+pub use tlas_bvh::{BlasBvh, TlasBvh, build_scene_bvh};
 pub use vertex::GpuVertex;
