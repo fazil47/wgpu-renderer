@@ -8,7 +8,7 @@ use crate::{
     transform::{GlobalTransform, Transform},
 };
 
-pub fn calculate_global_position_system(world: &mut World) {
+pub fn calculate_global_transform_system(world: &mut World) {
     // Collect changed entities from events
     let changed_entities: HashSet<Entity> = match world.read_events::<TransformChanged>() {
         Some(events) if !events.is_empty() => events.iter().map(|e| e.0).collect(),
@@ -41,7 +41,7 @@ pub fn calculate_global_position_system(world: &mut World) {
     let mut cache: HashMap<Entity, Mat4> = HashMap::new();
     let mut visiting: HashSet<Entity> = HashSet::new();
     for &entity in &dirty {
-        let _ = calculate_global_position(world, entity, &mut cache, &mut visiting, &dirty);
+        let _ = calculate_global_transform(world, entity, &mut cache, &mut visiting, &dirty);
     }
 
     // Notify downstream systems which entities had their GlobalTransform recomputed
@@ -50,7 +50,7 @@ pub fn calculate_global_position_system(world: &mut World) {
     }
 }
 
-fn calculate_global_position(
+fn calculate_global_transform(
     world: &World,
     entity: Entity,
     cache: &mut HashMap<Entity, Mat4>,
@@ -86,7 +86,7 @@ fn calculate_global_position(
             return Err(format!("Entity {parent:?} missing component: Transform"));
         }
 
-        let parent_matrix = calculate_global_position(world, parent, cache, visiting, dirty)?;
+        let parent_matrix = calculate_global_transform(world, parent, cache, visiting, dirty)?;
         parent_matrix * local_matrix
     } else {
         local_matrix

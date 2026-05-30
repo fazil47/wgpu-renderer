@@ -143,7 +143,7 @@ impl Engine {
         input_schedule.add_system(crate::ui::systems::ui_system);
 
         let mut update_schedule = ecs::Schedule::new();
-        update_schedule.add_system(crate::transform::systems::calculate_global_position_system);
+        update_schedule.add_system(crate::transform::systems::calculate_global_transform_system);
         update_schedule.add_system(crate::rendering::systems::update_system);
 
         let mut render_schedule = ecs::Schedule::new();
