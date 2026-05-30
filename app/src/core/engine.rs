@@ -165,13 +165,11 @@ impl Engine {
             world.insert_resource(WindowResource(window.clone()));
         }
 
-        let mut mesh_buffers = crate::rendering::mesh::MeshBuffers::new(&wgpu.device);
+        let mesh_buffers = crate::rendering::mesh::MeshBuffers::new(&wgpu.device);
 
         // TODO: Add hooks to send GeometryChanged or MeshAdded events
         // automatically when a Mesh component is first attached.
-        if let Err(err) = mesh_buffers.update(&wgpu.device, &world) {
-            eprintln!("Failed to update mesh buffers: {err}");
-        }
+        world.send_event(crate::core::events::GeometryChanged);
 
         let mut rasterizer = crate::rendering::rasterizer::Rasterizer::new(&wgpu);
         if let Err(err) = rasterizer.update_render_data(
@@ -187,7 +185,8 @@ impl Engine {
         let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu, &mesh_buffers);
 
         // Build scene BVH and insert resources before GPU upload
-        let (blas, tlas) = crate::rendering::build_scene_bvh(&mesh_buffers);
+        let blas = crate::rendering::build_scene_blas(&mesh_buffers);
+        let tlas = crate::rendering::build_scene_tlas(&mesh_buffers, &blas);
         world.insert_resource(mesh_buffers);
         world.insert_resource(blas);
         world.insert_resource(tlas);

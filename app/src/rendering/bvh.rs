@@ -32,9 +32,8 @@ pub struct BlasBvh {
 
 impl ecs::Resource for BlasBvh {}
 
-/// Builds the BLAS and TLAS from the mesh arena.
-/// BLAS is built per-mesh in object space, TLAS is built from world-space instance bounds.
-pub fn build_scene_bvh(mesh_buffers: &MeshBuffers) -> (BlasBvh, TlasBvh) {
+/// Builds the BLAS (per-mesh, object-space BVH) from the mesh arena.
+pub fn build_scene_blas(mesh_buffers: &MeshBuffers) -> BlasBvh {
     let mut blas_nodes = Vec::new();
     let mut blas_primitive_indices = Vec::new();
     let mut blas_infos = Vec::new();
@@ -66,18 +65,28 @@ pub fn build_scene_bvh(mesh_buffers: &MeshBuffers) -> (BlasBvh, TlasBvh) {
         per_mesh_bvhs.push(blas);
     }
 
-    // Build TLAS using world-space bounds of each instance
+    BlasBvh {
+        nodes: blas_nodes,
+        primitive_indices: blas_primitive_indices,
+        infos: blas_infos,
+        per_mesh_bvhs,
+    }
+}
+
+/// Builds the TLAS (world-space BVH over instances) using existing BLAS bounds
+/// and current mesh transforms.
+pub fn build_scene_tlas(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> TlasBvh {
     let mut instance_bounds: Vec<(Vec3, Vec3, u32)> = Vec::new();
     for (instance_index, (gpu_mesh, blas_info)) in mesh_buffers
         .meshes
         .iter()
-        .zip(blas_infos.iter())
+        .zip(blas.infos.iter())
         .enumerate()
     {
         let bounds = if blas_info.node_count == 0 {
             (Vec3::ZERO, Vec3::ZERO)
         } else {
-            let node = &blas_nodes[blas_info.node_offset as usize];
+            let node = &blas.nodes[blas_info.node_offset as usize];
             (
                 Vec3::new(node.bounds_min[0], node.bounds_min[1], node.bounds_min[2]),
                 Vec3::new(node.bounds_max[0], node.bounds_max[1], node.bounds_max[2]),
@@ -88,14 +97,5 @@ pub fn build_scene_bvh(mesh_buffers: &MeshBuffers) -> (BlasBvh, TlasBvh) {
     }
 
     let tlas_bvh = build_tlas(&instance_bounds);
-
-    let blas = BlasBvh {
-        nodes: blas_nodes,
-        primitive_indices: blas_primitive_indices,
-        infos: blas_infos,
-        per_mesh_bvhs,
-    };
-    let tlas = TlasBvh::new(tlas_bvh);
-
-    (blas, tlas)
+    TlasBvh::new(tlas_bvh)
 }

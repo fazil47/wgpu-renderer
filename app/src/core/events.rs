@@ -21,6 +21,12 @@ impl EntityEvent for GlobalTransformChanged {
     }
 }
 
+/// Fired when scene geometry has changed (meshes added, removed, or modified).
+/// TODO: Make this an entity event
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GeometryChanged;
+impl Event for GeometryChanged {}
+
 /// Fired when a light property (direction, color, etc.) has changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LightsChanged;

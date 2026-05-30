@@ -180,6 +180,7 @@ impl World {
     }
 
     pub fn insert_resource<T: Resource>(&mut self, resource: T) {
+        // TODO: Maybe disallow inserting a resource that already exists?
         self.resources
             .insert(resource.type_id(), Box::new(RefCell::new(resource)));
     }

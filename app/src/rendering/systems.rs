@@ -245,18 +245,23 @@ pub fn render_system(world: &mut World) {
 }
 
 pub fn update_system(world: &mut World) {
-    // TODO: This systems only checks if the GlobalTransform has changed for any
-    // entity, and updates the instance data and the BVH if that's the case. It
-    // doesn't update the mesh buffers or the other render data, since meshes
-    // are added only on startup. But that should be supported using a different
-    // event
+    let geometry_changed = world.has_events::<crate::core::events::GeometryChanged>();
+    let transform_changed = world.has_events::<crate::core::events::GlobalTransformChanged>();
 
-    if !world.has_events::<crate::core::events::GlobalTransformChanged>() {
+    if !geometry_changed && !transform_changed {
         return;
     }
 
-    // Update only the instance transforms for changed entities (skip vertex/index rebuild)
-    {
+    // Full mesh buffer rebuild when geometry changed (vertices, indices, GPU buffers)
+    if geometry_changed {
+        let wgpu = world.get_resource::<WgpuResources>().unwrap();
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
+            if let Err(err) = mesh_buffers.update(&wgpu.device, world) {
+                log::error!("MeshBuffers update failed: {}", err);
+            }
+        }
+    } else if transform_changed {
+        // Patch only the instance transforms for changed entities (skip vertex/index rebuild)
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
         if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
             if let Err(err) = mesh_buffers.update_transforms(&wgpu.queue, world) {
@@ -265,13 +270,22 @@ pub fn update_system(world: &mut World) {
         }
     }
 
-    // Rebuild TLAS (world-space bounds changed) and re-upload raytracer GPU data
-    let (blas_resource, tlas_resource) = {
+    // Rebuild BLAS only when geometry changed (object-space, transform-independent)
+    if geometry_changed {
+        let blas = {
+            let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
+            crate::rendering::build_scene_blas(&mesh_buffers)
+        };
+        world.insert_resource(blas);
+    }
+
+    // Always rebuild TLAS when transforms or geometry changed (world-space bounds)
+    let tlas = {
         let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
-        crate::rendering::build_scene_bvh(&mesh_buffers)
+        let blas = world.get_resource::<crate::rendering::BlasBvh>().unwrap();
+        crate::rendering::build_scene_tlas(&mesh_buffers, &blas)
     };
-    world.insert_resource(blas_resource);
-    world.insert_resource(tlas_resource);
+    world.insert_resource(tlas);
 
     let camera_entity = world
         .get_entities_with::<Camera>()
