@@ -129,8 +129,7 @@ impl Aabb {
 #[derive(Clone, Copy, Debug)]
 pub struct BvhPrimitive {
     pub index: u32,
-    pub bounds_min: Vec3,
-    pub bounds_max: Vec3,
+    pub aabb: Aabb,
     pub centroid: Vec3,
 }
 
@@ -145,24 +144,23 @@ impl BvhPrimitive {
         let p1 = vertices[i1].position();
         let p2 = vertices[i2].position();
 
-        let mut bounds_min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-        let mut bounds_max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+        let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+        let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
 
-        bounds_min = Vec3::min(bounds_min, p0);
-        bounds_min = Vec3::min(bounds_min, p1);
-        bounds_min = Vec3::min(bounds_min, p2);
+        min = Vec3::min(min, p0);
+        min = Vec3::min(min, p1);
+        min = Vec3::min(min, p2);
 
-        bounds_max = Vec3::max(bounds_max, p0);
-        bounds_max = Vec3::max(bounds_max, p1);
-        bounds_max = Vec3::max(bounds_max, p2);
+        max = Vec3::max(max, p0);
+        max = Vec3::max(max, p1);
+        max = Vec3::max(max, p2);
 
-        let centroid = (bounds_min + bounds_max) * 0.5;
+        let aabb = Aabb::new(min, max);
 
         Self {
             index: triangle_index,
-            bounds_min,
-            bounds_max,
-            centroid,
+            aabb,
+            centroid: (min + max) * 0.5,
         }
     }
 }
@@ -183,10 +181,7 @@ fn build_bvh(mut primitives: Vec<BvhPrimitive>) -> Bvh {
 
         let mut bounds = Aabb::empty();
         for primitive in primitives.iter() {
-            bounds.grow_with(&Aabb {
-                min: primitive.bounds_min,
-                max: primitive.bounds_max,
-            });
+            bounds.grow_with(&primitive.aabb);
         }
 
         if primitives.len() <= BVH_LEAF_SIZE {
@@ -341,8 +336,7 @@ pub fn build_tlas(bounds: &[Aabb]) -> Bvh {
         .enumerate()
         .map(|(index, aabb)| BvhPrimitive {
             index: index as u32,
-            bounds_min: aabb.min,
-            bounds_max: aabb.max,
+            aabb: *aabb,
             centroid: (aabb.min + aabb.max) * 0.5,
         })
         .collect();
