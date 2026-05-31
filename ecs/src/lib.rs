@@ -225,7 +225,7 @@ impl World {
     }
 }
 
-pub type System = Box<dyn FnMut(&mut World)>;
+pub type System = fn(&mut World);
 
 pub struct Schedule {
     systems: Vec<System>,
@@ -244,8 +244,8 @@ impl Schedule {
         }
     }
 
-    pub fn add_system<S: FnMut(&mut World) + 'static>(&mut self, system: S) {
-        self.systems.push(Box::new(system));
+    pub fn add_system(&mut self, system: System) {
+        self.systems.push(system);
     }
 
     pub fn run(&mut self, world: &mut World) {
@@ -325,21 +325,23 @@ mod tests {
         world.add_component(entity, TestComponent(0));
         world.insert_resource(TestResource(0));
 
-        let mut schedule = Schedule::new();
-
-        // System that modifies a component
-        schedule.add_system(move |world: &mut World| {
-            if let Some(mut component) = world.get_component_mut::<TestComponent>(entity) {
-                component.0 += 1;
+        fn increment_component(world: &mut World) {
+            for entity in world.get_entities_with::<TestComponent>() {
+                if let Some(mut component) = world.get_component_mut::<TestComponent>(entity) {
+                    component.0 += 1;
+                }
             }
-        });
+        }
 
-        // System that modifies a resource
-        schedule.add_system(|world: &mut World| {
+        fn increment_resource(world: &mut World) {
             if let Some(mut resource) = world.get_resource_mut::<TestResource>() {
                 resource.0 += 1;
             }
-        });
+        }
+
+        let mut schedule = Schedule::new();
+        schedule.add_system(increment_component);
+        schedule.add_system(increment_resource);
 
         schedule.run(&mut world);
 
