@@ -1,3 +1,4 @@
+Update: Shelved since the `Children` component isn't kept up to date
 
 # Mesh Hierarchy Calculation
 
