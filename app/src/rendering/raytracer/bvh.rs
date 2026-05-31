@@ -77,10 +77,6 @@ fn extent_component(vec: Vec3, axis: usize) -> f32 {
     }
 }
 
-fn vertex_position(vertex: &GpuVertex) -> Vec3 {
-    Vec3::new(vertex.position[0], vertex.position[1], vertex.position[2])
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Aabb {
     pub min: Vec3,
@@ -145,9 +141,9 @@ impl BvhPrimitive {
         let i1 = indices[base + 1] as usize;
         let i2 = indices[base + 2] as usize;
 
-        let p0 = vertex_position(&vertices[i0]);
-        let p1 = vertex_position(&vertices[i1]);
-        let p2 = vertex_position(&vertices[i2]);
+        let p0 = vertices[i0].position();
+        let p1 = vertices[i1].position();
+        let p2 = vertices[i2].position();
 
         let mut bounds_min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
         let mut bounds_max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
@@ -335,18 +331,19 @@ pub fn build_blas(vertices: &[GpuVertex], indices: &[u32]) -> Bvh {
     build_bvh(primitives)
 }
 
-pub fn build_tlas(bounds: &[(Vec3, Vec3, u32)]) -> Bvh {
+pub fn build_tlas(bounds: &[Aabb]) -> Bvh {
     if bounds.is_empty() {
         return Bvh::default();
     }
 
     let primitives: Vec<BvhPrimitive> = bounds
         .iter()
-        .map(|(min, max, index)| BvhPrimitive {
-            index: *index,
-            bounds_min: *min,
-            bounds_max: *max,
-            centroid: (*min + *max) * 0.5,
+        .enumerate()
+        .map(|(index, aabb)| BvhPrimitive {
+            index: index as u32,
+            bounds_min: aabb.min,
+            bounds_max: aabb.max,
+            centroid: (aabb.min + aabb.max) * 0.5,
         })
         .collect();
 

@@ -23,6 +23,10 @@ impl GpuVertex {
         }
     }
 
+    pub fn position(&self) -> maths::Vec3 {
+        maths::Vec3::new(self.position[0], self.position[1], self.position[2])
+    }
+
     pub fn from_vertex(vertex: &Vertex, material_index: usize, transform: Mat4) -> Self {
         let position = transform * vertex.position;
         let normal = transform * vertex.normal;

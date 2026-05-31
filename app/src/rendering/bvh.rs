@@ -76,13 +76,8 @@ pub fn build_scene_blas(mesh_buffers: &MeshBuffers) -> BlasBvh {
 /// Builds the TLAS (world-space BVH over instances) using existing BLAS bounds
 /// and current mesh transforms.
 pub fn build_scene_tlas(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> TlasBvh {
-    let mut instance_bounds: Vec<(Vec3, Vec3, u32)> = Vec::new();
-    for (instance_index, (gpu_mesh, blas_info)) in mesh_buffers
-        .meshes
-        .iter()
-        .zip(blas.infos.iter())
-        .enumerate()
-    {
+    let mut instance_bounds: Vec<Aabb> = Vec::new();
+    for (gpu_mesh, blas_info) in mesh_buffers.meshes.iter().zip(blas.infos.iter()) {
         let bounds = if blas_info.node_count == 0 {
             (Vec3::ZERO, Vec3::ZERO)
         } else {
@@ -93,7 +88,7 @@ pub fn build_scene_tlas(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> TlasBvh {
             )
         };
         let aabb = Aabb::new(bounds.0, bounds.1).transform(gpu_mesh.transform);
-        instance_bounds.push((aabb.min, aabb.max, instance_index as u32));
+        instance_bounds.push(aabb);
     }
 
     let tlas_bvh = build_tlas(&instance_bounds);
