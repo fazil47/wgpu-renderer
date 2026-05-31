@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod core;
+pub mod hierarchy;
 pub mod input;
 pub mod lighting;
 pub mod material;

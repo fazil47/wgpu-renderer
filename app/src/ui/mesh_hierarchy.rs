@@ -3,8 +3,9 @@ use std::collections::{HashMap, HashSet};
 use ecs::{Entity, World};
 
 use crate::{
+    hierarchy::{ChildOf, Children},
     rendering::WorldExtractExt,
-    transform::{Name, Transform},
+    transform::Name,
 };
 
 pub struct MeshHierarchyNode {
@@ -20,45 +21,32 @@ pub struct MeshHierarchy {
 
 pub fn build_mesh_hierarchy(world: &World) -> MeshHierarchy {
     let renderables: HashSet<Entity> = world.get_renderables().into_iter().collect();
-    let mut stack: Vec<Entity> = renderables.iter().copied().collect();
-    let mut transforms = renderables.clone();
+    let mut relevant: HashSet<Entity> = renderables.clone();
 
     // Walk up the parent chain so the tree includes ancestors of renderable entities.
+    let mut stack: Vec<Entity> = renderables.iter().copied().collect();
     while let Some(entity) = stack.pop() {
-        if let Some(transform) = world.get_component::<Transform>(entity)
-            && let Some(parent) = transform.parent
-            && transforms.insert(parent)
+        if let Some(child_of) = world.get_component::<ChildOf>(entity)
+            && relevant.insert(child_of.0)
         {
-            stack.push(parent);
+            stack.push(child_of.0);
         }
     }
 
     let mut labels = HashMap::new();
-    for &entity in &transforms {
+    for &entity in &relevant {
         labels.insert(entity, get_display_name(world, entity));
     }
 
-    let mut parent_to_children: HashMap<Entity, Vec<Entity>> = HashMap::new();
-    let mut has_parent: HashSet<Entity> = HashSet::new();
-
-    for &entity in &transforms {
-        if let Some(transform) = world.get_component::<Transform>(entity)
-            && let Some(parent) = transform.parent
-            && transforms.contains(&parent)
-        {
-            parent_to_children.entry(parent).or_default().push(entity);
-            has_parent.insert(entity);
-        }
-    }
-
-    for child_list in parent_to_children.values_mut() {
-        child_list.sort_by(|a, b| labels.get(a).unwrap().cmp(labels.get(b).unwrap()));
-    }
-
-    let mut roots: Vec<Entity> = transforms
+    // Roots are relevant entities with no parent (or whose parent isn't relevant)
+    let mut roots: Vec<Entity> = relevant
         .iter()
         .copied()
-        .filter(|entity| !has_parent.contains(entity))
+        .filter(|&entity| {
+            world
+                .get_component::<ChildOf>(entity)
+                .is_none_or(|c| !relevant.contains(&c.0))
+        })
         .collect();
 
     roots.sort_by(|a, b| labels.get(a).unwrap().cmp(labels.get(b).unwrap()));
@@ -66,24 +54,33 @@ pub fn build_mesh_hierarchy(world: &World) -> MeshHierarchy {
     MeshHierarchy {
         roots: roots
             .into_iter()
-            .map(|entity| {
-                build_hierarchy_node(entity, &mut parent_to_children, &labels, &renderables)
-            })
+            .map(|entity| build_hierarchy_node(world, entity, &labels, &renderables, &relevant))
             .collect(),
     }
 }
 
 fn build_hierarchy_node(
+    world: &World,
     entity: Entity,
-    children_by_parent: &mut HashMap<Entity, Vec<Entity>>,
     labels: &HashMap<Entity, String>,
     renderables: &HashSet<Entity>,
+    relevant: &HashSet<Entity>,
 ) -> MeshHierarchyNode {
-    let children = children_by_parent
-        .remove(&entity)
-        .unwrap_or_default()
+    let mut child_entities: Vec<Entity> = world
+        .get_component::<Children>(entity)
+        .map(|c| {
+            c.0.iter()
+                .copied()
+                .filter(|e| relevant.contains(e))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    child_entities.sort_by(|a, b| labels.get(a).unwrap().cmp(labels.get(b).unwrap()));
+
+    let children = child_entities
         .into_iter()
-        .map(|child| build_hierarchy_node(child, children_by_parent, labels, renderables))
+        .map(|child| build_hierarchy_node(world, child, labels, renderables, relevant))
         .collect();
 
     MeshHierarchyNode {

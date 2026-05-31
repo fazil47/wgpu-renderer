@@ -1,5 +1,6 @@
 use super::{Mesh, Vertex};
 use crate::{
+    hierarchy::ChildOf,
     material::{Material, RGBA},
     transform::{GlobalTransform, Name, Transform},
 };
@@ -160,11 +161,13 @@ fn process_node(
                 position: Vec3::from_array(&translation),
                 rotation: Quat::from_array(&rotation),
                 scale: Vec3::from_array(&scale),
-                parent,
             };
 
             let entity = world.create_entity();
             world.add_component(entity, transform);
+            if let Some(parent) = parent {
+                world.add_component(entity, ChildOf(parent));
+            }
 
             if let Some(name) = derive_node_name(&node) {
                 world.add_component(entity, Name::new(name));
@@ -301,14 +304,8 @@ fn build_mesh(
 
 fn create_child_entity(world: &mut World, parent: Entity, name: Option<String>) -> Entity {
     let child = world.create_entity();
-    let transform = Transform {
-        position: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
-        parent: Some(parent),
-    };
-
-    world.add_component(child, transform);
+    world.add_component(child, Transform::new(Vec3::ZERO));
+    world.add_component(child, ChildOf(parent));
     world.add_component(child, GlobalTransform::identity());
     if let Some(name) = name {
         world.add_component(child, Name::new(name));
@@ -317,12 +314,10 @@ fn create_child_entity(world: &mut World, parent: Entity, name: Option<String>) 
     child
 }
 
-fn ensure_parent(world: &World, entity: Entity, parent: Option<Entity>) -> Result<(), String> {
-    let mut transform = world
-        .get_component_mut::<Transform>(entity)
-        .ok_or_else(|| format!("Entity {entity:?} missing Transform component"))?;
-
-    transform.parent = parent;
+fn ensure_parent(world: &mut World, entity: Entity, parent: Option<Entity>) -> Result<(), String> {
+    if let Some(parent) = parent {
+        world.add_component(entity, ChildOf(parent));
+    }
 
     Ok(())
 }

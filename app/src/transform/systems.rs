@@ -5,6 +5,7 @@ use maths::Mat4;
 
 use crate::{
     core::events::{GlobalTransformChanged, TransformChanged},
+    hierarchy::{ChildOf, Children},
     transform::{GlobalTransform, Transform},
 };
 
@@ -15,25 +16,14 @@ pub fn calculate_global_transform_system(world: &mut World) {
         _ => return,
     };
 
-    // Build parent -> children map so we can find descendants
-    let all_transforms = world.get_entities_with::<Transform>();
-    let mut children_map: HashMap<Entity, Vec<Entity>> = HashMap::new();
-    for &entity in &all_transforms {
-        if let Some(transform) = world.get_component::<Transform>(entity)
-            && let Some(parent) = transform.parent
-        {
-            children_map.entry(parent).or_default().push(entity);
-        }
-    }
-
     // Collect dirty set: changed entities + all their descendants
     let mut dirty: HashSet<Entity> = HashSet::new();
     let mut stack: Vec<Entity> = changed_entities.into_iter().collect();
     while let Some(entity) = stack.pop() {
         if dirty.insert(entity)
-            && let Some(children) = children_map.get(&entity)
+            && let Some(children) = world.get_component::<Children>(entity)
         {
-            stack.extend(children);
+            stack.extend(children.0.iter());
         }
     }
 
@@ -81,7 +71,8 @@ fn calculate_global_transform(
 
     let local_matrix = transform.get_matrix();
 
-    let global_matrix = if let Some(parent) = transform.parent {
+    let global_matrix = if let Some(child_of) = world.get_component::<ChildOf>(entity) {
+        let parent = child_of.0;
         if !world.has_component::<Transform>(parent) {
             return Err(format!("Entity {parent:?} missing component: Transform"));
         }

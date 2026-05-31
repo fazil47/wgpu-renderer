@@ -1,6 +1,6 @@
 pub mod systems;
 
-use ecs::{Component, Entity};
+use ecs::Component;
 use maths::{Mat4, Quat, Vec3};
 
 /// Transform component for position, rotation, and scale
@@ -9,7 +9,6 @@ pub struct Transform {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
-    pub parent: Option<Entity>,
 }
 
 impl Component for Transform {}
@@ -20,16 +19,6 @@ impl Transform {
             position,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
-            parent: None,
-        }
-    }
-
-    pub fn with_parent(position: Vec3, parent: Entity) -> Self {
-        Self {
-            position,
-            rotation: Quat::IDENTITY,
-            scale: Vec3::ONE,
-            parent: Some(parent),
         }
     }
 
@@ -103,7 +92,6 @@ impl From<transform_gizmo_egui::math::Transform> for Transform {
             position: value.translation.into(),
             rotation: value.rotation.into(),
             scale: value.scale.into(),
-            parent: None,
         }
     }
 }

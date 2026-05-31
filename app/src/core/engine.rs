@@ -65,6 +65,7 @@ impl Engine {
         wgpu: crate::rendering::wgpu::WgpuResources,
     ) -> Engine {
         let mut world = World::new();
+        world.register_relationship::<crate::hierarchy::ChildOf>();
 
         let default_material_entity = world.create_entity();
         world.add_component(default_material_entity, Material::default());

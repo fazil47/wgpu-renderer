@@ -4,6 +4,7 @@ use winit::window::Window;
 
 use crate::{
     camera::Camera,
+    hierarchy::ChildOf,
     transform::{GlobalTransform, Transform},
 };
 
@@ -97,14 +98,13 @@ impl RendererEgui {
     pub fn select_entity(&mut self, world: &World, ui: &egui::Ui, entity: Entity) -> bool {
         let mut has_changed = false;
 
-        let (parent, mut gizmo_transform) =
-            if let Some(transform) = world.get_component::<Transform>(entity) {
-                let local_transform = *transform;
-                let gizmo_transform: transform_gizmo_egui::math::Transform = local_transform.into();
-                (local_transform.parent, gizmo_transform)
-            } else {
-                return false;
-            };
+        let mut gizmo_transform = if let Some(transform) = world.get_component::<Transform>(entity)
+        {
+            let gizmo_transform: transform_gizmo_egui::math::Transform = (*transform).into();
+            gizmo_transform
+        } else {
+            return false;
+        };
 
         if let Some(global_transform) = world.get_component::<GlobalTransform>(entity) {
             gizmo_transform.translation = global_transform.matrix.extract_translation().into();
@@ -115,11 +115,10 @@ impl RendererEgui {
         if let Some((_, new_transforms)) = self.gizmo.interact(ui, &[gizmo_transform]) {
             // TODO: Support translating more than one entity at a time
             let mut next: Transform = new_transforms[0].into();
-            next.parent = parent;
 
             // Convert the gizmo's world-space translation back into local space.
-            if let Some(parent) = parent
-                && let Some(parent_transform) = world.get_component::<GlobalTransform>(parent)
+            if let Some(child_of) = world.get_component::<ChildOf>(entity)
+                && let Some(parent_transform) = world.get_component::<GlobalTransform>(child_of.0)
             {
                 let inverse = parent_transform.matrix.inverse();
                 let local = inverse * maths::Vec4::from_point(next.position);
