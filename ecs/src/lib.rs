@@ -45,6 +45,7 @@ pub struct World {
     entities: HashMap<Entity, EntityComponents>,
     resources: HashMap<TypeId, Box<RefCell<dyn Resource>>>,
     events: HashMap<TypeId, Box<dyn AnyEventStorage>>,
+    hooks: HashMap<TypeId, ComponentHooks>,
     next_id: u32,
 }
 
@@ -60,6 +61,7 @@ impl World {
             entities: HashMap::new(),
             resources: HashMap::new(),
             events: HashMap::new(),
+            hooks: HashMap::new(),
             next_id: 0,
         }
     }
@@ -74,9 +76,48 @@ impl World {
         id
     }
 
+    /// Register lifecycle hooks for a component type. Returns a mutable
+    /// reference to `ComponentHooks` for builder-style chaining.
+    ///
+    /// ```ignore
+    /// world.register_hooks::<MyComponent>()
+    ///     .on_add(|world, entity| { /* ... */ })
+    ///     .on_remove(|world, entity| { /* ... */ });
+    /// ```
+    pub fn register_hooks<T: Component>(&mut self) -> &mut ComponentHooks {
+        self.hooks
+            .entry(TypeId::of::<T>())
+            .or_insert(ComponentHooks {
+                on_add: None,
+                on_remove: None,
+            })
+    }
+
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
-        if let Some(entity) = self.entities.get_mut(&entity) {
-            entity.insert(TypeId::of::<T>(), Box::new(RefCell::new(component)));
+        let type_id = TypeId::of::<T>();
+
+        if !self.entities.contains_key(&entity) {
+            return;
+        }
+
+        // If replacing an existing component, fire on_remove for the old value
+        let replacing = self.entities[&entity].contains_key(&type_id);
+        if replacing {
+            let hook = self.hooks.get(&type_id).and_then(|h| h.on_remove);
+            if let Some(hook) = hook {
+                hook(self, entity);
+            }
+        }
+
+        // Insert the new component
+        if let Some(components) = self.entities.get_mut(&entity) {
+            components.insert(type_id, Box::new(RefCell::new(component)));
+        }
+
+        // Fire on_add for the new component
+        let hook = self.hooks.get(&type_id).and_then(|h| h.on_add);
+        if let Some(hook) = hook {
+            hook(self, entity);
         }
     }
 
@@ -151,7 +192,54 @@ impl World {
             .collect()
     }
 
+    /// Remove a single component from an entity. Fires the `on_remove` hook
+    /// (if registered) while the component is still readable.
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) {
+        let type_id = TypeId::of::<T>();
+
+        let has = self
+            .entities
+            .get(&entity)
+            .is_some_and(|c| c.contains_key(&type_id));
+
+        if !has {
+            return;
+        }
+
+        // Fire on_remove while the component is still present
+        let hook = self.hooks.get(&type_id).and_then(|h| h.on_remove);
+        if let Some(hook) = hook {
+            hook(self, entity);
+        }
+
+        if let Some(components) = self.entities.get_mut(&entity) {
+            components.remove(&type_id);
+        }
+    }
+
+    /// Remove an entity and all its components. Fires `on_remove` hooks for
+    /// each component while the entity is still intact.
     pub fn remove_entity(&mut self, entity: Entity) {
+        // Collect type IDs so we can fire hooks before removal
+        let type_ids: Vec<TypeId> = match self.entities.get(&entity) {
+            Some(c) => c.keys().copied().collect(),
+            None => return,
+        };
+
+        for type_id in type_ids {
+            let still_exists = self
+                .entities
+                .get(&entity)
+                .is_some_and(|c| c.contains_key(&type_id));
+
+            if still_exists {
+                let hook = self.hooks.get(&type_id).and_then(|h| h.on_remove);
+                if let Some(hook) = hook {
+                    hook(self, entity);
+                }
+            }
+        }
+
         self.entities.remove(&entity);
     }
 
@@ -306,6 +394,42 @@ impl<E: Event> AnyEventStorage for EventStorage<E> {
     }
 }
 
+// ── Component Hooks ─────────────────────────────────────────────────────────
+
+/// A hook that fires in response to a component lifecycle event.
+///
+/// Receives `&mut World` and the target `Entity`. The component is still
+/// readable on the entity when the hook fires (for `on_remove`, it has not
+/// been removed yet; for `on_add`, it has already been inserted).
+pub type ComponentHook = fn(&mut World, Entity);
+
+/// Per-component lifecycle hooks. At most one hook per event per component type.
+pub struct ComponentHooks {
+    on_add: Option<ComponentHook>,
+    on_remove: Option<ComponentHook>,
+}
+
+impl ComponentHooks {
+    /// Register a hook that fires after a component is added to an entity.
+    ///
+    /// Also fires when a component is replaced (after the old value's
+    /// `on_remove` has run and the new value has been inserted).
+    pub fn on_add(&mut self, hook: ComponentHook) -> &mut Self {
+        self.on_add = Some(hook);
+        self
+    }
+
+    /// Register a hook that fires before a component is removed from an entity.
+    ///
+    /// Fires during `remove_entity` (for each component), `remove_component`,
+    /// and when a component is replaced via `add_component` (before the old
+    /// value is overwritten).
+    pub fn on_remove(&mut self, hook: ComponentHook) -> &mut Self {
+        self.on_remove = Some(hook);
+        self
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -426,6 +550,135 @@ mod tests {
         let world = World::new();
         assert!(!world.has_events::<TestEvent>());
         assert!(world.read_events::<TestEvent>().is_none());
+    }
+
+    // ── Hook tests ────────────────────────────────────────────────────
+
+    struct HookTracker(Vec<&'static str>);
+    impl Resource for HookTracker {}
+
+    #[test]
+    fn test_on_add_fires() {
+        let mut world = World::new();
+        world.insert_resource(HookTracker(Vec::new()));
+        world
+            .register_hooks::<TestComponent>()
+            .on_add(|world, _entity| {
+                world
+                    .get_resource_mut::<HookTracker>()
+                    .unwrap()
+                    .0
+                    .push("add");
+            });
+
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+
+        let tracker = world.get_resource::<HookTracker>().unwrap();
+        assert_eq!(tracker.0, vec!["add"]);
+    }
+
+    #[test]
+    fn test_on_remove_fires_on_entity_removal() {
+        let mut world = World::new();
+        world.insert_resource(HookTracker(Vec::new()));
+        world
+            .register_hooks::<TestComponent>()
+            .on_remove(|world, _entity| {
+                world
+                    .get_resource_mut::<HookTracker>()
+                    .unwrap()
+                    .0
+                    .push("remove");
+            });
+
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+        world.remove_entity(entity);
+
+        let tracker = world.get_resource::<HookTracker>().unwrap();
+        assert_eq!(tracker.0, vec!["remove"]);
+    }
+
+    #[test]
+    fn test_on_remove_fires_on_component_removal() {
+        let mut world = World::new();
+        world.insert_resource(HookTracker(Vec::new()));
+        world
+            .register_hooks::<TestComponent>()
+            .on_remove(|world, _entity| {
+                world
+                    .get_resource_mut::<HookTracker>()
+                    .unwrap()
+                    .0
+                    .push("remove");
+            });
+
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+        world.remove_component::<TestComponent>(entity);
+
+        let tracker = world.get_resource::<HookTracker>().unwrap();
+        assert_eq!(tracker.0, vec!["remove"]);
+        assert!(!world.has_component::<TestComponent>(entity));
+    }
+
+    #[test]
+    fn test_replacement_fires_remove_then_add() {
+        let mut world = World::new();
+        world.insert_resource(HookTracker(Vec::new()));
+        world
+            .register_hooks::<TestComponent>()
+            .on_add(|world, _entity| {
+                world
+                    .get_resource_mut::<HookTracker>()
+                    .unwrap()
+                    .0
+                    .push("add");
+            })
+            .on_remove(|world, _entity| {
+                world
+                    .get_resource_mut::<HookTracker>()
+                    .unwrap()
+                    .0
+                    .push("remove");
+            });
+
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1)); // add
+        world.add_component(entity, TestComponent(2)); // remove old, add new
+
+        let tracker = world.get_resource::<HookTracker>().unwrap();
+        assert_eq!(tracker.0, vec!["add", "remove", "add"]);
+
+        let val = world.get_component::<TestComponent>(entity).unwrap();
+        assert_eq!(val.0, 2);
+    }
+
+    #[test]
+    fn test_on_remove_can_read_component() {
+        let mut world = World::new();
+        world.insert_resource(HookTracker(Vec::new()));
+        world
+            .register_hooks::<TestComponent>()
+            .on_remove(|world, entity| {
+                // The component should still be readable during on_remove
+                let val = world.get_component::<TestComponent>(entity).unwrap();
+                if val.0 == 42 {
+                    world
+                        .get_resource_mut::<HookTracker>()
+                        .unwrap()
+                        .0
+                        .push("saw 42");
+                }
+            });
+
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(42));
+        world.remove_entity(entity);
+
+        let tracker = world.get_resource::<HookTracker>().unwrap();
+        assert_eq!(tracker.0, vec!["saw 42"]);
     }
 
     #[test]
