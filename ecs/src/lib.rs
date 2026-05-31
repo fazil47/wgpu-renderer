@@ -93,6 +93,15 @@ impl World {
             })
     }
 
+    /// Register a one-to-many relationship. Wires up `on_add` and `on_remove`
+    /// hooks on `R` so that the inverse [`RelationshipTarget`] component is
+    /// maintained automatically on the target entity.
+    pub fn register_relationship<R: Relationship>(&mut self) {
+        self.register_hooks::<R>()
+            .on_add(relationship_on_add::<R>)
+            .on_remove(relationship_on_remove::<R>);
+    }
+
     pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
         let type_id = TypeId::of::<T>();
 
@@ -430,6 +439,60 @@ impl ComponentHooks {
     }
 }
 
+// ── Relationships ───────────────────────────────────────────────────────────
+
+/// A component that references a single target entity, forming one half of a
+/// one-to-many relationship. The inverse is maintained automatically via
+/// [`RelationshipTarget`].
+///
+/// Example: `ChildOf(Entity)` — "this entity is a child of that entity".
+pub trait Relationship: Component {
+    /// The inverse component that collects all sources pointing at a target.
+    type Target: RelationshipTarget;
+
+    /// The entity this relationship points to.
+    fn target(&self) -> Entity;
+}
+
+/// The inverse side of a [`Relationship`]. Automatically maintained — do not
+/// modify directly. Holds the list of entities whose `Relationship` component
+/// points at this entity.
+///
+/// Example: `Children(Vec<Entity>)` — "these entities are children of me".
+pub trait RelationshipTarget: Component + Default {
+    fn entities(&self) -> &[Entity];
+    fn add(&mut self, entity: Entity);
+    fn remove(&mut self, entity: Entity);
+}
+
+fn relationship_on_add<R: Relationship>(world: &mut World, entity: Entity) {
+    let target = world.get_component::<R>(entity).unwrap().target();
+
+    if let Some(mut target) = world.get_component_mut::<R::Target>(target) {
+        target.add(entity);
+    } else {
+        let mut new_target = R::Target::default();
+        new_target.add(entity);
+        world.add_component(target, new_target);
+    }
+}
+
+fn relationship_on_remove<R: Relationship>(world: &mut World, entity: Entity) {
+    let target = world.get_component::<R>(entity).unwrap().target();
+
+    let should_remove_target =
+        if let Some(mut rel_target) = world.get_component_mut::<R::Target>(target) {
+            rel_target.remove(entity);
+            rel_target.entities().is_empty()
+        } else {
+            false
+        };
+
+    if should_remove_target {
+        world.remove_component::<R::Target>(target);
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -679,6 +742,131 @@ mod tests {
 
         let tracker = world.get_resource::<HookTracker>().unwrap();
         assert_eq!(tracker.0, vec!["saw 42"]);
+    }
+
+    // ── Relationship tests ─────────────────────────────────────────────
+
+    struct ChildOf(Entity);
+    impl Component for ChildOf {}
+    impl Relationship for ChildOf {
+        type Target = Children;
+        fn target(&self) -> Entity {
+            self.0
+        }
+    }
+
+    #[derive(Default)]
+    struct Children(Vec<Entity>);
+    impl Component for Children {}
+    impl RelationshipTarget for Children {
+        fn entities(&self) -> &[Entity] {
+            &self.0
+        }
+        fn add(&mut self, entity: Entity) {
+            self.0.push(entity);
+        }
+        fn remove(&mut self, entity: Entity) {
+            self.0.retain(|&e| e != entity);
+        }
+    }
+
+    #[test]
+    fn test_relationship_on_add_creates_target() {
+        let mut world = World::new();
+        world.register_relationship::<ChildOf>();
+
+        let parent = world.create_entity();
+        let child = world.create_entity();
+        world.add_component(child, ChildOf(parent));
+
+        let children = world.get_component::<Children>(parent).unwrap();
+        assert_eq!(children.0, vec![child]);
+    }
+
+    #[test]
+    fn test_relationship_multiple_children() {
+        let mut world = World::new();
+        world.register_relationship::<ChildOf>();
+
+        let parent = world.create_entity();
+        let c1 = world.create_entity();
+        let c2 = world.create_entity();
+        let c3 = world.create_entity();
+        world.add_component(c1, ChildOf(parent));
+        world.add_component(c2, ChildOf(parent));
+        world.add_component(c3, ChildOf(parent));
+
+        let children = world.get_component::<Children>(parent).unwrap();
+        assert_eq!(children.0, vec![c1, c2, c3]);
+    }
+
+    #[test]
+    fn test_relationship_remove_child_entity() {
+        let mut world = World::new();
+        world.register_relationship::<ChildOf>();
+
+        let parent = world.create_entity();
+        let c1 = world.create_entity();
+        let c2 = world.create_entity();
+        world.add_component(c1, ChildOf(parent));
+        world.add_component(c2, ChildOf(parent));
+
+        world.remove_entity(c1);
+
+        let children = world.get_component::<Children>(parent).unwrap();
+        assert_eq!(children.0, vec![c2]);
+    }
+
+    #[test]
+    fn test_relationship_remove_last_child_removes_target() {
+        let mut world = World::new();
+        world.register_relationship::<ChildOf>();
+
+        let parent = world.create_entity();
+        let child = world.create_entity();
+        world.add_component(child, ChildOf(parent));
+        world.remove_entity(child);
+
+        assert!(!world.has_component::<Children>(parent));
+    }
+
+    #[test]
+    fn test_relationship_reparent() {
+        let mut world = World::new();
+        world.register_relationship::<ChildOf>();
+
+        let parent_a = world.create_entity();
+        let parent_b = world.create_entity();
+        let child = world.create_entity();
+
+        world.add_component(child, ChildOf(parent_a));
+        assert_eq!(
+            world.get_component::<Children>(parent_a).unwrap().0,
+            vec![child]
+        );
+
+        // Re-parent: replacement fires on_remove(old) then on_add(new)
+        world.add_component(child, ChildOf(parent_b));
+
+        assert!(!world.has_component::<Children>(parent_a));
+        assert_eq!(
+            world.get_component::<Children>(parent_b).unwrap().0,
+            vec![child]
+        );
+    }
+
+    #[test]
+    fn test_relationship_remove_component() {
+        let mut world = World::new();
+        world.register_relationship::<ChildOf>();
+
+        let parent = world.create_entity();
+        let child = world.create_entity();
+        world.add_component(child, ChildOf(parent));
+        world.remove_component::<ChildOf>(child);
+
+        assert!(!world.has_component::<Children>(parent));
+        assert!(!world.has_component::<ChildOf>(child));
     }
 
     #[test]
