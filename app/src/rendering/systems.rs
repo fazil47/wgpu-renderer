@@ -255,18 +255,18 @@ pub fn update_system(world: &mut World) {
     // Full mesh buffer rebuild when geometry changed (vertices, indices, GPU buffers)
     if geometry_changed {
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
-            if let Err(err) = mesh_buffers.update(&wgpu.device, world) {
-                log::error!("MeshBuffers update failed: {}", err);
-            }
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>()
+            && let Err(err) = mesh_buffers.update(&wgpu.device, world)
+        {
+            log::error!("MeshBuffers update failed: {}", err);
         }
     } else if transform_changed {
         // Patch only the instance transforms for changed entities (skip vertex/index rebuild)
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
-            if let Err(err) = mesh_buffers.update_transforms(&wgpu.queue, world) {
-                log::error!("MeshBuffers transform update failed: {}", err);
-            }
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>()
+            && let Err(err) = mesh_buffers.update_transforms(&wgpu.queue, world)
+        {
+            log::error!("MeshBuffers transform update failed: {}", err);
         }
     }
 
@@ -301,16 +301,16 @@ pub fn update_system(world: &mut World) {
 
     {
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>() {
-            if let Err(err) = raytracer.update_render_data(
+        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>()
+            && let Err(err) = raytracer.update_render_data(
                 &wgpu.device,
                 &wgpu.queue,
                 world,
                 camera_entity,
                 sun_light_entity,
-            ) {
-                log::error!("Raytracer update failed: {}", err);
-            }
+            )
+        {
+            log::error!("Raytracer update failed: {}", err);
         }
     }
 }
