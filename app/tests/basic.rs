@@ -45,21 +45,30 @@ fn rasterizer_responds_to_transform_changes() {
         0.02,
     );
 
-    // Find the entity named "Suzanne"
-    let suzanne = engine
-        .world
-        .get_entities_with::<app::transform::Name>()
-        .into_iter()
-        .find(|&e| {
-            engine
-                .world
-                .get_component::<app::transform::Name>(e)
-                .map(|n| n.as_str() == "Suzanne")
-                .unwrap_or(false)
-        })
-        .expect("No entity named 'Suzanne' found");
+    // Move the floor a bit to the left
+    let floor = find_entity_by_name(&engine.world, "Floor");
+    {
+        let mut transform = engine
+            .world
+            .get_component_mut::<app::transform::Transform>(floor)
+            .expect("Floor has no Transform");
+        transform.position.x -= 0.5;
+    }
+    engine.world.send_event(TransformChanged(floor));
+
+    // Move the ceiling a bit down
+    let ceiling = find_entity_by_name(&engine.world, "Ceiling");
+    {
+        let mut transform = engine
+            .world
+            .get_component_mut::<app::transform::Transform>(ceiling)
+            .expect("Ceiling has no Transform");
+        transform.position.y -= 0.5;
+    }
+    engine.world.send_event(TransformChanged(ceiling));
 
     // Move Suzanne to the right (positive X from camera's POV)
+    let suzanne = find_entity_by_name(&engine.world, "Suzanne");
     {
         let mut transform = engine
             .world
@@ -67,11 +76,9 @@ fn rasterizer_responds_to_transform_changes() {
             .expect("Suzanne has no Transform");
         transform.position.x += 1.0;
     }
-
-    // Send transform changed event
     engine.world.send_event(TransformChanged(suzanne));
 
-    // Render with the moved mesh
+    // Render with the moved meshes
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -101,31 +108,39 @@ fn raytracer_responds_to_transform_changes() {
         config.is_raytracer_enabled = true;
     }
 
-    // Render a few frames to converge past noise
-    for _ in 0..3 {
-        engine.render().unwrap();
-    }
+    // Render initial frame
+    engine.render().unwrap();
+
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_initial.png",
         0.02,
     );
 
-    // Find the entity named "Suzanne"
-    let suzanne = engine
-        .world
-        .get_entities_with::<app::transform::Name>()
-        .into_iter()
-        .find(|&e| {
-            engine
-                .world
-                .get_component::<app::transform::Name>(e)
-                .map(|n| n.as_str() == "Suzanne")
-                .unwrap_or(false)
-        })
-        .expect("No entity named 'Suzanne' found");
+    // Move the floor a bit to the left
+    let floor = find_entity_by_name(&engine.world, "Floor");
+    {
+        let mut transform = engine
+            .world
+            .get_component_mut::<app::transform::Transform>(floor)
+            .expect("Floor has no Transform");
+        transform.position.x -= 0.5;
+    }
+    engine.world.send_event(TransformChanged(floor));
+
+    // Move the ceiling a bit down
+    let ceiling = find_entity_by_name(&engine.world, "Ceiling");
+    {
+        let mut transform = engine
+            .world
+            .get_component_mut::<app::transform::Transform>(ceiling)
+            .expect("Ceiling has no Transform");
+        transform.position.y -= 0.5;
+    }
+    engine.world.send_event(TransformChanged(ceiling));
 
     // Move Suzanne to the right (positive X from camera's POV)
+    let suzanne = find_entity_by_name(&engine.world, "Suzanne");
     {
         let mut transform = engine
             .world
@@ -182,6 +197,19 @@ fn set_camera_to_corner_view(engine: &mut app::core::Engine) {
     camera.eye = Vec3::new(2.5, 0.9, 3.2);
     camera.forward = (Vec3::new(0.0, 0.0, 0.0) - camera.eye).normalized();
     camera.up = Vec3::Y;
+}
+
+fn find_entity_by_name(world: &ecs::World, name: &str) -> ecs::Entity {
+    world
+        .get_entities_with::<app::transform::Name>()
+        .into_iter()
+        .find(|&e| {
+            world
+                .get_component::<app::transform::Name>(e)
+                .map(|n| n.as_str() == name)
+                .unwrap_or(false)
+        })
+        .unwrap_or_else(|| panic!("No entity named '{name}' found"))
 }
 
 /// Compare rendered pixels against a reference image, or update it if UPDATE_REFERENCES is set.
