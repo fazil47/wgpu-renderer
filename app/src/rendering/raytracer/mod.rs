@@ -5,16 +5,14 @@ use crate::{
     material::Material,
     rendering::{
         GpuVertex,
+        bvh::{BlasInfo, BvhNode, build_bvh_debug_lines},
         extract::{Extract, ExtractionError, WorldExtractExt},
         mesh::MeshBuffers,
-        raytracer::bvh::{BvhNode, build_bvh_debug_lines},
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},
     },
 };
 use ecs::{Entity, World};
 use maths::{Mat4, Vec3};
-
-pub mod bvh;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -108,40 +106,6 @@ impl Default for RaytracerInstance {
             world_matrix: Mat4::IDENTITY.to_cols_array_2d(),
             blas_index: 0,
             _padding: [0; 3],
-        }
-    }
-}
-
-// Since there will be one BLAS per unique mesh, we need to store the BLAS info for each of those meshes
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RaytracerBlasInfo {
-    pub node_offset: u32,
-    pub node_count: u32,
-    pub primitive_offset: u32,
-    pub primitive_count: u32,
-    pub vertex_offset: u32,
-    pub index_offset: u32,
-    pub _padding: [u32; 2],
-}
-
-impl RaytracerBlasInfo {
-    pub fn new(
-        node_offset: u32,
-        node_count: u32,
-        primitive_offset: u32,
-        primitive_count: u32,
-        vertex_offset: u32,
-        index_offset: u32,
-    ) -> Self {
-        Self {
-            node_offset,
-            node_count,
-            primitive_offset,
-            primitive_count,
-            vertex_offset,
-            index_offset,
-            _padding: [0; 2],
         }
     }
 }
@@ -515,7 +479,7 @@ impl RaytracerBuffers {
         let blas_info = device
             .buffer()
             .label("Raytracer BLAS Info Buffer")
-            .storage(&[RaytracerBlasInfo::default()]);
+            .storage(&[BlasInfo::default()]);
 
         let tlas_nodes = device
             .buffer()
@@ -883,7 +847,7 @@ impl Extract for Raytracer {
             device
                 .buffer()
                 .label("Raytracer BLAS Info Buffer")
-                .storage(&[RaytracerBlasInfo::default()])
+                .storage(&[BlasInfo::default()])
         } else {
             device
                 .buffer()
