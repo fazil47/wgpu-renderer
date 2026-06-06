@@ -1,6 +1,6 @@
 use std::{
     any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut},
+    cell::{Cell, Ref, RefCell, RefMut},
     collections::HashMap,
     hash::Hash,
     ops::{Deref, DerefMut},
@@ -36,7 +36,38 @@ impl DerefMut for Entity {
     }
 }
 
-pub type EntityComponents = HashMap<TypeId, Box<RefCell<dyn Component>>>;
+/// Mutable reference to a component that tracks changes via ticks.
+///
+/// On [`DerefMut`], the component's change tick is stamped with the current
+/// world tick. Read-only access through [`Deref`] does not mark the
+/// component as changed.
+pub struct Mut<'a, T: ?Sized> {
+    value: RefMut<'a, T>,
+    changed_tick: &'a Cell<u32>,
+    world_tick: u32,
+}
+
+impl<T: ?Sized> Deref for Mut<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T: ?Sized> DerefMut for Mut<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.changed_tick.set(self.world_tick);
+        &mut self.value
+    }
+}
+
+struct ComponentEntry {
+    data: Box<RefCell<dyn Component>>,
+    changed_tick: Cell<u32>,
+}
+
+type EntityComponents = HashMap<TypeId, ComponentEntry>;
 
 // ── World ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +77,7 @@ pub struct World {
     resources: HashMap<TypeId, Box<RefCell<dyn Resource>>>,
     events: HashMap<TypeId, Box<dyn AnyEventStorage>>,
     hooks: HashMap<TypeId, ComponentHooks>,
+    current_tick: u32,
     next_id: u32,
 }
 
@@ -62,6 +94,7 @@ impl World {
             resources: HashMap::new(),
             events: HashMap::new(),
             hooks: HashMap::new(),
+            current_tick: 0,
             next_id: 0,
         }
     }
@@ -120,7 +153,13 @@ impl World {
 
         // Insert the new component
         if let Some(components) = self.entities.get_mut(&entity) {
-            components.insert(type_id, Box::new(RefCell::new(component)));
+            components.insert(
+                type_id,
+                ComponentEntry {
+                    data: Box::new(RefCell::new(component)),
+                    changed_tick: Cell::new(self.current_tick),
+                },
+            );
         }
 
         // Fire on_add for the new component
@@ -132,8 +171,8 @@ impl World {
 
     pub fn get_component<T: Component>(&self, entity: Entity) -> Option<Ref<'_, T>> {
         if let Some(components) = self.entities.get(&entity) {
-            if let Some(component) = components.get(&TypeId::of::<T>()) {
-                let downcasted = Ref::map(component.borrow(), |c| {
+            if let Some(entry) = components.get(&TypeId::of::<T>()) {
+                let downcasted = Ref::map(entry.data.borrow(), |c| {
                     let as_any = c as &dyn Any;
                     as_any.downcast_ref::<T>().unwrap()
                 });
@@ -146,14 +185,18 @@ impl World {
         }
     }
 
-    pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<RefMut<'_, T>> {
+    pub fn get_component_mut<T: Component>(&self, entity: Entity) -> Option<Mut<'_, T>> {
         if let Some(components) = self.entities.get(&entity) {
-            if let Some(component) = components.get(&TypeId::of::<T>()) {
-                let downcasted = RefMut::map(component.borrow_mut(), |c| {
+            if let Some(entry) = components.get(&TypeId::of::<T>()) {
+                let downcasted = RefMut::map(entry.data.borrow_mut(), |c| {
                     let as_any = c as &mut dyn Any;
                     as_any.downcast_mut::<T>().unwrap()
                 });
-                Some(downcasted)
+                Some(Mut {
+                    value: downcasted,
+                    changed_tick: &entry.changed_tick,
+                    world_tick: self.current_tick,
+                })
             } else {
                 None
             }
@@ -319,6 +362,28 @@ impl World {
         for storage in self.events.values_mut() {
             storage.clear();
         }
+    }
+
+    // ── Change detection ────────────────────────────────────────────────
+
+    /// Returns the current world tick.
+    pub fn tick(&self) -> u32 {
+        self.current_tick
+    }
+
+    /// Advance the world tick by one. Call once per frame so that
+    /// modifications in the new frame get a fresh tick value.
+    pub fn increment_tick(&mut self) {
+        self.current_tick += 1;
+    }
+
+    /// Returns `true` if the component was added or mutably accessed at a
+    /// tick strictly greater than `since`.
+    pub fn is_changed<T: Component>(&self, entity: Entity, since: u32) -> bool {
+        self.entities
+            .get(&entity)
+            .and_then(|c| c.get(&TypeId::of::<T>()))
+            .is_some_and(|entry| entry.changed_tick.get() > since)
     }
 }
 
@@ -867,6 +932,121 @@ mod tests {
 
         assert!(!world.has_component::<Children>(parent));
         assert!(!world.has_component::<ChildOf>(child));
+    }
+
+    // ── Change detection tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_newly_added_component_is_changed() {
+        let mut world = World::new();
+        let since = world.tick();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+
+        // Added at tick 0, since tick 0 → 0 > 0 → false (same tick)
+        assert!(!world.is_changed::<TestComponent>(entity, since));
+
+        // After incrementing, add at tick 1 is > since tick 0
+        world.increment_tick();
+        let entity2 = world.create_entity();
+        world.add_component(entity2, TestComponent(2));
+        assert!(world.is_changed::<TestComponent>(entity2, since));
+    }
+
+    #[test]
+    fn test_mutation_marks_changed() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+
+        let since = world.tick();
+        world.increment_tick();
+
+        // Mutably access the component (DerefMut stamps the tick)
+        {
+            let mut comp = world.get_component_mut::<TestComponent>(entity).unwrap();
+            comp.0 = 42;
+        }
+
+        assert!(world.is_changed::<TestComponent>(entity, since));
+    }
+
+    #[test]
+    fn test_read_only_access_does_not_mark_changed() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+
+        world.increment_tick();
+        let since = world.tick();
+
+        // Read-only access should not mark as changed
+        {
+            let comp = world.get_component::<TestComponent>(entity).unwrap();
+            assert_eq!(comp.0, 1);
+        }
+
+        assert!(!world.is_changed::<TestComponent>(entity, since));
+    }
+
+    #[test]
+    fn test_unchanged_component_is_not_changed() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(1));
+
+        world.increment_tick();
+        let since = world.tick();
+        world.increment_tick();
+
+        // No access at all
+        assert!(!world.is_changed::<TestComponent>(entity, since));
+    }
+
+    #[test]
+    fn test_change_detection_across_frames() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(0));
+
+        // Frame 1: no mutation
+        world.increment_tick();
+        let frame1_tick = world.tick();
+
+        // Frame 2: mutate
+        world.increment_tick();
+        {
+            let mut comp = world.get_component_mut::<TestComponent>(entity).unwrap();
+            comp.0 = 10;
+        }
+
+        // Changed since frame 1
+        assert!(world.is_changed::<TestComponent>(entity, frame1_tick));
+
+        let frame2_tick = world.tick();
+
+        // Frame 3: no mutation
+        world.increment_tick();
+        assert!(!world.is_changed::<TestComponent>(entity, frame2_tick));
+    }
+
+    #[test]
+    fn test_deref_without_deref_mut_does_not_mark_changed() {
+        let mut world = World::new();
+        let entity = world.create_entity();
+        world.add_component(entity, TestComponent(5));
+
+        world.increment_tick();
+        let since = world.tick();
+        world.increment_tick();
+
+        // get_component_mut but only read through Deref (not DerefMut)
+        {
+            let comp = world.get_component_mut::<TestComponent>(entity).unwrap();
+            let _val = comp.0; // Deref, not DerefMut
+        }
+
+        assert!(!world.is_changed::<TestComponent>(entity, since));
     }
 
     #[test]
