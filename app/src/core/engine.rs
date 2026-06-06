@@ -28,6 +28,7 @@ use crate::mesh::gltf::GltfMeshExt;
 
 pub struct Engine {
     pub world: World,
+    pub change_detection_schedule: ecs::Schedule,
     pub input_schedule: ecs::Schedule,
     pub update_schedule: ecs::Schedule,
     pub render_schedule: ecs::Schedule,
@@ -39,6 +40,12 @@ pub struct Engine {
 
 pub struct SelectedEntity(pub Option<Entity>);
 impl ecs::Resource for SelectedEntity {}
+
+/// Stores the world tick at the start of a frame, before `increment_tick()`.
+/// Change detection systems compare component change ticks against this value
+/// to find components modified in the previous frame.
+pub struct FrameTick(pub u32);
+impl ecs::Resource for FrameTick {}
 
 #[derive(Default)]
 pub struct RaytracerFrameState {
@@ -139,6 +146,10 @@ impl Engine {
         world.insert_resource(SelectedEntity(None));
         world.insert_resource(RaytracerFrameState::default());
 
+        let mut change_detection_schedule = ecs::Schedule::new();
+        change_detection_schedule
+            .add_system(crate::transform::systems::detect_transform_changes_system);
+
         let mut input_schedule = ecs::Schedule::new();
         input_schedule.add_system(crate::input::systems::camera_controller_system);
         input_schedule.add_system(crate::ui::systems::ui_system);
@@ -213,6 +224,7 @@ impl Engine {
 
         Self {
             world,
+            change_detection_schedule,
             input_schedule,
             update_schedule,
             render_schedule,
@@ -274,6 +286,13 @@ impl Engine {
             time.delta_time = self.stat.delta_time;
             time.elapsed_time += self.stat.delta_time;
         }
+
+        // Detect changes from the previous frame (reads old FrameTick)
+        self.change_detection_schedule.run(&mut self.world);
+
+        // Advance the tick so mutations this frame get a fresh stamp
+        self.world.insert_resource(FrameTick(self.world.tick()));
+        self.world.increment_tick();
 
         // Run schedules
         self.input_schedule.run(&mut self.world);

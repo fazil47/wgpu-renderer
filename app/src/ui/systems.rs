@@ -47,7 +47,6 @@ pub fn ui_system(world: &mut World) {
 
     let mesh_hierarchy = build_mesh_hierarchy(world);
     let mut bake_requested = false;
-    let mut has_transform_changed = false;
     let mut is_light_dirty = false;
 
     // 2. Run Egui
@@ -76,7 +75,7 @@ pub fn ui_system(world: &mut World) {
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     if let Some(entity) = selected.0 {
-                        has_transform_changed = egui.select_entity(world, ui, entity);
+                        egui.select_entity(world, ui, entity);
                     }
 
                     egui::SidePanel::right("fps_panel")
@@ -165,13 +164,6 @@ pub fn ui_system(world: &mut World) {
         config.show_bvh = raytracer_show_bvh;
         config.debug_shadow_maps = debug_shadow_maps;
         config.shadow_map_cascade_to_debug = shadow_map_cascade_to_debug;
-    }
-
-    if has_transform_changed {
-        if let Some(entity) = world.get_resource::<SelectedEntity>().and_then(|s| s.0) {
-            world.send_event(crate::core::events::TransformChanged(entity));
-        }
-        world.send_event(crate::core::events::RaytracerReset);
     }
 
     if bake_requested {

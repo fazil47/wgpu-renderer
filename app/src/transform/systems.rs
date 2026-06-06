@@ -4,10 +4,33 @@ use ecs::{Entity, World};
 use maths::Mat4;
 
 use crate::{
-    core::events::{GlobalTransformChanged, TransformChanged},
+    core::events::{GlobalTransformChanged, RaytracerReset, TransformChanged},
     hierarchy::{ChildOf, Children},
     transform::{GlobalTransform, Transform},
 };
+
+use crate::core::engine::FrameTick;
+
+/// Scans all Transform components for changes since the last frame tick
+/// and fires `TransformChanged` events automatically.
+pub fn detect_transform_changes_system(world: &mut World) {
+    let since = match world.get_resource::<FrameTick>() {
+        Some(tick) => tick.0,
+        None => return,
+    };
+
+    let mut any_changed = false;
+    for entity in world.get_entities_with::<Transform>() {
+        if world.is_changed::<Transform>(entity, since) {
+            world.send_event(TransformChanged(entity));
+            any_changed = true;
+        }
+    }
+
+    if any_changed {
+        world.send_event(RaytracerReset);
+    }
+}
 
 pub fn calculate_global_transform_system(world: &mut World) {
     // Collect changed entities from events

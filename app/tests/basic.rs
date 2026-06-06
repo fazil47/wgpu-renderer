@@ -1,4 +1,4 @@
-use app::core::events::{RaytracerReset, TransformChanged};
+use app::core::events::RaytracerReset;
 use maths::Vec3;
 
 #[test]
@@ -54,7 +54,6 @@ fn rasterizer_responds_to_transform_changes() {
             .expect("Floor has no Transform");
         transform.position.x -= 0.5;
     }
-    engine.world.send_event(TransformChanged(floor));
 
     // Move the ceiling a bit down
     let ceiling = find_entity_by_name(&engine.world, "Ceiling");
@@ -65,7 +64,6 @@ fn rasterizer_responds_to_transform_changes() {
             .expect("Ceiling has no Transform");
         transform.position.y -= 0.5;
     }
-    engine.world.send_event(TransformChanged(ceiling));
 
     // Move Suzanne to the right (positive X from camera's POV)
     let suzanne = find_entity_by_name(&engine.world, "Suzanne");
@@ -76,9 +74,8 @@ fn rasterizer_responds_to_transform_changes() {
             .expect("Suzanne has no Transform");
         transform.position.x += 1.0;
     }
-    engine.world.send_event(TransformChanged(suzanne));
 
-    // Render with the moved meshes
+    // Change detection will fire TransformChanged automatically next frame
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -126,7 +123,6 @@ fn raytracer_responds_to_transform_changes() {
             .expect("Floor has no Transform");
         transform.position.x -= 0.5;
     }
-    engine.world.send_event(TransformChanged(floor));
 
     // Move the ceiling a bit down
     let ceiling = find_entity_by_name(&engine.world, "Ceiling");
@@ -137,7 +133,6 @@ fn raytracer_responds_to_transform_changes() {
             .expect("Ceiling has no Transform");
         transform.position.y -= 0.5;
     }
-    engine.world.send_event(TransformChanged(ceiling));
 
     // Move Suzanne to the right (positive X from camera's POV)
     let suzanne = find_entity_by_name(&engine.world, "Suzanne");
@@ -148,10 +143,6 @@ fn raytracer_responds_to_transform_changes() {
             .expect("Suzanne has no Transform");
         transform.position.x += 1.0;
     }
-
-    // Send transform changed and raytracer reset events
-    engine.world.send_event(TransformChanged(suzanne));
-    engine.world.send_event(RaytracerReset);
 
     // Render a few frames to converge past noise
     for _ in 0..3 {
