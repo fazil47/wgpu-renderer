@@ -747,13 +747,23 @@ impl Extract for Raytracer {
             .get_resource::<crate::rendering::TlasBvh>()
             .ok_or_else(|| ExtractionError::Misc("TlasBvh not found".to_string()))?;
 
-        // Materials
-        let mut material_entities = world.get_materials();
-        material_entities.sort();
-        let mut materials = Vec::new();
-        for entity in material_entities {
+        // Materials — build a flat buffer indexed by MaterialIndex slots.
+        // The default material occupies any gaps left by removed materials.
+        let material_index = world
+            .get_resource::<crate::material::MaterialIndex>()
+            .ok_or_else(|| ExtractionError::Misc("MaterialIndex resource not found".to_string()))?;
+        let default_material = world
+            .get_resource::<crate::material::DefaultMaterial>()
+            .ok_or_else(|| {
+                ExtractionError::Misc("DefaultMaterial resource not found".to_string())
+            })?;
+        let default_material = RaytracerMaterial::from_material(&default_material.0);
+
+        let slot_count = material_index.slot_count().max(1);
+        let mut materials = vec![default_material; slot_count];
+        for (&entity, &index) in material_index.entity_to_index() {
             let material = world.extract_material_component(entity)?;
-            materials.push(RaytracerMaterial::from_material(&material));
+            materials[index] = RaytracerMaterial::from_material(&material);
         }
 
         // Instances (one per mesh, referencing its BLAS by index)

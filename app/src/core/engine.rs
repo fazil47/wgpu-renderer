@@ -15,7 +15,7 @@ use crate::{
     core::events::{LightsChanged, RaytracerReset},
     input::CameraController,
     lighting::DirectionalLight,
-    material::{DefaultMaterialEntity, Material},
+    material::{DefaultMaterial, Material},
     mesh::Mesh,
     time::Time,
     transform::{GlobalTransform, Transform},
@@ -74,9 +74,26 @@ impl Engine {
         let mut world = World::new();
         world.register_relationship::<crate::hierarchy::ChildOf>();
 
-        let default_material_entity = world.create_entity();
-        world.add_component(default_material_entity, Material::default());
-        world.insert_resource(DefaultMaterialEntity(default_material_entity));
+        world.insert_resource(DefaultMaterial(Material::default()));
+
+        // MaterialIndex tracks dense GPU indices for material entities.
+        // Must be inserted before hooks are registered and before any
+        // Material components are added (e.g. GLTF loading).
+        world.insert_resource(crate::material::MaterialIndex::new());
+        world
+            .register_hooks::<Material>()
+            .on_add(|world, entity| {
+                let mut index = world
+                    .get_resource_mut::<crate::material::MaterialIndex>()
+                    .unwrap();
+                index.add(entity);
+            })
+            .on_remove(|world, entity| {
+                let mut index = world
+                    .get_resource_mut::<crate::material::MaterialIndex>()
+                    .unwrap();
+                index.remove(entity);
+            });
 
         let camera_entity = world.create_entity();
         let camera_position = Vec3::new(0.0, 0.0, 4.0);

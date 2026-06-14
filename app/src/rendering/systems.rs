@@ -173,19 +173,7 @@ pub fn render_system(world: &mut World) {
             if let Some(rasterizer) = world.get_resource::<Rasterizer>()
                 && let Some(mesh_buffers) = world.get_resource::<MeshBuffers>()
             {
-                let material_entities = world.get_entities_with::<crate::material::Material>();
-                let default_material_entity = material_entities.first().copied().unwrap_or(
-                    // Fallback if no materials? Should not happen in this scene.
-                    // If it happens, we might panic.
-                    world.get_all_entities().first().copied().unwrap(),
-                );
-
-                rasterizer.render(
-                    &mut render_encoder,
-                    &render_target_view,
-                    default_material_entity,
-                    &mesh_buffers,
-                );
+                rasterizer.render(&mut render_encoder, &render_target_view, &mesh_buffers);
 
                 if rasterizer.should_render_probe_visualization() {
                     rasterizer.render_probe_visualization(&mut render_encoder, &render_target_view);

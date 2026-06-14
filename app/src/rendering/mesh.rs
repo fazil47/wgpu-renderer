@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    material::DefaultMaterialEntity,
+    material::MaterialIndex,
     rendering::{
         GpuVertex,
         extract::{ExtractionError, WorldExtractExt},
@@ -110,24 +110,9 @@ impl MeshBuffers {
     }
 
     pub fn update(&mut self, device: &wgpu::Device, world: &World) -> Result<(), ExtractionError> {
-        // Build material entity → index mapping
-        let mut material_entities = world.get_materials();
-
-        // Sort so that material indices are stable
-        material_entities.sort();
-
-        let default_material_entity = world.get_resource::<DefaultMaterialEntity>().unwrap().0;
-        let mut material_entity_to_index: HashMap<Entity, usize> = HashMap::new();
-        let mut default_material_index = None;
-
-        for (index, entity) in material_entities.iter().enumerate() {
-            material_entity_to_index.insert(*entity, index);
-            if *entity == default_material_entity {
-                default_material_index = Some(index);
-            }
-        }
-
-        let default_material_index = default_material_index.unwrap();
+        let material_index = world
+            .get_resource::<MaterialIndex>()
+            .ok_or_else(|| ExtractionError::Misc("MaterialIndex resource not found".to_string()))?;
 
         let renderables = world.get_renderables();
         self.vertices.clear();
@@ -139,19 +124,16 @@ impl MeshBuffers {
         for entity in renderables {
             let global_transform = world.extract_global_transform_component(entity)?;
             let mesh = world.extract_mesh_component(entity)?;
-            let material_index = if let Some(mat_entity) = mesh.material_entity {
-                *material_entity_to_index
-                    .get(&mat_entity)
-                    .expect("Material entity not found for mesh")
-            } else {
-                default_material_index
-            };
+            let mat_index = mesh
+                .material_entity
+                .and_then(|e| material_index.get(e))
+                .unwrap_or(0);
 
             let vertex_offset = self.vertices.len() as u32;
             let mesh_vertices: Vec<GpuVertex> = mesh
                 .vertices()
                 .iter()
-                .map(|v| GpuVertex::from_vertex(v, material_index, Mat4::IDENTITY))
+                .map(|v| GpuVertex::from_vertex(v, mat_index, Mat4::IDENTITY))
                 .collect();
             let vertex_count = mesh_vertices.len() as u32;
             self.vertices.extend_from_slice(&mesh_vertices);

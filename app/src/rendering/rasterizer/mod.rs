@@ -32,6 +32,8 @@ pub struct Rasterizer {
     material_bgl: BindGroupLayout,
     material_bind_groups: HashMap<Entity, BindGroup>,
     material_double_sided: HashMap<Entity, bool>,
+    default_material_bind_group: Option<BindGroup>,
+    default_material_double_sided: bool,
     other_bind_group: BindGroup,
     render_pipeline: RenderPipeline,
     render_pipeline_double_sided: RenderPipeline,
@@ -176,6 +178,8 @@ impl Rasterizer {
             material_bgl,
             material_bind_groups: HashMap::new(),
             material_double_sided: HashMap::new(),
+            default_material_bind_group: None,
+            default_material_double_sided: false,
             other_bind_group,
             render_pipeline,
             render_pipeline_double_sided,
@@ -201,9 +205,11 @@ impl Rasterizer {
             .update_from_world(queue, world, camera_entity);
         self.lighting_buffers
             .update_from_world(queue, world, sun_light_entity);
-        let (material_bind_groups, material_double_sided) = self.extract(device, world)?;
-        self.material_bind_groups = material_bind_groups;
-        self.material_double_sided = material_double_sided;
+        let extracted = self.extract(device, world)?;
+        self.default_material_bind_group = Some(extracted.0);
+        self.default_material_double_sided = extracted.1;
+        self.material_bind_groups = extracted.2;
+        self.material_double_sided = extracted.3;
 
         Ok(())
     }
@@ -254,7 +260,6 @@ impl Rasterizer {
         &self,
         render_encoder: &mut wgpu::CommandEncoder,
         render_target_view: &wgpu::TextureView,
-        default_material_entity: Entity,
         mesh_buffers: &MeshBuffers,
     ) {
         // TODO: Only render shadow map if the directional light has changed
@@ -282,24 +287,28 @@ impl Rasterizer {
             wgpu::IndexFormat::Uint32,
         );
 
+        let default_bg = self
+            .default_material_bind_group
+            .as_ref()
+            .expect("default material bind group not initialized; call update_render_data first");
+
         let instance_stride = std::mem::size_of::<InstanceTransform>() as u64;
         for (i, mesh) in mesh_buffers.meshes.iter().enumerate() {
-            let material_entity = mesh.material_entity.unwrap_or(default_material_entity);
-            let material_bind_group = self
-                .material_bind_groups
-                .get(&material_entity)
-                .or_else(|| self.material_bind_groups.get(&default_material_entity))
-                .expect("Material bind group not found");
-            let double_sided = self
-                .material_double_sided
-                .get(&material_entity)
-                .copied()
-                .or_else(|| {
-                    self.material_double_sided
-                        .get(&default_material_entity)
+            let (material_bind_group, double_sided) = match mesh.material_entity {
+                Some(mat_entity) => {
+                    let bg = self
+                        .material_bind_groups
+                        .get(&mat_entity)
+                        .unwrap_or(default_bg);
+                    let ds = self
+                        .material_double_sided
+                        .get(&mat_entity)
                         .copied()
-                })
-                .unwrap_or(false);
+                        .unwrap_or(self.default_material_double_sided);
+                    (bg, ds)
+                }
+                None => (default_bg, self.default_material_double_sided),
+            };
 
             if double_sided {
                 rpass.set_pipeline(&self.render_pipeline_double_sided);
@@ -414,48 +423,74 @@ impl Rasterizer {
     }
 }
 
+impl Rasterizer {
+    fn create_material_bind_group(
+        device: &Device,
+        layout: &BindGroupLayout,
+        material: &crate::material::Material,
+    ) -> BindGroup {
+        let color_buffer = device
+            .buffer()
+            .label("Material Color Buffer")
+            .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
+            .uniform(&material.color.to_array());
+        let emissive_buffer = device
+            .buffer()
+            .label("Material Emissive Buffer")
+            .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
+            .uniform(&material.emissive.to_array());
+        device
+            .bind_group(layout)
+            .label("Material Bind Group")
+            .buffer(0, &color_buffer)
+            .buffer(1, &emissive_buffer)
+            .build()
+    }
+}
+
 impl Extract for Rasterizer {
-    type ExtractedData = (HashMap<Entity, BindGroup>, HashMap<Entity, bool>);
+    type ExtractedData = (
+        BindGroup,                  // the default material bind group
+        bool,                       // whether the default material is double sided
+        HashMap<Entity, BindGroup>, // per entity bind groups
+        HashMap<Entity, bool>,      // per entity material double sidedness
+    );
 
     fn extract(
         &self,
         device: &Device,
         world: &World,
     ) -> Result<Self::ExtractedData, ExtractionError> {
+        // Default material
+        let default_material = world
+            .get_resource::<crate::material::DefaultMaterial>()
+            .ok_or_else(|| {
+                ExtractionError::Misc("DefaultMaterial resource not found".to_string())
+            })?;
+        let default_bind_group =
+            Self::create_material_bind_group(device, &self.material_bgl, &default_material.0);
+        let default_double_sided = default_material.0.double_sided;
+
+        // Per-entity materials
         let materials: Vec<Entity> = world.get_materials();
         let mut material_bind_groups: HashMap<Entity, BindGroup> = HashMap::new();
         let mut material_double_sided: HashMap<Entity, bool> = HashMap::new();
 
         for entity in materials {
             let material = world.extract_material_component(entity)?;
-            let color_array = material.color.to_array();
-            let emissive_array = material.emissive.to_array();
-
-            let color_buffer = device
-                .buffer()
-                .label("Material Color Buffer")
-                .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
-                .uniform(&color_array);
-            let emissive_buffer = device
-                .buffer()
-                .label("Material Emissive Buffer")
-                .usage(wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST)
-                .uniform(&emissive_array);
-            let material_bind_group = device
-                .bind_group(&self.material_bgl)
-                .label("Material Bind Group")
-                .buffer(0, &color_buffer)
-                .buffer(1, &emissive_buffer)
-                .build();
-
-            material_bind_groups
-                .entry(entity)
-                .or_insert(material_bind_group);
+            let bind_group =
+                Self::create_material_bind_group(device, &self.material_bgl, &material);
+            material_bind_groups.entry(entity).or_insert(bind_group);
             material_double_sided
                 .entry(entity)
                 .or_insert(material.double_sided);
         }
 
-        Ok((material_bind_groups, material_double_sided))
+        Ok((
+            default_bind_group,
+            default_double_sided,
+            material_bind_groups,
+            material_double_sided,
+        ))
     }
 }
