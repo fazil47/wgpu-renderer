@@ -4,7 +4,7 @@ use ecs::Component;
 use maths::{Mat4, Quat, Vec3};
 
 /// Transform component for position, rotation, and scale
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct Transform {
     pub position: Vec3,
     pub rotation: Quat,
@@ -12,6 +12,16 @@ pub struct Transform {
 }
 
 impl Component for Transform {}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }
+    }
+}
 
 impl Transform {
     pub fn new(position: Vec3) -> Self {
