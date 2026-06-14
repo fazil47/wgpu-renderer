@@ -20,9 +20,11 @@ impl RelationshipTarget for Children {
     fn entities(&self) -> &[Entity] {
         &self.0
     }
+
     fn add(&mut self, entity: Entity) {
         self.0.push(entity);
     }
+
     fn remove(&mut self, entity: Entity) {
         self.0.retain(|&e| e != entity);
     }

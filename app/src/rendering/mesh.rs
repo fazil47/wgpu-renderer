@@ -72,35 +72,33 @@ pub struct MeshBuffers {
 
 impl ecs::Resource for MeshBuffers {}
 
+/// Initial size (in bytes) for each GPU buffer (vertex, index, instance).
+const INITIAL_BUFFER_SIZE: usize = 4 * 1024; // 4 KB
+
 impl MeshBuffers {
     pub fn new(device: &wgpu::Device) -> Self {
-        let vertices = vec![GpuVertex {
-            position: [0.0, 0.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0, 0.0],
-            material_index: 0.0,
-        }];
-        let indices = vec![0u32];
-        let instance_transforms = vec![InstanceTransform::from_mat4(Mat4::IDENTITY)];
+        let zeros = vec![0u8; INITIAL_BUFFER_SIZE];
+        let index_zeros = vec![0u32; INITIAL_BUFFER_SIZE / size_of::<u32>()];
 
         let vertex_buffer = device
             .buffer()
             .label("Mesh Arena Vertex Buffer")
             .usage(wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE)
-            .vertex(&vertices);
+            .vertex(&zeros);
         let index_buffer = device
             .buffer()
             .label("Mesh Arena Index Buffer")
             .usage(wgpu::BufferUsages::INDEX | wgpu::BufferUsages::STORAGE)
-            .index(&indices);
+            .index(&index_zeros);
         let instance_buffer = device
             .buffer()
             .label("Mesh Arena Instance Buffer")
             .usage(wgpu::BufferUsages::COPY_DST)
-            .vertex(&instance_transforms);
+            .vertex(&zeros);
 
         Self {
-            vertices,
-            indices,
+            vertices: Vec::new(),
+            indices: Vec::new(),
             vertex_buffer,
             index_buffer,
             instance_buffer,
