@@ -23,17 +23,18 @@ pub trait GltfMeshExt {
 struct GltfContext<'a> {
     buffers: &'a [gltf::buffer::Data],
     materials: &'a [Entity],
-    mesh_entities: &'a mut Vec<Entity>,
     node_entities: &'a mut HashMap<usize, Entity>,
     processed_nodes: &'a mut HashSet<usize>,
 }
 
 impl GltfMeshExt for Mesh {
+    /// Returns the root entities.
     fn from_gltf<P: AsRef<Path>>(world: &mut World, path: P) -> Result<Vec<Entity>, String> {
         let (document, buffers, _) = gltf::import(path).map_err(|err| err.to_string())?;
         process_gltf_data(world, document, buffers)
     }
 
+    /// Returns the root entities.
     #[cfg(target_arch = "wasm32")]
     async fn from_gltf_url(world: &mut World, url: &str) -> Result<Vec<Entity>, String> {
         use wasm_bindgen::JsCast;
@@ -115,14 +116,12 @@ fn process_gltf_data(
         materials.push(material_entity);
     }
 
-    let mut mesh_entities = Vec::new();
     let mut node_entities: HashMap<usize, Entity> = HashMap::new();
     let mut processed_nodes: HashSet<usize> = HashSet::new();
 
     let mut context = GltfContext {
         buffers: &buffers,
         materials: &materials,
-        mesh_entities: &mut mesh_entities,
         node_entities: &mut node_entities,
         processed_nodes: &mut processed_nodes,
     };
@@ -139,7 +138,13 @@ fn process_gltf_data(
         }
     }
 
-    Ok(mesh_entities)
+    let root_entities = node_entities
+        .values()
+        .copied()
+        .filter(|&e| !world.has_component::<ChildOf>(e))
+        .collect();
+
+    Ok(root_entities)
 }
 
 fn process_node(
@@ -254,7 +259,6 @@ fn create_mesh_entities(
         let material = material_id.map(|id| context.materials[id]);
         let mesh_component = Mesh::new(vertices, indices, material);
         world.add_component(target_entity, mesh_component);
-        context.mesh_entities.push(target_entity);
     }
 
     Ok(())
