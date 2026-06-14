@@ -1,6 +1,6 @@
 use crate::{
     material::{Material, RGBA},
-    transform::{GlobalTransform, Name, Transform},
+    transform::{Name, Transform},
 };
 use ecs::{Entity, World};
 use maths::{Vec3, Vec4};
@@ -9,7 +9,6 @@ use super::{Mesh, Vertex};
 
 fn insert_transform(world: &mut World, entity: Entity, transform: Transform) {
     world.add_component(entity, transform);
-    world.add_component(entity, GlobalTransform::from_transform(&transform));
 }
 
 fn insert_name<S: Into<String>>(world: &mut World, entity: Entity, name: S) {

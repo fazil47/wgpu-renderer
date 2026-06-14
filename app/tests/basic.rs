@@ -13,6 +13,7 @@ fn headless_engine_can_be_created() {
 fn rasterizer_renders_a_frame() {
     setup();
     let mut engine = pollster::block_on(app::core::Engine::new_headless());
+    engine.add_mesh("assets/cornell-box.glb").unwrap();
     engine.render().unwrap();
     check_or_update_reference(&engine, "app/tests/reference_images/rasterizer.png", 0.05);
 }
@@ -21,6 +22,7 @@ fn rasterizer_renders_a_frame() {
 fn raytracer_renders_a_frame() {
     setup();
     let mut engine = pollster::block_on(app::core::Engine::new_headless());
+    engine.add_mesh("assets/cornell-box.glb").unwrap();
 
     // Enable the raytracer before rendering
     if let Some(mut config) = engine
@@ -38,6 +40,7 @@ fn raytracer_renders_a_frame() {
 fn rasterizer_responds_to_transform_changes() {
     setup();
     let mut engine = pollster::block_on(app::core::Engine::new_headless());
+    engine.add_mesh("assets/cornell-box.glb").unwrap();
 
     // Render initial frame
     engine.render().unwrap();
@@ -98,6 +101,7 @@ fn rasterizer_responds_to_transform_changes() {
 fn raytracer_responds_to_transform_changes() {
     setup();
     let mut engine = pollster::block_on(app::core::Engine::new_headless());
+    engine.add_mesh("assets/cornell-box.glb").unwrap();
 
     // Enable the raytracer before rendering
     if let Some(mut config) = engine

@@ -304,18 +304,30 @@ pub fn update_system(world: &mut World) {
         .next()
         .expect("No sun light entity found");
 
+    let wgpu = world.get_resource::<WgpuResources>().unwrap();
+
+    if mesh_changed
+        && let Some(mut rasterizer) = world.get_resource_mut::<Rasterizer>()
+        && let Err(err) = rasterizer.update_render_data(
+            &wgpu.device,
+            &wgpu.queue,
+            world,
+            camera_entity,
+            sun_light_entity,
+        )
     {
-        let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>()
-            && let Err(err) = raytracer.update_render_data(
-                &wgpu.device,
-                &wgpu.queue,
-                world,
-                camera_entity,
-                sun_light_entity,
-            )
-        {
-            log::error!("Raytracer update failed: {}", err);
-        }
+        log::error!("Rasterizer update failed: {}", err);
+    }
+
+    if let Some(mut raytracer) = world.get_resource_mut::<Raytracer>()
+        && let Err(err) = raytracer.update_render_data(
+            &wgpu.device,
+            &wgpu.queue,
+            world,
+            camera_entity,
+            sun_light_entity,
+        )
+    {
+        log::error!("Raytracer update failed: {}", err);
     }
 }

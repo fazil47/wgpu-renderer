@@ -137,11 +137,15 @@ impl DirectionalLight {
 
         // Get scene radius to ensure we capture all shadow casters
         let tlas = world.get_resource::<TlasBvh>().unwrap();
-        let [x_max, y_max, z_max, _] = tlas.bvh.nodes[0].bounds_max;
-        let [x_min, y_min, z_min, _] = tlas.bvh.nodes[0].bounds_min;
-        let scene_max = Vec3::new(x_max, y_max, z_max);
-        let scene_min = Vec3::new(x_min, y_min, z_min);
-        let scene_radius = (scene_max - scene_min).length() / 2.0;
+        let scene_radius = if tlas.bvh.nodes.is_empty() {
+            0.0
+        } else {
+            let [x_max, y_max, z_max, _] = tlas.bvh.nodes[0].bounds_max;
+            let [x_min, y_min, z_min, _] = tlas.bvh.nodes[0].bounds_min;
+            let scene_max = Vec3::new(x_max, y_max, z_max);
+            let scene_min = Vec3::new(x_min, y_min, z_min);
+            (scene_max - scene_min).length() / 2.0
+        };
 
         let rotation_matrix = self.get_rotation_matrix();
         let inverse_rotation_matrix = rotation_matrix.inverse();

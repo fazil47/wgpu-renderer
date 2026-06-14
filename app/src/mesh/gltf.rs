@@ -2,7 +2,7 @@ use super::{Mesh, Vertex};
 use crate::{
     hierarchy::ChildOf,
     material::{Material, RGBA},
-    transform::{GlobalTransform, Name, Transform},
+    transform::{Name, Transform},
 };
 use ecs::{Entity, World};
 use gltf::material::AlphaMode;
@@ -178,12 +178,6 @@ fn process_node(
                 world.add_component(entity, Name::new(name));
             }
 
-            if parent.is_none() {
-                world.add_component(entity, GlobalTransform::from_transform(&transform));
-            } else {
-                world.add_component(entity, GlobalTransform::identity());
-            }
-
             context.node_entities.insert(node_index, entity);
             entity
         }
@@ -310,7 +304,6 @@ fn create_child_entity(world: &mut World, parent: Entity, name: Option<String>) 
     let child = world.create_entity();
     world.add_component(child, Transform::new(Vec3::ZERO));
     world.add_component(child, ChildOf(parent));
-    world.add_component(child, GlobalTransform::identity());
     if let Some(name) = name {
         world.add_component(child, Name::new(name));
     }

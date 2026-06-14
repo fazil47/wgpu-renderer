@@ -95,24 +95,26 @@ impl Engine {
                 index.remove(entity);
             });
 
+        world.register_hooks::<Transform>().on_add(|world, entity| {
+            world.add_component(entity, GlobalTransform::identity());
+            world.send_event(crate::core::events::TransformChanged(entity));
+        });
+
         world
             .register_hooks::<Mesh>()
             .on_add(|world, entity| {
                 world.send_event(crate::core::events::MeshAdded(entity));
+                world.send_event(RaytracerReset);
             })
             .on_remove(|world, entity| {
                 world.send_event(crate::core::events::MeshRemoved(entity));
+                world.send_event(RaytracerReset);
             });
 
         let camera_entity = world.create_entity();
         let camera_position = Vec3::new(0.0, 0.0, 4.0);
         let camera_controller = CameraController::new(0.8);
-        let camera_transform = Transform::new(camera_position);
-        world.add_component(camera_entity, camera_transform);
-        world.add_component(
-            camera_entity,
-            GlobalTransform::from_transform(&camera_transform),
-        );
+        world.add_component(camera_entity, Transform::new(camera_position));
         world.add_component(
             camera_entity,
             Camera::new(
@@ -127,41 +129,8 @@ impl Engine {
 
         // Create sun light entity
         let sun_light_entity = world.create_entity();
-        let sun_transform = Transform::new(Vec3::ZERO);
-        world.add_component(sun_light_entity, sun_transform);
-        world.add_component(
-            sun_light_entity,
-            GlobalTransform::from_transform(&sun_transform),
-        );
+        world.add_component(sun_light_entity, Transform::new(Vec3::ZERO));
         world.add_component(sun_light_entity, DirectionalLight::new(45.0, 45.0));
-
-        let gltf_paths = ["assets/cornell-box.glb"];
-
-        for gltf_path in gltf_paths {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                if let Ok(meshes) = Mesh::from_gltf(&mut world, gltf_path) {
-                    println!("Loaded {} meshes from GLTF", meshes.len());
-                } else {
-                    log::warn!("Failed to load GLTF mesh");
-                }
-            }
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                if let Ok(meshes) = Mesh::from_gltf_url(&mut world, gltf_path).await {
-                    println!("Loaded {} meshes from GLTF", meshes.len());
-                } else {
-                    log::warn!("Failed to load GLTF mesh");
-                }
-            }
-        }
-
-        // TODO: Add hooks to send TransformChanged events automatically when a
-        // Transform component is first attached instead of doing this
-        for entity in world.get_entities_with::<Transform>() {
-            world.send_event(crate::core::events::TransformChanged(entity));
-        }
 
         world.insert_resource(camera_controller);
         world.insert_resource(Time {
@@ -350,17 +319,41 @@ impl Engine {
     }
 
     /// Load a GLTF file and add its meshes to the scene.
-    /// Returns the list of entities that were created.
+    /// Returns the root entities that were created.
+    /// Mesh hooks fire automatically during loading, so `update_system`
+    /// will pick up the `MeshAdded` events on the next frame.
     pub fn add_mesh<P: AsRef<std::path::Path>>(
         &mut self,
-        _gltf_path: P,
+        gltf_path: P,
     ) -> Result<Vec<Entity>, String> {
-        todo!()
+        Mesh::from_gltf(&mut self.world, gltf_path)
     }
 
     /// Remove a mesh entity and all its descendants from the scene.
-    pub fn remove_mesh(&mut self, _entity: Entity) {
-        todo!()
+    /// Mesh hooks fire automatically during removal, so `update_system`
+    /// will pick up the `MeshRemoved` events on the next frame.
+    pub fn remove_mesh(&mut self, entity: Entity) {
+        // Collect all descendants first (depth-first), then remove bottom-up
+        // so children are removed before parents.
+        let mut to_remove = Vec::new();
+        self.collect_descendants(entity, &mut to_remove);
+        to_remove.push(entity);
+
+        for e in to_remove {
+            self.world.remove_entity(e);
+        }
+    }
+
+    fn collect_descendants(&self, entity: Entity, out: &mut Vec<Entity>) {
+        if let Some(children) = self
+            .world
+            .get_component::<crate::hierarchy::Children>(entity)
+        {
+            for &child in children.0.iter() {
+                self.collect_descendants(child, out);
+                out.push(child);
+            }
+        }
     }
 
     pub fn process_device_events(&mut self, event: &DeviceEvent) {

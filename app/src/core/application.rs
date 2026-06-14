@@ -85,7 +85,9 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
         {
             let event_loop_proxy = self.event_loop_proxy.clone();
             spawn_local(async move {
-                let engine = engine_future.await;
+                let mut engine = engine_future.await;
+
+                engine.add_mesh("assets/cornell-box.glb").unwrap();
 
                 event_loop_proxy
                     .send_event(StateInitializationEvent::Initialize(Box::new(engine)))
@@ -97,7 +99,9 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let engine = pollster::block_on(engine_future);
+            let mut engine = pollster::block_on(engine_future);
+
+            engine.add_mesh("assets/cornell-box.glb").unwrap();
 
             self.event_loop_proxy
                 .send_event(StateInitializationEvent::Initialize(Box::new(engine)))
