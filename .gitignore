@@ -19,3 +19,6 @@ assets/chess.glb
 
 # Obsidian
 **/.obsidian/workspace.json
+
+# Test files
+app/tests/reference_image_failures

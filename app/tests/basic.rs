@@ -344,10 +344,27 @@ fn check_or_update_reference(engine: &app::core::Engine, reference_path: &str, t
         .count();
     let diff_ratio = differing_pixels as f64 / total_pixels as f64;
 
+    let failure_path = std::path::Path::new("app/tests/reference_image_failures")
+        .join(std::path::Path::new(reference_path).file_name().unwrap());
+
+    if diff_ratio > tolerance {
+        std::fs::create_dir_all(failure_path.parent().unwrap()).unwrap();
+        image::save_buffer(
+            &failure_path,
+            &pixels,
+            width,
+            height,
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+    }
+
     assert!(
         diff_ratio <= tolerance,
-        "Image mismatch for '{reference_path}': {:.2}% of pixels differ (tolerance: {:.2}%)",
+        "Image mismatch for '{reference_path}': {:.2}% of pixels differ (tolerance: {:.2}%). \
+         Wrote actual image to '{}'",
         diff_ratio * 100.0,
         tolerance * 100.0,
+        failure_path.display(),
     );
 }

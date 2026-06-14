@@ -21,6 +21,13 @@ cargo check
 cargo xtask run-wasm
 ```
 
+Reference image tests in `app/tests/basic.rs` save the actual rendered PNG
+when an image comparison fails. The files are written to the gitignored
+`app/tests/reference_image_failures/` directory using the reference image's
+file name. This only happens after rendering reaches the reference comparison
+helper; earlier panics such as adapter creation failures will not produce an
+image.
+
 ## Important Notes
 
 When working with this codebase:
@@ -30,7 +37,3 @@ When working with this codebase:
 - Don't remove comments that were not added by you.
 - Use `cargo check` frequently to catch compilation errors early
 - Use `cargo clippy` to catch common mistakes and improve code quality
-- When working on complex features that requies research, follow the first part of the explore-plan-code-commit workflow mentioned in the [Claude Code best practices](https://www.anthropic.com/engineering/claude-code-best-practices) to ensure a structured approach:
-  - **Explore**: Research and understand the problem.
-  - **Plan**: Outline your approach and design.
-  - **Describe**: For this project, just describe in details your findings instead of coding.
