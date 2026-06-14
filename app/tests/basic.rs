@@ -107,7 +107,6 @@ fn raytracer_responds_to_transform_changes() {
 
     // Render initial frame
     engine.render().unwrap();
-
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_initial.png",
@@ -144,10 +143,7 @@ fn raytracer_responds_to_transform_changes() {
         transform.position.x += 1.0;
     }
 
-    // Render a few frames to converge past noise
-    for _ in 0..3 {
-        engine.render().unwrap();
-    }
+    engine.render().unwrap();
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_moved.png",
@@ -157,10 +153,7 @@ fn raytracer_responds_to_transform_changes() {
     set_camera_to_corner_view(&mut engine);
     engine.world.send_event(RaytracerReset);
 
-    // Render a few frames to converge past noise
-    for _ in 0..3 {
-        engine.render().unwrap();
-    }
+    engine.render().unwrap();
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_moved_corner_view.png",

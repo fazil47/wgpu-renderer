@@ -132,12 +132,18 @@ pub fn render_system(world: &mut World) {
             frame_state.pending_skip_calculation = false;
         }
 
-        // Handle skipping
+        if reset_raytracer {
+            frame_state.frame_count = 0;
+            frame_state.frames_to_skip = 0;
+            frame_state.pending_skip_calculation = false;
+        }
+
+        // Render if enough frames have been skipped to reach target frame rate
         if frame_state.frames_to_skip > 0 {
             frame_state.frames_to_skip -= 1;
         } else {
             // Check if we should compute
-            let should_compute = reset_raytracer || frame_state.frame_count < raytracer_max_frames;
+            let should_compute = frame_state.frame_count < raytracer_max_frames;
 
             if raytracer_enabled && should_compute {
                 // We need mutable access to Raytracer
@@ -154,12 +160,6 @@ pub fn render_system(world: &mut World) {
                     frame_state.pending_skip_calculation = true;
                 }
             }
-        }
-
-        if reset_raytracer {
-            frame_state.frame_count = 0;
-            frame_state.frames_to_skip = 0;
-            frame_state.pending_skip_calculation = false;
         }
     }
 
