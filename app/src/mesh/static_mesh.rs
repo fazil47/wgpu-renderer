@@ -30,9 +30,6 @@ impl StaticMeshExt for Mesh {
         let material = Material::new(RGBA::new([1.0, 0.0, 0.0, 1.0]), RGBA::default(), false);
         let material_entity = world.create_entity();
         world.add_component(material_entity, material.clone());
-        insert_name(world, material_entity, "Octahedron Material");
-        insert_name(world, material_entity, "Cube Material");
-        insert_name(world, material_entity, "Pentagon Material");
         insert_name(world, material_entity, "Triangle Material");
 
         let mesh = Mesh::new(

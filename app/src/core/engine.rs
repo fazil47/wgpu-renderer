@@ -327,6 +327,20 @@ impl Engine {
         }
     }
 
+    /// Load a GLTF file and add its meshes to the scene.
+    /// Returns the list of entities that were created.
+    pub fn add_mesh<P: AsRef<std::path::Path>>(
+        &mut self,
+        _gltf_path: P,
+    ) -> Result<Vec<Entity>, String> {
+        todo!()
+    }
+
+    /// Remove a mesh entity and all its descendants from the scene.
+    pub fn remove_mesh(&mut self, _entity: Entity) {
+        todo!()
+    }
+
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
             let should_reset = {

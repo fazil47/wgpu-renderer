@@ -1,4 +1,6 @@
 use app::core::events::RaytracerReset;
+use app::mesh::Mesh;
+use app::mesh::static_mesh::StaticMeshExt;
 use maths::Vec3;
 
 #[test]
@@ -157,6 +159,106 @@ fn raytracer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_moved_corner_view.png",
+        0.02,
+    );
+}
+
+#[test]
+fn rasterizer_mesh_add_and_remove_lifecycle() {
+    setup();
+    let mut engine = pollster::block_on(app::core::Engine::new_headless());
+
+    // Add cornell-box
+    let cornell_entities = engine.add_mesh("assets/cornell-box.glb").unwrap();
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/rasterizer_lifecycle_add_cornell.png",
+        0.02,
+    );
+
+    // Add cube
+    let cube_entity = Mesh::cube(&mut engine.world);
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/rasterizer_lifecycle_add_cube.png",
+        0.02,
+    );
+
+    // Remove cube
+    engine.remove_mesh(cube_entity);
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/rasterizer_lifecycle_remove_cube.png",
+        0.02,
+    );
+
+    // Remove cornell-box
+    for entity in cornell_entities {
+        engine.remove_mesh(entity);
+    }
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/rasterizer_lifecycle_remove_cornell.png",
+        0.02,
+    );
+}
+
+#[test]
+fn raytracer_mesh_add_and_remove_lifecycle() {
+    setup();
+    let mut engine = pollster::block_on(app::core::Engine::new_headless());
+
+    // Enable the raytracer
+    if let Some(mut config) = engine
+        .world
+        .get_resource_mut::<app::core::engine::EngineConfiguration>()
+    {
+        config.is_raytracer_enabled = true;
+    }
+
+    // Add cornell-box
+    let cornell_entities = engine.add_mesh("assets/cornell-box.glb").unwrap();
+
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/raytracer_lifecycle_add_cornell.png",
+        0.02,
+    );
+
+    // Add cube
+    let cube_entity = Mesh::cube(&mut engine.world);
+
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/raytracer_lifecycle_add_cube.png",
+        0.02,
+    );
+
+    // Remove cube
+    engine.remove_mesh(cube_entity);
+
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/raytracer_lifecycle_remove_cube.png",
+        0.02,
+    );
+
+    // Remove cornell-box
+    for entity in cornell_entities {
+        engine.remove_mesh(entity);
+    }
+
+    engine.render().unwrap();
+    check_or_update_reference(
+        &engine,
+        "app/tests/reference_images/raytracer_lifecycle_remove_cornell.png",
         0.02,
     );
 }
