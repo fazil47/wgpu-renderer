@@ -233,23 +233,40 @@ pub fn render_system(world: &mut World) {
 }
 
 pub fn update_system(world: &mut World) {
-    let geometry_changed = world.has_events::<crate::core::events::GeometryChanged>();
+    let mesh_added = world.has_events::<crate::core::events::MeshAdded>();
+    let mesh_removed = world.has_events::<crate::core::events::MeshRemoved>();
     let transform_changed = world.has_events::<crate::core::events::GlobalTransformChanged>();
+    let mesh_changed = mesh_added || mesh_removed;
 
-    if !geometry_changed && !transform_changed {
+    if !mesh_changed && !transform_changed {
         return;
     }
 
-    // Full mesh buffer rebuild when geometry changed (vertices, indices, GPU buffers)
-    if geometry_changed {
+    // Process MeshAdded events — append each new mesh to the GPU buffers
+    if let Some(added) = world.read_events::<crate::core::events::MeshAdded>() {
+        let entities: Vec<_> = added.iter().map(|e| e.0).collect();
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
-        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>()
-            && let Err(err) = mesh_buffers.update(&wgpu.device, world)
-        {
-            log::error!("MeshBuffers update failed: {}", err);
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
+            for entity in entities {
+                if let Err(err) = mesh_buffers.add_mesh(&wgpu.device, &wgpu.queue, entity, world) {
+                    log::error!("MeshBuffers add_mesh failed for {entity:?}: {err}");
+                }
+            }
         }
-    } else if transform_changed {
-        // Patch only the instance transforms for changed entities (skip vertex/index rebuild)
+    }
+
+    // Process MeshRemoved events — mark each mesh slot as empty
+    if let Some(removed) = world.read_events::<crate::core::events::MeshRemoved>() {
+        let entities: Vec<_> = removed.iter().map(|e| e.0).collect();
+        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
+            for entity in entities {
+                mesh_buffers.remove_mesh(entity);
+            }
+        }
+    }
+
+    // Patch instance transforms for changed entities
+    if transform_changed {
         let wgpu = world.get_resource::<WgpuResources>().unwrap();
         if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>()
             && let Err(err) = mesh_buffers.update_transforms(&wgpu.queue, world)
@@ -259,7 +276,7 @@ pub fn update_system(world: &mut World) {
     }
 
     // Rebuild BLAS only when geometry changed (object-space, transform-independent)
-    if geometry_changed {
+    if mesh_changed {
         let blas = {
             let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
             crate::rendering::build_scene_blas(&mesh_buffers)

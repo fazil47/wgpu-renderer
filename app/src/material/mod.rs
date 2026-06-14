@@ -62,11 +62,15 @@ pub struct DefaultMaterial(pub Material);
 
 impl Resource for DefaultMaterial {}
 
+/// Index 0 is reserved for the default material. Entity materials start at 1.
+pub const DEFAULT_MATERIAL_INDEX: usize = 0;
+
 /// Maps material entities to dense indices used by the GPU.
 ///
 /// Maintained automatically by `Material` component hooks (on_add / on_remove).
 /// New materials are appended with the next available index; removed materials
 /// leave a gap (indices are never compacted) so existing vertex data stays valid.
+/// Index 0 is reserved for the default material and is never assigned to an entity.
 pub struct MaterialIndex {
     entity_to_index: HashMap<Entity, usize>,
     next_index: usize,
@@ -84,7 +88,8 @@ impl MaterialIndex {
     pub fn new() -> Self {
         Self {
             entity_to_index: HashMap::new(),
-            next_index: 0,
+            // Start at 1 because index 0 is reserved for the default material.
+            next_index: DEFAULT_MATERIAL_INDEX + 1,
         }
     }
 

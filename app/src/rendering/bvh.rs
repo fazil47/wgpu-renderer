@@ -420,6 +420,10 @@ pub fn build_scene_blas(mesh_buffers: &MeshBuffers) -> BlasBvh {
     let mut per_mesh_bvhs = Vec::new();
 
     for gpu_mesh in &mesh_buffers.meshes {
+        if gpu_mesh.index_count == 0 {
+            continue;
+        }
+
         let mesh_vertices = &mesh_buffers.vertices[gpu_mesh.vertex_offset as usize
             ..(gpu_mesh.vertex_offset + gpu_mesh.vertex_count) as usize];
         let mesh_indices = &mesh_buffers.indices[gpu_mesh.index_offset as usize
@@ -458,6 +462,10 @@ pub fn build_scene_blas(mesh_buffers: &MeshBuffers) -> BlasBvh {
 pub fn build_scene_tlas(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> TlasBvh {
     let mut instance_bounds: Vec<Aabb> = Vec::new();
     for (gpu_mesh, blas_info) in mesh_buffers.meshes.iter().zip(blas.infos.iter()) {
+        if gpu_mesh.index_count == 0 {
+            continue;
+        }
+
         let bounds = if blas_info.node_count == 0 {
             (Vec3::ZERO, Vec3::ZERO)
         } else {

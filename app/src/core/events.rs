@@ -21,11 +21,25 @@ impl EntityEvent for GlobalTransformChanged {
     }
 }
 
-/// Fired when scene geometry has changed (meshes added, removed, or modified).
-/// TODO: Make this an entity event
+/// Fired when a Mesh component is added to an entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GeometryChanged;
-impl Event for GeometryChanged {}
+pub struct MeshAdded(pub Entity);
+
+impl EntityEvent for MeshAdded {
+    fn entity(&self) -> Entity {
+        self.0
+    }
+}
+
+/// Fired when a Mesh component is removed from an entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MeshRemoved(pub Entity);
+
+impl EntityEvent for MeshRemoved {
+    fn entity(&self) -> Entity {
+        self.0
+    }
+}
 
 /// Fired when a light property (direction, color, etc.) has changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

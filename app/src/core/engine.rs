@@ -95,6 +95,15 @@ impl Engine {
                 index.remove(entity);
             });
 
+        world
+            .register_hooks::<Mesh>()
+            .on_add(|world, entity| {
+                world.send_event(crate::core::events::MeshAdded(entity));
+            })
+            .on_remove(|world, entity| {
+                world.send_event(crate::core::events::MeshRemoved(entity));
+            });
+
         let camera_entity = world.create_entity();
         let camera_position = Vec3::new(0.0, 0.0, 4.0);
         let camera_controller = CameraController::new(0.8);
@@ -195,10 +204,6 @@ impl Engine {
         }
 
         let mesh_buffers = crate::rendering::mesh::MeshBuffers::new(&wgpu.device);
-
-        // TODO: Add hooks to send GeometryChanged or MeshAdded events
-        // automatically when a Mesh component is first attached.
-        world.send_event(crate::core::events::GeometryChanged);
 
         let mut rasterizer = crate::rendering::rasterizer::Rasterizer::new(&wgpu);
         if let Err(err) = rasterizer.update_render_data(
