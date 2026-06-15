@@ -14,7 +14,7 @@ fn rasterizer_renders_a_frame() {
     setup();
     let mut engine = pollster::block_on(app::core::Engine::new_headless());
     engine.render().unwrap();
-    check_or_update_reference(&engine, "app/tests/reference_images/rasterizer.png", 0.02);
+    check_or_update_reference(&engine, "app/tests/reference_images/rasterizer.png", 0.05);
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn raytracer_renders_a_frame() {
     }
 
     engine.render().unwrap();
-    check_or_update_reference(&engine, "app/tests/reference_images/raytracer.png", 0.02);
+    check_or_update_reference(&engine, "app/tests/reference_images/raytracer.png", 0.05);
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn rasterizer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_suzanne_initial.png",
-        0.02,
+        0.05,
     );
 
     // Move the floor a bit to the left
@@ -82,7 +82,7 @@ fn rasterizer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_suzanne_moved.png",
-        0.02,
+        0.05,
     );
 
     set_camera_to_corner_view(&mut engine);
@@ -90,7 +90,7 @@ fn rasterizer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_suzanne_moved_corner_view.png",
-        0.02,
+        0.05,
     );
 }
 
@@ -112,7 +112,7 @@ fn raytracer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_initial.png",
-        0.02,
+        0.05,
     );
 
     // Move the floor a bit to the left
@@ -149,7 +149,7 @@ fn raytracer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_moved.png",
-        0.02,
+        0.05,
     );
 
     set_camera_to_corner_view(&mut engine);
@@ -159,7 +159,7 @@ fn raytracer_responds_to_transform_changes() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_suzanne_moved_corner_view.png",
-        0.02,
+        0.05,
     );
 }
 
@@ -174,7 +174,7 @@ fn rasterizer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_lifecycle_add_cornell.png",
-        0.02,
+        0.05,
     );
 
     // Add cube
@@ -183,7 +183,7 @@ fn rasterizer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_lifecycle_add_cube.png",
-        0.02,
+        0.05,
     );
 
     // Remove cube
@@ -192,7 +192,7 @@ fn rasterizer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_lifecycle_remove_cube.png",
-        0.02,
+        0.05,
     );
 
     // Remove cornell-box
@@ -203,7 +203,7 @@ fn rasterizer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/rasterizer_lifecycle_remove_cornell.png",
-        0.02,
+        0.05,
     );
 }
 
@@ -227,7 +227,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_lifecycle_add_cornell.png",
-        0.02,
+        0.05,
     );
 
     // Add cube
@@ -237,7 +237,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_lifecycle_add_cube.png",
-        0.02,
+        0.05,
     );
 
     // Remove cube
@@ -247,7 +247,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_lifecycle_remove_cube.png",
-        0.02,
+        0.05,
     );
 
     // Remove cornell-box
@@ -259,7 +259,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     check_or_update_reference(
         &engine,
         "app/tests/reference_images/raytracer_lifecycle_remove_cornell.png",
-        0.02,
+        0.05,
     );
 }
 

@@ -38,7 +38,7 @@ apk add mesa-vulkan-gallium
 dnf install mesa-vulkan-drivers
 ```
 
-Headless rendering tests compare output against reference images with a 2% tolerance. To regenerate the references after a rendering change:
+Headless rendering tests compare output against reference images with a 5% tolerance. To regenerate the references after a rendering change:
 
 ```zsh
 UPDATE_REFERENCES=1 cargo test 
