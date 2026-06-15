@@ -81,20 +81,14 @@ impl WorldExtractExt for World {
     }
 
     fn extract_transform_component(&self, entity: Entity) -> Result<Transform, ExtractionError> {
-        // Transform is Copy, so we can dereference it directly
-        self.get_component::<Transform>(entity)
-            .ok_or_else(|| ExtractionError::MissingComponent(entity, "Transform".to_string()))
-            .map(|c| *c)
+        extract_component!(self, entity, Transform, "Transform")
     }
 
     fn extract_global_transform_component(
         &self,
         entity: Entity,
     ) -> Result<GlobalTransform, ExtractionError> {
-        // GlobalTransform is Copy
-        self.get_component::<GlobalTransform>(entity)
-            .ok_or_else(|| ExtractionError::MissingComponent(entity, "GlobalTransform".to_string()))
-            .map(|c| *c)
+        extract_component!(self, entity, GlobalTransform, "GlobalTransform")
     }
 
     fn extract_mesh_component(&self, entity: Entity) -> Result<Mesh, ExtractionError> {
