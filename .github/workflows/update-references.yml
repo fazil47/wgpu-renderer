@@ -1,0 +1,35 @@
+name: Update Reference Images
+
+on:
+  workflow_dispatch: # Only allow manual triggers
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Vulkan software driver (Lavapipe) for headless rendering
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers
+
+      - name: Regenerate reference images
+        run: UPDATE_REFERENCES=1 cargo test
+
+      - name: Commit and push updated reference images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/tests/reference_images/
+          git commit -m "chore: regenerate reference images" || echo "No changes to commit"
+          git push
