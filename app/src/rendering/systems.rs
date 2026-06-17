@@ -292,12 +292,15 @@ pub fn update_system(world: &mut World) {
     };
     world.insert_resource(tlas);
 
+    // TODO: Should be querying for PrimaryCamera instead of just picking the
+    // first entity with Camera
     let camera_entity = world
         .get_entities_with::<Camera>()
         .into_iter()
         .next()
         .expect("No camera entity found");
 
+    // TODO: Support more than one directional lights
     let sun_light_entity = world
         .get_entities_with::<DirectionalLight>()
         .into_iter()
