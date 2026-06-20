@@ -67,7 +67,7 @@ pub struct MeshBuffers {
     pub index_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
     pub meshes: Vec<GpuMesh>,
-    entity_to_meshes_index: HashMap<Entity, usize>,
+    entity_to_meshes_offsets: HashMap<Entity, usize>,
     // Cursors track the next free position in each arena.
     // They only advance on add; removal leaves holes (no compaction).
     vertex_cursor: usize,
@@ -108,7 +108,7 @@ impl MeshBuffers {
             index_buffer,
             instance_buffer,
             meshes: Vec::new(),
-            entity_to_meshes_index: HashMap::new(),
+            entity_to_meshes_offsets: HashMap::new(),
             vertex_cursor: 0,
             index_cursor: 0,
             mesh_cursor: 0,
@@ -195,7 +195,8 @@ impl MeshBuffers {
             transform: global_transform.matrix,
             material_entity: mesh.material_entity,
         });
-        self.entity_to_meshes_index.insert(entity, self.mesh_cursor);
+        self.entity_to_meshes_offsets
+            .insert(entity, self.mesh_cursor);
         self.mesh_cursor += 1;
 
         Ok(())
@@ -205,11 +206,14 @@ impl MeshBuffers {
     /// Zeros vertex/index counts so the rasterizer won't draw it and the
     /// BVH builder will skip it. The GPU buffer data is left as a hole —
     /// no compaction.
-    pub fn remove_mesh(&mut self, entity: Entity) {
-        if let Some(&index) = self.entity_to_meshes_index.get(&entity) {
-            self.meshes[index].vertex_count = 0;
-            self.meshes[index].index_count = 0;
-            self.entity_to_meshes_index.remove(&entity);
+    pub fn remove_mesh(&mut self, entity: Entity) -> Option<usize> {
+        if let Some(&offset) = self.entity_to_meshes_offsets.get(&entity) {
+            self.meshes[offset].vertex_count = 0;
+            self.meshes[offset].index_count = 0;
+            self.entity_to_meshes_offsets.remove(&entity);
+            Some(offset)
+        } else {
+            None
         }
     }
 
@@ -228,14 +232,14 @@ impl MeshBuffers {
         let instance_stride = size_of::<InstanceTransform>();
 
         for &entity in &changed_entities {
-            if let Some(&index) = self.entity_to_meshes_index.get(&entity) {
+            if let Some(&offset) = self.entity_to_meshes_offsets.get(&entity) {
                 let global_transform = world.extract_global_transform_component(entity)?;
-                self.meshes[index].transform = global_transform.matrix;
+                self.meshes[offset].transform = global_transform.matrix;
 
                 let instance = InstanceTransform::from_mat4(global_transform.matrix);
                 queue.write_buffer(
                     &self.instance_buffer,
-                    (index * instance_stride) as u64,
+                    (offset * instance_stride) as u64,
                     bytemuck::cast_slice(&[instance]),
                 );
             }

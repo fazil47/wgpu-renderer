@@ -255,15 +255,18 @@ pub fn update_system(world: &mut World) {
         }
     }
 
-    // Process MeshRemoved events — mark each mesh slot as empty
-    if let Some(removed) = world.read_events::<crate::core::events::MeshRemoved>() {
-        let entities: Vec<_> = removed.iter().map(|e| e.0).collect();
-        if let Some(mut mesh_buffers) = world.get_resource_mut::<MeshBuffers>() {
-            for entity in entities {
-                mesh_buffers.remove_mesh(entity);
-            }
-        }
-    }
+    // Process MeshRemoved events — mark each mesh slot as empty, collect
+    // returned mesh offsets for BLAS removal
+    let removed_mesh_offsets: Vec<usize> = world
+        .read_events::<crate::core::events::MeshRemoved>()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            world
+                .get_resource_mut::<MeshBuffers>()
+                .and_then(|mut mb| mb.remove_mesh(e.0))
+        })
+        .collect();
 
     // Patch instance transforms for changed entities
     if transform_changed {
@@ -275,13 +278,23 @@ pub fn update_system(world: &mut World) {
         }
     }
 
-    // Rebuild BLAS only when geometry changed (object-space, transform-independent)
+    // Incrementally update BLAS for added/removed meshes
     if mesh_changed {
-        let blas = {
-            let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
-            crate::rendering::build_scene_blas(&mesh_buffers)
-        };
-        world.insert_resource(blas);
+        let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
+        let mut blas = world
+            .get_resource_mut::<crate::rendering::BlasBvh>()
+            .unwrap();
+
+        // New meshes are always appended, so process the new tail entries
+        let old_meshes_count = blas.infos.len();
+        let new_meshes_count = mesh_buffers.meshes.len();
+        for mesh_offset in old_meshes_count..new_meshes_count {
+            blas.add_mesh(mesh_offset, &mesh_buffers);
+        }
+
+        for offset in removed_mesh_offsets {
+            blas.remove_mesh(offset);
+        }
     }
 
     // Always rebuild TLAS when transforms or geometry changed (world-space bounds)

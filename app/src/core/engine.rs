@@ -187,9 +187,10 @@ impl Engine {
 
         let mut raytracer = crate::rendering::raytracer::Raytracer::new(&wgpu, &mesh_buffers);
 
-        // Build scene BVH and insert resources before GPU upload
-        let blas = crate::rendering::build_scene_blas(&mesh_buffers);
-        let tlas = crate::rendering::build_scene_tlas(&mesh_buffers, &blas);
+        // Insert empty BVH resources — they'll be populated incrementally
+        // as meshes are added via events in update_system.
+        let blas = crate::rendering::BlasBvh::default();
+        let tlas = crate::rendering::TlasBvh::default();
         world.insert_resource(mesh_buffers);
         world.insert_resource(blas);
         world.insert_resource(tlas);

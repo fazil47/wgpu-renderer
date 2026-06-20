@@ -412,16 +412,19 @@ pub struct BlasBvh {
 
 impl ecs::Resource for BlasBvh {}
 
-/// Builds the BLAS (per-mesh, object-space BVH) from the mesh arena.
-pub fn build_scene_blas(mesh_buffers: &MeshBuffers) -> BlasBvh {
-    let mut blas_nodes = Vec::new();
-    let mut blas_primitive_indices = Vec::new();
-    let mut blas_infos = Vec::new();
-    let mut per_mesh_bvhs = Vec::new();
+impl BlasBvh {
+    /// Append BVH data for a single mesh at the given offset in `MeshBuffers`.
+    pub fn add_mesh(&mut self, mesh_offset: usize, mesh_buffers: &MeshBuffers) {
+        let gpu_mesh = &mesh_buffers.meshes[mesh_offset];
 
-    for gpu_mesh in &mesh_buffers.meshes {
+        // Pad with empty entries if needed so infos stays 1:1 with meshes
+        while self.infos.len() <= mesh_offset {
+            self.infos.push(BlasInfo::default());
+            self.per_mesh_bvhs.push(Bvh::default());
+        }
+
         if gpu_mesh.index_count == 0 {
-            continue;
+            return;
         }
 
         let mesh_vertices = &mesh_buffers.vertices[gpu_mesh.vertex_offset as usize
@@ -430,30 +433,32 @@ pub fn build_scene_blas(mesh_buffers: &MeshBuffers) -> BlasBvh {
             ..(gpu_mesh.index_offset + gpu_mesh.index_count) as usize];
 
         let blas = build_blas(mesh_vertices, mesh_indices);
-        let node_offset = blas_nodes.len() as u32;
+        let node_offset = self.nodes.len() as u32;
         let node_count = blas.nodes.len() as u32;
-        let primitive_offset = blas_primitive_indices.len() as u32;
+        let primitive_offset = self.primitive_indices.len() as u32;
         let primitive_count = blas.primitive_indices.len() as u32;
-        blas_nodes.extend_from_slice(&blas.nodes);
-        blas_primitive_indices.extend_from_slice(&blas.primitive_indices);
+        self.nodes.extend_from_slice(&blas.nodes);
+        self.primitive_indices
+            .extend_from_slice(&blas.primitive_indices);
 
-        blas_infos.push(BlasInfo::new(
+        self.infos[mesh_offset] = BlasInfo::new(
             node_offset,
             node_count,
             primitive_offset,
             primitive_count,
             gpu_mesh.vertex_offset,
             gpu_mesh.index_offset,
-        ));
-
-        per_mesh_bvhs.push(blas);
+        );
+        self.per_mesh_bvhs[mesh_offset] = blas;
     }
 
-    BlasBvh {
-        nodes: blas_nodes,
-        primitive_indices: blas_primitive_indices,
-        infos: blas_infos,
-        per_mesh_bvhs,
+    /// Mark a mesh slot as removed by zeroing its counts.
+    /// The node/primitive data is left as a hole — no compaction.
+    pub fn remove_mesh(&mut self, mesh_offset: usize) {
+        if mesh_offset < self.infos.len() {
+            self.infos[mesh_offset].node_count = 0;
+            self.infos[mesh_offset].primitive_count = 0;
+        }
     }
 }
 
