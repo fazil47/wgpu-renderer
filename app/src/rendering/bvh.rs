@@ -487,10 +487,15 @@ fn compute_instance_bounds(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> Vec<Aa
 }
 
 /// Manages the in-flight TLAS calculation running on a background thread.
+/// On wasm32, threads are not available so the build runs synchronously.
 #[derive(Default)]
 pub struct TlasBuildTask {
+    #[cfg(not(target_arch = "wasm32"))]
     in_flight: Option<std::thread::JoinHandle<TlasBvh>>,
+    #[cfg(not(target_arch = "wasm32"))]
     queued: Option<Vec<Aabb>>,
+    #[cfg(target_arch = "wasm32")]
+    result: Option<TlasBvh>,
 }
 
 impl ecs::Resource for TlasBuildTask {}
@@ -498,37 +503,71 @@ impl ecs::Resource for TlasBuildTask {}
 impl TlasBuildTask {
     /// Returns `true` if a background build has finished.
     pub fn is_finished(&self) -> bool {
-        self.in_flight.as_ref().is_some_and(|h| h.is_finished())
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.in_flight.as_ref().is_some_and(|h| h.is_finished())
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.result.is_some()
+        }
     }
 
     /// Returns `true` if a build is currently in flight.
     pub fn is_building(&self) -> bool {
-        self.in_flight.is_some()
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.in_flight.is_some()
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.result.is_some()
+        }
     }
 
     /// Takes the completed result and spawns the queued build if any.
     /// Only call after `is_finished()` returns `true`.
     pub fn take_result(&mut self) -> TlasBvh {
-        let result = self
-            .in_flight
-            .take()
-            .expect("No pending TLAS build")
-            .join()
-            .expect("TLAS build thread panicked");
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let result = self
+                .in_flight
+                .take()
+                .expect("No pending TLAS build")
+                .join()
+                .expect("TLAS build thread panicked");
 
-        if let Some(instance_bounds) = self.queued.take() {
-            self.spawn(instance_bounds);
+            if let Some(instance_bounds) = self.queued.take() {
+                self.spawn(instance_bounds);
+            }
+
+            result
         }
 
-        result
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.result.take().expect("No pending TLAS build")
+        }
     }
 
     /// Requests a TLAS build. Spawns immediately if idle, otherwise queues the data.
     pub fn request_build(&mut self, mesh_buffers: &MeshBuffers, blas: &BlasBvh) {
         let instance_bounds = compute_instance_bounds(mesh_buffers, blas);
-        self.spawn(instance_bounds);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.spawn(instance_bounds);
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.result = Some(TlasBvh::new(build_tlas(&instance_bounds)));
+        }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn spawn(&mut self, instance_bounds: Vec<Aabb>) {
         if self.in_flight.is_some() {
             // TODO: Would be nice to calculate instance_bounds when needed and

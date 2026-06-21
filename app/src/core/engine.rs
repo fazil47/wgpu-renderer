@@ -331,6 +331,11 @@ impl Engine {
         Mesh::from_gltf(&mut self.world, gltf_path)
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub async fn add_mesh_url(&mut self, url: &str) -> Result<Vec<Entity>, String> {
+        Mesh::from_gltf_url(&mut self.world, url).await
+    }
+
     /// Remove a mesh entity and all its descendants from the scene.
     /// Mesh hooks fire automatically during removal, so `update_system`
     /// will pick up the `MeshRemoved` events on the next frame.

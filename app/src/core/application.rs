@@ -87,7 +87,7 @@ impl ApplicationHandler<StateInitializationEvent> for Application {
             spawn_local(async move {
                 let mut engine = engine_future.await;
 
-                engine.add_mesh("assets/cornell-box.glb").unwrap();
+                engine.add_mesh_url("assets/cornell-box.glb").await.unwrap();
 
                 event_loop_proxy
                     .send_event(StateInitializationEvent::Initialize(Box::new(engine)))
