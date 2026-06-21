@@ -1,6 +1,7 @@
 use ecs::World;
 
 use crate::core::engine::{EngineConfiguration, RaytracerFrameState, WindowResource};
+use crate::core::events::RaytracerReset;
 use crate::ui::UiState;
 use crate::ui::egui::RendererEgui;
 use crate::{
@@ -233,12 +234,32 @@ pub fn render_system(world: &mut World) {
 }
 
 pub fn update_system(world: &mut World) {
+    // Poll for completed TLAS build even when there's no changes this frame,
+    // there might've been changes in the last frame.
+    let tlas_build_result = {
+        let mut tlas_builder = world
+            .get_resource_mut::<crate::rendering::TlasBuilder>()
+            .unwrap();
+        if tlas_builder.is_finished() {
+            Some(tlas_builder.take_result())
+        } else {
+            None
+        }
+    };
+    let tlas_build_done = tlas_build_result.is_some();
+    if let Some(tlas) = tlas_build_result {
+        world.insert_resource(tlas);
+
+        // Reset to prevent blending with frames using the old TLAS
+        world.send_event(RaytracerReset);
+    }
+
     let mesh_added = world.has_events::<crate::core::events::MeshAdded>();
     let mesh_removed = world.has_events::<crate::core::events::MeshRemoved>();
     let transform_changed = world.has_events::<crate::core::events::GlobalTransformChanged>();
     let mesh_changed = mesh_added || mesh_removed;
 
-    if !mesh_changed && !transform_changed {
+    if !mesh_changed && !transform_changed && !tlas_build_done {
         return;
     }
 
@@ -297,13 +318,15 @@ pub fn update_system(world: &mut World) {
         }
     }
 
-    // Always rebuild TLAS when transforms or geometry changed (world-space bounds)
-    let tlas = {
+    // Kick off a new TLAS build when geometry or transforms changed
+    if mesh_changed || transform_changed {
         let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
         let blas = world.get_resource::<crate::rendering::BlasBvh>().unwrap();
-        crate::rendering::build_scene_tlas(&mesh_buffers, &blas)
-    };
-    world.insert_resource(tlas);
+        let mut tlas_builder = world
+            .get_resource_mut::<crate::rendering::TlasBuilder>()
+            .unwrap();
+        tlas_builder.start_build(&mesh_buffers, &blas);
+    }
 
     // TODO: Should be querying for PrimaryCamera instead of just picking the
     // first entity with Camera

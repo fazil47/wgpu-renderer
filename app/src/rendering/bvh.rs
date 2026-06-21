@@ -462,10 +462,9 @@ impl BlasBvh {
     }
 }
 
-/// Builds the TLAS (world-space BVH over instances) using existing BLAS bounds
-/// and current mesh transforms.
-pub fn build_scene_tlas(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> TlasBvh {
-    let mut instance_bounds: Vec<Aabb> = Vec::new();
+/// Gathers world-space AABBs for each mesh instance.
+fn compute_instance_bounds(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> Vec<Aabb> {
+    let mut instance_bounds = Vec::new();
     for (gpu_mesh, blas_info) in mesh_buffers.meshes.iter().zip(blas.infos.iter()) {
         if gpu_mesh.index_count == 0 {
             continue;
@@ -484,6 +483,49 @@ pub fn build_scene_tlas(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> TlasBvh {
         instance_bounds.push(aabb);
     }
 
-    let tlas_bvh = build_tlas(&instance_bounds);
-    TlasBvh::new(tlas_bvh)
+    instance_bounds
+}
+
+/// Manages the in-flight TLAS build running on a background thread.
+#[derive(Default)]
+pub struct TlasBuilder {
+    pending: Option<std::thread::JoinHandle<TlasBvh>>,
+}
+
+impl ecs::Resource for TlasBuilder {}
+
+impl TlasBuilder {
+    /// Returns `true` if a background build has finished.
+    pub fn is_finished(&self) -> bool {
+        self.pending.as_ref().is_some_and(|h| h.is_finished())
+    }
+
+    /// Returns `true` if a build is currently in flight.
+    pub fn is_building(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Takes the completed result. Only call after `is_finished()` returns `true`.
+    pub fn take_result(&mut self) -> TlasBvh {
+        self.pending
+            .take()
+            .expect("No pending TLAS build")
+            .join()
+            .expect("TLAS build thread panicked")
+    }
+
+    /// Spawns a background thread to build the TLAS from pre-computed instance bounds.
+    pub fn start_build(&mut self, mesh_buffers: &MeshBuffers, blas: &BlasBvh) {
+        let instance_bounds = compute_instance_bounds(mesh_buffers, blas);
+
+        self.pending = Some(
+            std::thread::Builder::new()
+                .name("tlas-build".into())
+                .spawn(move || {
+                    let tlas_bvh = build_tlas(&instance_bounds);
+                    TlasBvh::new(tlas_bvh)
+                })
+                .expect("Failed to spawn TLAS build thread"),
+        );
+    }
 }

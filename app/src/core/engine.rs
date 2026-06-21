@@ -194,6 +194,7 @@ impl Engine {
         world.insert_resource(mesh_buffers);
         world.insert_resource(blas);
         world.insert_resource(tlas);
+        world.insert_resource(crate::rendering::TlasBuilder::default());
 
         if let Err(err) = raytracer.update_render_data(
             &wgpu.device,

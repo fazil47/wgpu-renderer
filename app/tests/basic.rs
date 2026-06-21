@@ -1,6 +1,8 @@
+use app::core::Engine;
 use app::core::events::RaytracerReset;
 use app::mesh::Mesh;
 use app::mesh::static_mesh::StaticMeshExt;
+use app::rendering::TlasBuilder;
 use maths::Vec3;
 
 #[test]
@@ -32,6 +34,7 @@ fn raytracer_renders_a_frame() {
         config.is_raytracer_enabled = true;
     }
 
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(&engine, "app/tests/reference_images/raytracer.png", 0.05);
 }
@@ -112,6 +115,7 @@ fn raytracer_responds_to_transform_changes() {
     }
 
     // Render initial frame
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -149,6 +153,7 @@ fn raytracer_responds_to_transform_changes() {
         transform.position.x += 1.0;
     }
 
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -227,6 +232,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     // Add cornell-box
     let cornell_entities = engine.add_mesh("assets/cornell-box.glb").unwrap();
 
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -237,6 +243,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     // Add cube
     let cube_entity = Mesh::cube(&mut engine.world);
 
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -247,6 +254,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
     // Remove cube
     engine.remove_mesh(cube_entity);
 
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -259,6 +267,7 @@ fn raytracer_mesh_add_and_remove_lifecycle() {
         engine.remove_mesh(entity);
     }
 
+    wait_until_tlas_ready(&mut engine);
     engine.render().unwrap();
     check_or_update_reference(
         &engine,
@@ -371,4 +380,26 @@ fn check_or_update_reference(engine: &app::core::Engine, reference_path: &str, t
         tolerance * 100.0,
         failure_path.display(),
     );
+}
+
+fn wait_until_tlas_ready(engine: &mut Engine) {
+    let max_frames = 5;
+
+    engine.render().unwrap();
+
+    let tlas_builder = engine.world.get_resource::<TlasBuilder>();
+    if tlas_builder.is_none_or(|builder| !builder.is_building()) {
+        return;
+    }
+
+    for _ in 0..max_frames {
+        let tlas_builder = engine.world.get_resource::<TlasBuilder>();
+        if tlas_builder.is_some_and(|builder| builder.is_finished()) {
+            return;
+        }
+
+        engine.render().unwrap();
+    }
+
+    panic!("TLAS readiness check timed out after {max_frames} frames")
 }
