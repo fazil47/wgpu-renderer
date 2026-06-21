@@ -2,7 +2,7 @@ use app::core::Engine;
 use app::core::events::RaytracerReset;
 use app::mesh::Mesh;
 use app::mesh::static_mesh::StaticMeshExt;
-use app::rendering::TlasBuilder;
+use app::rendering::TlasBuildTask;
 use maths::Vec3;
 
 #[test]
@@ -387,13 +387,13 @@ fn wait_until_tlas_ready(engine: &mut Engine) {
 
     engine.render().unwrap();
 
-    let tlas_builder = engine.world.get_resource::<TlasBuilder>();
+    let tlas_builder = engine.world.get_resource::<TlasBuildTask>();
     if tlas_builder.is_none_or(|builder| !builder.is_building()) {
         return;
     }
 
     for _ in 0..max_frames {
-        let tlas_builder = engine.world.get_resource::<TlasBuilder>();
+        let tlas_builder = engine.world.get_resource::<TlasBuildTask>();
         if tlas_builder.is_some_and(|builder| builder.is_finished()) {
             return;
         }

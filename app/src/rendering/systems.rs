@@ -238,7 +238,7 @@ pub fn update_system(world: &mut World) {
     // there might've been changes in the last frame.
     let tlas_build_result = {
         let mut tlas_builder = world
-            .get_resource_mut::<crate::rendering::TlasBuilder>()
+            .get_resource_mut::<crate::rendering::TlasBuildTask>()
             .unwrap();
         if tlas_builder.is_finished() {
             Some(tlas_builder.take_result())
@@ -323,9 +323,9 @@ pub fn update_system(world: &mut World) {
         let mesh_buffers = world.get_resource::<MeshBuffers>().unwrap();
         let blas = world.get_resource::<crate::rendering::BlasBvh>().unwrap();
         let mut tlas_builder = world
-            .get_resource_mut::<crate::rendering::TlasBuilder>()
+            .get_resource_mut::<crate::rendering::TlasBuildTask>()
             .unwrap();
-        tlas_builder.start_build(&mesh_buffers, &blas);
+        tlas_builder.request_build(&mesh_buffers, &blas);
     }
 
     // TODO: Should be querying for PrimaryCamera instead of just picking the

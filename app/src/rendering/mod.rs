@@ -7,7 +7,7 @@ pub mod systems;
 mod vertex;
 pub mod wgpu;
 
-pub use bvh::{BlasBvh, TlasBuilder, TlasBvh};
+pub use bvh::{BlasBvh, TlasBuildTask, TlasBvh};
 pub use extract::{Extract, ExtractionError, WorldExtractExt};
 pub use rasterizer::Rasterizer;
 pub use raytracer::{Raytracer, RaytracerExtractedBuffers, RaytracerMaterial};

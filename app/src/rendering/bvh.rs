@@ -486,39 +486,58 @@ fn compute_instance_bounds(mesh_buffers: &MeshBuffers, blas: &BlasBvh) -> Vec<Aa
     instance_bounds
 }
 
-/// Manages the in-flight TLAS build running on a background thread.
+/// Manages the in-flight TLAS calculation running on a background thread.
 #[derive(Default)]
-pub struct TlasBuilder {
-    pending: Option<std::thread::JoinHandle<TlasBvh>>,
+pub struct TlasBuildTask {
+    in_flight: Option<std::thread::JoinHandle<TlasBvh>>,
+    queued: Option<Vec<Aabb>>,
 }
 
-impl ecs::Resource for TlasBuilder {}
+impl ecs::Resource for TlasBuildTask {}
 
-impl TlasBuilder {
+impl TlasBuildTask {
     /// Returns `true` if a background build has finished.
     pub fn is_finished(&self) -> bool {
-        self.pending.as_ref().is_some_and(|h| h.is_finished())
+        self.in_flight.as_ref().is_some_and(|h| h.is_finished())
     }
 
     /// Returns `true` if a build is currently in flight.
     pub fn is_building(&self) -> bool {
-        self.pending.is_some()
+        self.in_flight.is_some()
     }
 
-    /// Takes the completed result. Only call after `is_finished()` returns `true`.
+    /// Takes the completed result and spawns the queued build if any.
+    /// Only call after `is_finished()` returns `true`.
     pub fn take_result(&mut self) -> TlasBvh {
-        self.pending
+        let result = self
+            .in_flight
             .take()
             .expect("No pending TLAS build")
             .join()
-            .expect("TLAS build thread panicked")
+            .expect("TLAS build thread panicked");
+
+        if let Some(instance_bounds) = self.queued.take() {
+            self.spawn(instance_bounds);
+        }
+
+        result
     }
 
-    /// Spawns a background thread to build the TLAS from pre-computed instance bounds.
-    pub fn start_build(&mut self, mesh_buffers: &MeshBuffers, blas: &BlasBvh) {
+    /// Requests a TLAS build. Spawns immediately if idle, otherwise queues the data.
+    pub fn request_build(&mut self, mesh_buffers: &MeshBuffers, blas: &BlasBvh) {
         let instance_bounds = compute_instance_bounds(mesh_buffers, blas);
+        self.spawn(instance_bounds);
+    }
 
-        self.pending = Some(
+    fn spawn(&mut self, instance_bounds: Vec<Aabb>) {
+        if self.in_flight.is_some() {
+            // TODO: Would be nice to calculate instance_bounds when needed and
+            // not store it in self.queued
+            self.queued = Some(instance_bounds);
+            return;
+        }
+
+        self.in_flight = Some(
             std::thread::Builder::new()
                 .name("tlas-build".into())
                 .spawn(move || {
