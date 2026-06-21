@@ -37,3 +37,5 @@ When working with this codebase:
 - Don't remove comments that were not added by you.
 - Use `cargo check` frequently to catch compilation errors early
 - Use `cargo clippy` to catch common mistakes and improve code quality
+- Use `cargo test` to test after making changes
+  - Make sure reference images were generated on the current machines, otherwise there will be image mismatches even for the same code.
