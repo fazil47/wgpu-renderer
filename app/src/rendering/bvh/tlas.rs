@@ -1,10 +1,8 @@
 use maths::Vec3;
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::rendering::bvh::Aabb;
 use crate::rendering::{
     BlasBvh,
-    bvh::{Bvh, BvhPrimitive, build_bvh},
+    bvh::{Aabb, Bvh, BvhPrimitive, build_bvh},
     mesh::MeshBuffers,
 };
 
