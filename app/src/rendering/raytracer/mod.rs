@@ -5,7 +5,7 @@ use crate::{
     material::Material,
     rendering::{
         GpuVertex,
-        bvh::{BlasInfo, BvhNode, build_bvh_debug_lines},
+        bvh::{BvhNode, blas::BlasInfo, debug::build_bvh_debug_lines},
         extract::{Extract, ExtractionError, WorldExtractExt},
         mesh::MeshBuffers,
         wgpu::{CameraBuffers, LightingBuffers, WgpuExt, WgpuResources},

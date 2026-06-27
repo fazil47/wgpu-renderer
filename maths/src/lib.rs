@@ -33,6 +33,10 @@ impl Vec3 {
         [self.x, self.y, self.z]
     }
 
+    pub const fn to_array4(&self) -> [f32; 4] {
+        [self.x, self.y, self.z, 0.0]
+    }
+
     pub fn length(&self) -> f32 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
